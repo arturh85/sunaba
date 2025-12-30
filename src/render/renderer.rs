@@ -212,7 +212,7 @@ impl Renderer {
         // Camera uniform
         let camera = CameraUniform {
             position: [0.0, 0.0],
-            zoom: 4.0, // 4 screen pixels per world pixel
+            zoom: 0.015, // Lower = zoomed out more (world_width = 2 * aspect / zoom)
             aspect: size.width as f32 / size.height as f32,
         };
         
@@ -344,9 +344,12 @@ impl Renderer {
     }
     
     pub fn render(&mut self, world: &World) -> Result<()> {
+        log::trace!("Render frame: camera pos=({:.1}, {:.1}), zoom={:.2}",
+                   self.camera.position[0], self.camera.position[1], self.camera.zoom);
+
         // Update pixel buffer from world chunks
         self.update_pixel_buffer(world);
-        
+
         // Upload to GPU
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
@@ -434,33 +437,50 @@ impl Renderer {
         // Center of texture is world origin
         let tex_origin_x = (Self::WORLD_TEXTURE_SIZE / 2) as i32 + chunk.x * CHUNK_SIZE as i32;
         let tex_origin_y = (Self::WORLD_TEXTURE_SIZE / 2) as i32 + chunk.y * CHUNK_SIZE as i32;
-        
+
+        let mut pixels_written = 0;
+
         for y in 0..CHUNK_SIZE {
             for x in 0..CHUNK_SIZE {
                 let pixel = chunk.get_pixel(x, y);
                 if pixel.material_id == 0 {
                     continue; // Skip air
                 }
-                
+
                 let color = world.materials.get_color(pixel.material_id);
-                
+
                 let tex_x = tex_origin_x + x as i32;
                 let tex_y = tex_origin_y + y as i32;
-                
+
                 // Bounds check
                 if tex_x >= 0 && tex_x < Self::WORLD_TEXTURE_SIZE as i32
                     && tex_y >= 0 && tex_y < Self::WORLD_TEXTURE_SIZE as i32
                 {
-                    // Flip Y for texture coordinates (texture 0,0 is top-left)
-                    let flipped_y = Self::WORLD_TEXTURE_SIZE as i32 - 1 - tex_y;
-                    let idx = ((flipped_y as u32 * Self::WORLD_TEXTURE_SIZE + tex_x as u32) * 4) as usize;
-                    
+                    // Don't flip here - shader handles Y-flip
+                    let idx = ((tex_y as u32 * Self::WORLD_TEXTURE_SIZE + tex_x as u32) * 4) as usize;
+
                     self.pixel_buffer[idx] = color[0];
                     self.pixel_buffer[idx + 1] = color[1];
                     self.pixel_buffer[idx + 2] = color[2];
                     self.pixel_buffer[idx + 3] = color[3];
+                    pixels_written += 1;
                 }
             }
         }
+
+        if pixels_written > 0 {
+            log::trace!("Chunk ({:2}, {:2}): rendered {} pixels at tex ({}, {})",
+                       chunk.x, chunk.y, pixels_written, tex_origin_x, tex_origin_y);
+        }
+    }
+
+    /// Get current camera zoom level
+    pub fn camera_zoom(&self) -> f32 {
+        self.camera.zoom
+    }
+
+    /// Get window size
+    pub fn window_size(&self) -> (u32, u32) {
+        (self.size.width, self.size.height)
     }
 }

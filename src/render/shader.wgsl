@@ -36,10 +36,28 @@ var world_sampler: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Sample the world texture
-    // For now, simple 1:1 mapping - camera integration comes later
-    let color = textureSample(world_texture, world_sampler, in.tex_coords);
-    
-    // Premultiply alpha for correct blending
+    // Transform screen space to NDC to world space
+    let ndc = (in.tex_coords - 0.5) * 2.0;
+    let ndc_flipped = vec2<f32>(ndc.x, -ndc.y); // Flip Y for world coordinates
+
+    let world_pos = vec2<f32>(
+        (ndc_flipped.x * camera.aspect / camera.zoom) + camera.position.x,
+        (ndc_flipped.y / camera.zoom) + camera.position.y
+    );
+
+    // Transform world to texture space (512x512, centered at origin)
+    let texture_size = 512.0;
+    let tex_coords = vec2<f32>(
+        (world_pos.x + texture_size * 0.5) / texture_size,
+        (world_pos.y + texture_size * 0.5) / texture_size  // No flip - renderer writes Y-up
+    );
+
+    // Bounds check
+    if tex_coords.x < 0.0 || tex_coords.x > 1.0 ||
+       tex_coords.y < 0.0 || tex_coords.y > 1.0 {
+        return vec4<f32>(0.1, 0.1, 0.15, 1.0); // Background color
+    }
+
+    let color = textureSample(world_texture, world_sampler, tex_coords);
     return vec4<f32>(color.rgb * color.a, color.a);
 }
