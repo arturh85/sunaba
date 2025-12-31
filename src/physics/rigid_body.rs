@@ -72,8 +72,10 @@ pub struct PhysicsWorld {
 
 impl PhysicsWorld {
     pub fn new() -> Self {
-        let mut integration_parameters = IntegrationParameters::default();
-        integration_parameters.dt = 1.0 / 60.0; // 60 FPS
+        let integration_parameters = IntegrationParameters {
+            dt: 1.0 / 60.0, // 60 FPS
+            ..Default::default()
+        };
 
         let mut collider_set = ColliderSet::new();
 
@@ -203,7 +205,7 @@ impl PhysicsWorld {
     pub fn get_settled_debris(&self) -> Vec<RigidBodyHandle> {
         let mut settled = Vec::new();
 
-        for (handle, _debris) in &self.debris {
+        for handle in self.debris.keys() {
             let body = &self.rigid_body_set[*handle];
 
             // Check if velocity is very low (came to rest)

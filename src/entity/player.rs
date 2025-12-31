@@ -292,6 +292,9 @@ mod tests {
     fn test_get_selected_material() {
         let mut player = Player::new(Vec2::ZERO);
 
+        // Clear starting inventory for testing
+        player.inventory.clear();
+
         // No material in slot 0
         assert_eq!(player.get_selected_material(), None);
 

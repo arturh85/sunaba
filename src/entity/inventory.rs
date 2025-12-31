@@ -71,13 +71,11 @@ impl Inventory {
     /// Returns the amount that couldn't be added (0 if all added successfully)
     pub fn add_item(&mut self, material_id: u16, mut amount: u32) -> u32 {
         // First, try to add to existing stacks of the same material
-        for slot in &mut self.slots {
-            if let Some(stack) = slot {
-                if stack.material_id == material_id && !stack.is_full() {
-                    amount = stack.add(amount);
-                    if amount == 0 {
-                        return 0;
-                    }
+        for stack in self.slots.iter_mut().flatten() {
+            if stack.material_id == material_id && !stack.is_full() {
+                amount = stack.add(amount);
+                if amount == 0 {
+                    return 0;
                 }
             }
         }

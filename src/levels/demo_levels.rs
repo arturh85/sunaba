@@ -239,7 +239,7 @@ pub fn generate_level_5_powder(world: &mut World) {
             if cx == 0 && cy == 0 {
                 // Central tall pile
                 for x in 24..40 {
-                    let height = 20 + ((x as i32 - 32).abs() as usize * 2);
+                    let height = 20 + ((x as i32 - 32).unsigned_abs() as usize * 2);
                     for y in 12..(12 + height).min(CHUNK_SIZE) {
                         chunk.set_material(x, y, MaterialId::SAND);
                     }
@@ -388,11 +388,10 @@ pub fn generate_level_8_volcano(world: &mut World) {
                             }
                         }
 
-                        if right_x < CHUNK_SIZE && y < CHUNK_SIZE {
-                            if dx >= 4 {
+                        if right_x < CHUNK_SIZE && y < CHUNK_SIZE
+                            && dx >= 4 {
                                 chunk.set_material(right_x, y, MaterialId::STONE);
                             }
-                        }
 
                         // Inner chamber (lava)
                         if dx < 4 && y < 44 {
@@ -1530,11 +1529,11 @@ pub fn generate_level_20_crafting_workshop(world: &mut World) {
                     let width = (20 - y) / 2;
                     for dx in 0..width {
                         let x = 47 - dx;
-                        if x >= 42 && x < 52 {
+                        if (42..52).contains(&x) {
                             chunk.set_material(x, y, MaterialId::DIRT);
                         }
                         let x = 47 + dx;
-                        if x >= 42 && x < 52 {
+                        if (42..52).contains(&x) {
                             chunk.set_material(x, y, MaterialId::DIRT);
                         }
                     }

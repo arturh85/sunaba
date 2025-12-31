@@ -65,7 +65,9 @@ pub struct Renderer {
 
     // World texture (stores all visible chunks)
     world_texture: wgpu::Texture,
+    #[allow(dead_code)]
     world_texture_view: wgpu::TextureView,
+    #[allow(dead_code)]
     world_sampler: wgpu::Sampler,
     world_bind_group: wgpu::BindGroup,
 
@@ -82,7 +84,9 @@ pub struct Renderer {
 
     // Temperature overlay
     temp_texture: wgpu::Texture,
+    #[allow(dead_code)]
     temp_texture_view: wgpu::TextureView,
+    #[allow(dead_code)]
     temp_sampler: wgpu::Sampler,
     overlay_uniform_buffer: wgpu::Buffer,
     temp_bind_group: wgpu::BindGroup,
@@ -599,7 +603,7 @@ impl Renderer {
 
         // Render active debris on top of chunks
         let debris_list = world.get_active_debris();
-        if debris_list.len() > 0 {
+        if !debris_list.is_empty() {
             log::debug!("Rendering {} active debris", debris_list.len());
         }
 

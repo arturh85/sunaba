@@ -451,14 +451,12 @@ impl World {
                 return;
             }
             if self.try_move_world(world_x, world_y, world_x + 1, world_y - 1, stats) {
-                return;
             }
         } else {
             if self.try_move_world(world_x, world_y, world_x + 1, world_y - 1, stats) {
                 return;
             }
             if self.try_move_world(world_x, world_y, world_x - 1, world_y - 1, stats) {
-                return;
             }
         }
     }
@@ -498,14 +496,12 @@ impl World {
                 return;
             }
             if self.try_move_world(world_x, world_y, world_x + 1, world_y, stats) {
-                return;
             }
         } else {
             if self.try_move_world(world_x, world_y, world_x + 1, world_y, stats) {
                 return;
             }
             if self.try_move_world(world_x, world_y, world_x - 1, world_y, stats) {
-                return;
             }
         }
     }
@@ -545,19 +541,18 @@ impl World {
                 return;
             }
             if self.try_move_world(world_x, world_y, world_x + 1, world_y, stats) {
-                return;
             }
         } else {
             if self.try_move_world(world_x, world_y, world_x + 1, world_y, stats) {
                 return;
             }
             if self.try_move_world(world_x, world_y, world_x - 1, world_y, stats) {
-                return;
             }
         }
     }
     
     /// Try to move a pixel, returns true if successful
+    #[allow(dead_code)]
     fn try_move(&mut self, chunk_pos: IVec2, from_x: usize, from_y: usize, to_x: usize, to_y: usize) -> bool {
         // TODO: Handle cross-chunk movement
         let chunk = match self.chunks.get(&chunk_pos) {
@@ -857,11 +852,10 @@ impl World {
         // Add to active chunks if within range of player
         let dist_x = (pos.x - (self.player.position.x as i32 / CHUNK_SIZE as i32)).abs();
         let dist_y = (pos.y - (self.player.position.y as i32 / CHUNK_SIZE as i32)).abs();
-        if dist_x <= 2 && dist_y <= 2 {
-            if !self.active_chunks.contains(&pos) {
+        if dist_x <= 2 && dist_y <= 2
+            && !self.active_chunks.contains(&pos) {
                 self.active_chunks.push(pos);
             }
-        }
 
         // Add physics collider for bedrock chunks
         if has_bedrock {
@@ -953,7 +947,7 @@ impl World {
 
         let mut to_evict = Vec::new();
 
-        for (pos, _chunk) in &self.chunks {
+        for pos in self.chunks.keys() {
             let dist_x = (pos.x - player_chunk_x).abs();
             let dist_y = (pos.y - player_chunk_y).abs();
 

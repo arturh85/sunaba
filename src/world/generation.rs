@@ -98,7 +98,7 @@ impl WorldGenerator {
         const NOISE_SCALE: f64 = 0.08;
 
         // Coal: shallow (depth 8-40, roughly y=24 to y=-8)
-        if depth >= 8 && depth <= 40 {
+        if (8..=40).contains(&depth) {
             let coal_value = self
                 .coal_noise
                 .get([world_x as f64 * NOISE_SCALE, world_y as f64 * NOISE_SCALE]);
@@ -109,7 +109,7 @@ impl WorldGenerator {
         }
 
         // Copper: medium depth (depth 20-60, roughly y=12 to y=-28)
-        if depth >= 20 && depth <= 60 {
+        if (20..=60).contains(&depth) {
             let copper_value = self
                 .copper_noise
                 .get([world_x as f64 * NOISE_SCALE, world_y as f64 * NOISE_SCALE]);
@@ -120,7 +120,7 @@ impl WorldGenerator {
         }
 
         // Iron: medium-deep (depth 30-80, roughly y=2 to y=-48)
-        if depth >= 30 && depth <= 80 {
+        if (30..=80).contains(&depth) {
             let iron_value = self
                 .iron_noise
                 .get([world_x as f64 * NOISE_SCALE, world_y as f64 * NOISE_SCALE]);
@@ -131,7 +131,7 @@ impl WorldGenerator {
         }
 
         // Gold: deep (depth 60-120, roughly y=-28 to y=-88)
-        if depth >= 60 && depth <= 120 {
+        if (60..=120).contains(&depth) {
             let gold_value = self
                 .gold_noise
                 .get([world_x as f64 * NOISE_SCALE, world_y as f64 * NOISE_SCALE]);

@@ -513,7 +513,7 @@ impl ReactionRegistry {
         };
 
         // Add to HashMap (may have multiple reactions for same material pair)
-        self.reactions.entry(key).or_insert_with(Vec::new).push(reaction);
+        self.reactions.entry(key).or_default().push(reaction);
     }
 
     /// Find a matching reaction between two materials at given conditions

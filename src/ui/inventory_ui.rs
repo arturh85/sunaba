@@ -134,7 +134,7 @@ impl InventoryPanel {
             painter.text(
                 text_pos,
                 egui::Align2::CENTER_CENTER,
-                &name,
+                name,
                 egui::FontId::proportional(10.0),
                 Color32::WHITE,
             );

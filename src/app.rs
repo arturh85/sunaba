@@ -172,6 +172,7 @@ impl App {
     }
 
     /// Switch to a demo level (disables persistence)
+    #[allow(dead_code)]
     fn switch_to_demo_level(&mut self, level_id: usize) {
         // Save current world if in persistent mode
         if matches!(self.game_mode, GameMode::PersistentWorld) {
@@ -184,6 +185,7 @@ impl App {
     }
 
     /// Return to persistent world from demo level
+    #[allow(dead_code)]
     fn return_to_persistent_world(&mut self) {
         self.game_mode = GameMode::PersistentWorld;
         self.world.load_persistent_world();
@@ -191,6 +193,7 @@ impl App {
     }
 
     /// Get a description of the current game mode
+    #[allow(dead_code)]
     fn game_mode_description(&self) -> String {
         match self.game_mode {
             GameMode::PersistentWorld => "Persistent World".to_string(),
@@ -283,13 +286,12 @@ impl App {
                             },
 
                             // Manual save (F5)
-                            KeyCode::F5 => if pressed {
-                                if matches!(game_mode, GameMode::PersistentWorld) {
+                            KeyCode::F5 => if pressed
+                                && matches!(game_mode, GameMode::PersistentWorld) {
                                     world.save_all_dirty_chunks();
                                     ui_state.show_toast("World saved!");
                                     log::info!("Manual save completed");
-                                }
-                            },
+                                },
 
                             // Zoom controls
                             KeyCode::Equal | KeyCode::NumpadAdd => if pressed {
@@ -365,13 +367,12 @@ impl App {
 
                     // Periodic auto-save (every 60 seconds in persistent world mode)
                     const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(60);
-                    if matches!(game_mode, GameMode::PersistentWorld) {
-                        if last_autosave.elapsed() >= AUTOSAVE_INTERVAL {
+                    if matches!(game_mode, GameMode::PersistentWorld)
+                        && last_autosave.elapsed() >= AUTOSAVE_INTERVAL {
                             world.save_all_dirty_chunks(); // Save chunks AND player data
                             last_autosave = Instant::now();
                             log::info!("Auto-saved world and player data");
                         }
-                    }
 
                     // Update player from input
                     world.update_player(&input_state, 1.0 / 60.0);
@@ -380,13 +381,12 @@ impl App {
                     renderer.update_zoom(input_state.zoom_delta, MIN_ZOOM, MAX_ZOOM);
 
                     // Log camera state periodically
-                    static mut FRAME_COUNT: u32 = 0;
-                    unsafe {
-                        FRAME_COUNT += 1;
-                        if FRAME_COUNT % 120 == 0 {  // Every 2 seconds at 60fps
-                            log::info!("Frame {}: player_pos={:?}, zoom={:.2}, selected_material={}",
-                                       FRAME_COUNT, world.player.position, renderer.camera_zoom(), input_state.selected_material);
-                        }
+                    use std::sync::atomic::{AtomicU32, Ordering};
+                    static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
+                    let frame = FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
+                    if frame.is_multiple_of(120) {  // Every 2 seconds at 60fps
+                        log::info!("Frame {}: player_pos={:?}, zoom={:.2}, selected_material={}",
+                                   frame, world.player.position, renderer.camera_zoom(), input_state.selected_material);
                     }
 
                     // Mining with right mouse button

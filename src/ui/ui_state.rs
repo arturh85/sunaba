@@ -80,6 +80,7 @@ impl UiState {
     }
 
     /// Render all UI elements
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         ctx: &egui::Context,

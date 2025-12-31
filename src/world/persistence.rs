@@ -249,7 +249,7 @@ impl ChunkPersistence {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::world::chunk::{Chunk, CHUNK_SIZE};
+    use crate::world::chunk::Chunk;
 
     #[test]
     fn test_chunk_save_load_roundtrip() -> Result<()> {

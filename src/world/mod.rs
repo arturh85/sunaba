@@ -1,6 +1,7 @@
 //! World management - chunks, loading, saving
 
 mod chunk;
+#[allow(clippy::module_inception)]
 mod world;
 pub mod generation;
 pub mod persistence;

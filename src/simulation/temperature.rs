@@ -57,7 +57,7 @@ impl TemperatureSimulator {
                     let nx = cx as i32 + dx;
                     let ny = cy as i32 + dy;
 
-                    if nx >= 0 && nx < 8 && ny >= 0 && ny < 8 {
+                    if (0..8).contains(&nx) && (0..8).contains(&ny) {
                         neighbor_sum += chunk.temperature[ny as usize * 8 + nx as usize];
                         neighbor_count += 1;
                     }
