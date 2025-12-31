@@ -45,7 +45,6 @@ rand_xoshiro = "0.6"  # Fast, seedable RNG
 
 # Logging
 log = "0.4"
-env_logger = "0.11"
 
 # Error handling
 thiserror = "1.0"
@@ -55,7 +54,9 @@ anyhow = "1.0"
 bitflags = "2.4"
 pollster = "0.3"  # Simple async executor for wgpu init
 
-# Command-line arguments
+# Platform-specific dependencies
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "0.11"
 clap = { version = "4.4", features = ["derive"] }
 
 # Noise generation for procedural terrain
@@ -83,6 +84,10 @@ opt-level = 3  # Full optimization for dependencies
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# WASM-specific optimizations
+[profile.release.package."*"]
+opt-level = 3
 
 # [[bench]]
 # name = "simulation"
