@@ -498,7 +498,7 @@ impl Renderer {
         );
 
         // Update camera position to follow player
-        self.camera.position = [world.player_pos.x, world.player_pos.y];
+        self.camera.position = [world.player.position.x, world.player.position.y];
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera]));
 
         // Get output texture
@@ -717,8 +717,8 @@ impl Renderer {
         let mut temp_data = vec![20.0f32; (TEMP_TEXTURE_SIZE * TEMP_TEXTURE_SIZE) as usize];
 
         // Sample temperature from 5x5 chunks around player
-        let player_chunk_x = (world.player_pos.x / CHUNK_SIZE as f32).floor() as i32;
-        let player_chunk_y = (world.player_pos.y / CHUNK_SIZE as f32).floor() as i32;
+        let player_chunk_x = (world.player.position.x / CHUNK_SIZE as f32).floor() as i32;
+        let player_chunk_y = (world.player.position.y / CHUNK_SIZE as f32).floor() as i32;
 
         for cy in -2..=2 {
             for cx in -2..=2 {

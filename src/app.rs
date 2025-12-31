@@ -82,6 +82,7 @@ pub struct InputState {
     // Mouse state
     pub mouse_world_pos: Option<(i32, i32)>, // Converted to world coords
     pub left_mouse_pressed: bool,
+    pub right_mouse_pressed: bool,
 
     // Zoom control
     pub zoom_delta: f32, // Zoom change this frame (1.0 = no change)
@@ -97,6 +98,7 @@ impl InputState {
             selected_material: MaterialId::SAND, // Start with sand
             mouse_world_pos: None,
             left_mouse_pressed: false,
+            right_mouse_pressed: false,
             zoom_delta: 1.0, // No change by default
         }
     }
@@ -276,6 +278,9 @@ impl App {
                             KeyCode::KeyL => if pressed {
                                 ui_state.toggle_level_selector();
                             },
+                            KeyCode::KeyI => if pressed {
+                                ui_state.toggle_inventory();
+                            },
 
                             // Manual save (F5)
                             KeyCode::F5 => if pressed {
@@ -310,7 +315,7 @@ impl App {
                         position.y,
                         window_width,
                         window_height,
-                        world.player_pos,
+                        world.player.position,
                         renderer.camera_zoom(),
                     );
                     input_state.mouse_world_pos = Some(world_pos);
@@ -321,9 +326,16 @@ impl App {
                     event: WindowEvent::MouseInput { state, button, .. },
                     ..
                 } => {
-                    if button == MouseButton::Left {
-                        input_state.left_mouse_pressed = state == ElementState::Pressed;
-                        log::info!("Mouse: {}", if state == ElementState::Pressed { "clicked" } else { "released" });
+                    match button {
+                        MouseButton::Left => {
+                            input_state.left_mouse_pressed = state == ElementState::Pressed;
+                            log::debug!("Left mouse: {}", if state == ElementState::Pressed { "pressed" } else { "released" });
+                        }
+                        MouseButton::Right => {
+                            input_state.right_mouse_pressed = state == ElementState::Pressed;
+                            log::debug!("Right mouse: {}", if state == ElementState::Pressed { "pressed" } else { "released" });
+                        }
+                        _ => {}
                     }
                 }
                 Event::WindowEvent {
@@ -372,14 +384,21 @@ impl App {
                         FRAME_COUNT += 1;
                         if FRAME_COUNT % 120 == 0 {  // Every 2 seconds at 60fps
                             log::info!("Frame {}: player_pos={:?}, zoom={:.2}, selected_material={}",
-                                       FRAME_COUNT, world.player_pos, renderer.camera_zoom(), input_state.selected_material);
+                                       FRAME_COUNT, world.player.position, renderer.camera_zoom(), input_state.selected_material);
                         }
                     }
 
-                    // Spawn material on mouse click
+                    // Mining with right mouse button
+                    if input_state.right_mouse_pressed {
+                        if let Some((wx, wy)) = input_state.mouse_world_pos {
+                            world.mine_pixel(wx, wy);
+                        }
+                    }
+
+                    // Placing material from inventory with left mouse button
                     if input_state.left_mouse_pressed {
                         if let Some((wx, wy)) = input_state.mouse_world_pos {
-                            world.spawn_material(wx, wy, input_state.selected_material);
+                            world.place_material_from_inventory(wx, wy, input_state.selected_material);
                         }
                     }
 
@@ -407,7 +426,7 @@ impl App {
                         };
                         let in_persistent_world = matches!(game_mode, GameMode::PersistentWorld);
 
-                        ui_state.render(ctx, cursor_pos, input_state.selected_material, world.materials(), &game_mode_desc, in_persistent_world, &level_manager);
+                        ui_state.render(ctx, cursor_pos, input_state.selected_material, world.materials(), &game_mode_desc, in_persistent_world, &level_manager, &world.player);
                     });
 
                     // Handle level selector actions

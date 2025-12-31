@@ -13,6 +13,7 @@ use crate::simulation::{
     add_heat_at_pixel, get_temperature_at_pixel,
 };
 use crate::physics::PhysicsWorld;
+use crate::entity::player::Player;
 
 /// The game world, composed of chunks
 pub struct World {
@@ -34,8 +35,8 @@ pub struct World {
     /// Physics world for rigid bodies
     physics_world: PhysicsWorld,
 
-    /// Player position (pixel coordinates)
-    pub player_pos: glam::Vec2,
+    /// The player entity
+    pub player: Player,
 
     /// Which chunks are currently active (being simulated)
     active_chunks: Vec<IVec2>,
@@ -62,7 +63,7 @@ impl World {
             reactions: ReactionRegistry::new(),
             structural_system: StructuralIntegritySystem::new(),
             physics_world: PhysicsWorld::new(),
-            player_pos: glam::Vec2::new(0.0, 100.0),
+            player: Player::new(glam::Vec2::new(0.0, 100.0)),
             active_chunks: Vec::new(),
             time_accumulator: 0.0,
             persistence: None,
@@ -153,7 +154,7 @@ impl World {
         log::info!("  World bounds: ({}, {}) to ({}, {})",
                    -2 * CHUNK_SIZE as i32, -2 * CHUNK_SIZE as i32,
                    3 * CHUNK_SIZE as i32 - 1, 3 * CHUNK_SIZE as i32 - 1);
-        log::info!("  Player starts at: {:?}", self.player_pos);
+        log::info!("  Player starts at: {:?}", self.player.position);
     }
 
     /// Player movement speed in pixels per second
@@ -179,10 +180,13 @@ impl World {
         // Normalize diagonal movement
         if velocity.length() > 0.0 {
             velocity = velocity.normalize() * Self::PLAYER_SPEED;
-            let new_pos = self.player_pos + velocity * dt;
+            let movement = velocity * dt;
             log::debug!("Player: {:?} → {:?} (velocity: {:?})",
-                       self.player_pos, new_pos, velocity);
-            self.player_pos = new_pos;
+                       self.player.position, self.player.position + movement, velocity);
+            self.player.move_by(movement);
+            self.player.set_velocity(velocity);
+        } else {
+            self.player.set_velocity(glam::Vec2::ZERO);
         }
     }
 
@@ -218,9 +222,102 @@ impl World {
         }
     }
 
+    /// Mine a single pixel and add it to player's inventory
+    /// Returns true if successfully mined
+    pub fn mine_pixel(&mut self, world_x: i32, world_y: i32) -> bool {
+        let (chunk_pos, local_x, local_y) = Self::world_to_chunk_coords(world_x, world_y);
+
+        if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
+            let pixel = chunk.get_pixel(local_x, local_y);
+            let material_id = pixel.material_id;
+
+            // Can't mine air or bedrock
+            if material_id == MaterialId::AIR || material_id == MaterialId::BEDROCK {
+                return false;
+            }
+
+            // Try to add to inventory
+            if self.player.mine_material(material_id) {
+                // Successfully added to inventory, remove the pixel
+                chunk.set_material(local_x, local_y, MaterialId::AIR);
+                chunk.dirty = true;
+
+                let material_name = &self.materials.get(material_id).name;
+                log::debug!("[MINE] Mined {} at ({}, {})", material_name, world_x, world_y);
+                true
+            } else {
+                log::debug!("[MINE] Inventory full, can't mine at ({}, {})", world_x, world_y);
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Place material from player's inventory at world coordinates with circular brush
+    /// Returns number of pixels successfully placed
+    pub fn place_material_from_inventory(&mut self, world_x: i32, world_y: i32, material_id: u16) -> u32 {
+        let material_name = self.materials.get(material_id).name.clone();
+        let mut placed = 0;
+
+        // Calculate how many pixels we want to place (circular brush)
+        let mut pixels_needed = 0;
+        for dy in -Self::BRUSH_RADIUS..=Self::BRUSH_RADIUS {
+            for dx in -Self::BRUSH_RADIUS..=Self::BRUSH_RADIUS {
+                if dx * dx + dy * dy <= Self::BRUSH_RADIUS * Self::BRUSH_RADIUS {
+                    let x = world_x + dx;
+                    let y = world_y + dy;
+                    // Only count if target pixel is air (can be replaced)
+                    if self.get_pixel(x, y).map(|p| p.material_id == MaterialId::AIR).unwrap_or(false) {
+                        pixels_needed += 1;
+                    }
+                }
+            }
+        }
+
+        if pixels_needed == 0 {
+            return 0;
+        }
+
+        // Check if player has enough material
+        if !self.player.inventory.has_item(material_id, pixels_needed) {
+            log::debug!("[PLACE] Not enough {} in inventory (need {}, have {})",
+                       material_name, pixels_needed, self.player.inventory.count_item(material_id));
+            return 0;
+        }
+
+        // Consume from inventory first
+        let consumed = self.player.inventory.remove_item(material_id, pixels_needed);
+
+        // Place the pixels
+        for dy in -Self::BRUSH_RADIUS..=Self::BRUSH_RADIUS {
+            for dx in -Self::BRUSH_RADIUS..=Self::BRUSH_RADIUS {
+                if dx * dx + dy * dy <= Self::BRUSH_RADIUS * Self::BRUSH_RADIUS {
+                    let x = world_x + dx;
+                    let y = world_y + dy;
+                    if self.get_pixel(x, y).map(|p| p.material_id == MaterialId::AIR).unwrap_or(false) {
+                        self.set_pixel(x, y, material_id);
+                        placed += 1;
+                    }
+                }
+            }
+        }
+
+        log::debug!("[PLACE] Placed {} {} pixels at ({}, {}), consumed {} from inventory",
+                   placed, material_name, world_x, world_y, consumed);
+
+        placed
+    }
+
     /// Update simulation
     pub fn update(&mut self, dt: f32, stats: &mut crate::ui::StatsCollector) {
         const FIXED_TIMESTEP: f32 = 1.0 / 60.0;
+
+        // Update player (hunger, health, starvation damage)
+        if self.player.update(dt) {
+            log::warn!("Player died from starvation!");
+            // TODO: Handle player death (respawn, game over screen, etc.)
+        }
 
         self.time_accumulator += dt;
 
@@ -758,8 +855,8 @@ impl World {
         self.chunks.insert(pos, chunk);
 
         // Add to active chunks if within range of player
-        let dist_x = (pos.x - (self.player_pos.x as i32 / CHUNK_SIZE as i32)).abs();
-        let dist_y = (pos.y - (self.player_pos.y as i32 / CHUNK_SIZE as i32)).abs();
+        let dist_x = (pos.x - (self.player.position.x as i32 / CHUNK_SIZE as i32)).abs();
+        let dist_y = (pos.y - (self.player.position.y as i32 / CHUNK_SIZE as i32)).abs();
         if dist_x <= 2 && dist_y <= 2 {
             if !self.active_chunks.contains(&pos) {
                 self.active_chunks.push(pos);
@@ -783,7 +880,7 @@ impl World {
         let metadata = persistence.load_metadata();
 
         self.generator = WorldGenerator::new(metadata.seed);
-        self.player_pos = glam::Vec2::new(metadata.spawn_point.0, metadata.spawn_point.1);
+        self.player.position = glam::Vec2::new(metadata.spawn_point.0, metadata.spawn_point.1);
         self.persistence = Some(persistence);
 
         // Load initial chunks around spawn
@@ -794,8 +891,8 @@ impl World {
 
     /// Load chunks within active radius of player
     fn load_chunks_around_player(&mut self) {
-        let player_chunk_x = (self.player_pos.x as i32).div_euclid(CHUNK_SIZE as i32);
-        let player_chunk_y = (self.player_pos.y as i32).div_euclid(CHUNK_SIZE as i32);
+        let player_chunk_x = (self.player.position.x as i32).div_euclid(CHUNK_SIZE as i32);
+        let player_chunk_y = (self.player.position.y as i32).div_euclid(CHUNK_SIZE as i32);
 
         for cy in (player_chunk_y - 2)..=(player_chunk_y + 2) {
             for cx in (player_chunk_x - 2)..=(player_chunk_x + 2) {
@@ -835,8 +932,8 @@ impl World {
 
     /// Save and unload chunks far from player
     fn evict_distant_chunks(&mut self) {
-        let player_chunk_x = (self.player_pos.x as i32).div_euclid(CHUNK_SIZE as i32);
-        let player_chunk_y = (self.player_pos.y as i32).div_euclid(CHUNK_SIZE as i32);
+        let player_chunk_x = (self.player.position.x as i32).div_euclid(CHUNK_SIZE as i32);
+        let player_chunk_y = (self.player.position.y as i32).div_euclid(CHUNK_SIZE as i32);
 
         let mut to_evict = Vec::new();
 
@@ -904,7 +1001,7 @@ impl World {
             let metadata = WorldMetadata {
                 version: 1,
                 seed: self.generator.seed,
-                spawn_point: (self.player_pos.x, self.player_pos.y),
+                spawn_point: (self.player.position.x, self.player.position.y),
                 created_at: String::new(), // Preserved from load
                 last_played: chrono::Local::now().to_rfc3339(),
                 play_time_seconds: 0, // TODO: track play time

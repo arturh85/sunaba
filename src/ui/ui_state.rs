@@ -4,6 +4,8 @@ use super::stats::StatsCollector;
 use super::tooltip::TooltipState;
 use super::controls_help::ControlsHelpState;
 use super::level_selector::LevelSelectorState;
+use super::hud::Hud;
+use super::inventory_ui::InventoryPanel;
 use std::time::Instant;
 
 /// Central UI state container
@@ -23,6 +25,12 @@ pub struct UiState {
     /// Level selector panel
     pub level_selector: LevelSelectorState,
 
+    /// HUD (health, hunger bars)
+    pub hud: Hud,
+
+    /// Inventory panel
+    pub inventory: InventoryPanel,
+
     /// Toast notification (message, shown_at)
     pub toast_message: Option<(String, Instant)>,
 }
@@ -35,6 +43,8 @@ impl UiState {
             tooltip: TooltipState::new(),
             controls_help: ControlsHelpState::new(),
             level_selector: LevelSelectorState::new(),
+            hud: Hud::new(),
+            inventory: InventoryPanel::new(),
             toast_message: None,
         }
     }
@@ -52,6 +62,11 @@ impl UiState {
     /// Toggle level selector visibility
     pub fn toggle_level_selector(&mut self) {
         self.level_selector.toggle();
+    }
+
+    /// Toggle inventory visibility
+    pub fn toggle_inventory(&mut self) {
+        self.inventory.toggle();
     }
 
     /// Show a toast notification
@@ -74,7 +89,19 @@ impl UiState {
         game_mode_desc: &str,
         in_persistent_world: bool,
         level_manager: &crate::levels::LevelManager,
+        player: &crate::entity::player::Player,
     ) {
+        // Collect material names for UI display
+        let material_names: Vec<&str> = (0..15)
+            .map(|id| materials.get(id).name.as_str())
+            .collect();
+
+        // Render HUD (always visible)
+        self.hud.render(ctx, player, selected_material, &material_names);
+
+        // Render inventory panel (if open)
+        self.inventory.render(ctx, player, &material_names);
+
         if self.stats_visible {
             self.render_stats(ctx);
         }

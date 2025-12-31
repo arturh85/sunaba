@@ -9,6 +9,7 @@ pub mod physics;
 pub mod render;
 pub mod ui;
 pub mod levels;
+pub mod entity;
 
 pub use app::App;
 
