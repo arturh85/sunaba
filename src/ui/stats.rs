@@ -1,8 +1,8 @@
 //! Performance and simulation statistics tracking
 
 use crate::world::World;
+use instant::Instant;
 use std::collections::VecDeque;
-use std::time::Instant;
 
 /// Simulation statistics
 #[derive(Clone, Debug)]

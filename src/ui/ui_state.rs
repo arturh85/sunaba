@@ -6,7 +6,7 @@ use super::inventory_ui::InventoryPanel;
 use super::level_selector::LevelSelectorState;
 use super::stats::StatsCollector;
 use super::tooltip::TooltipState;
-use std::time::Instant;
+use instant::Instant;
 
 /// Central UI state container
 pub struct UiState {

@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use glam::Vec2;
-use std::time::{Duration, Instant};
+use instant::{Duration, Instant};
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, MouseButton, WindowEvent},

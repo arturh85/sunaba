@@ -154,7 +154,7 @@ impl Renderer {
                 label: Some("device"),
                 memory_hints: wgpu::MemoryHints::default(),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(), // New in wgpu 27
-                trace: wgpu::Trace::Off, // New in wgpu 27
+                trace: wgpu::Trace::Off,                                       // New in wgpu 27
             })
             .await?;
 
@@ -507,8 +507,11 @@ impl Renderer {
 
         // Initialize egui renderer
         // egui-wgpu 0.33+ takes 3 arguments: device, format, RendererOptions
-        let egui_renderer =
-            egui_wgpu::Renderer::new(&device, config.format, egui_wgpu::RendererOptions::default());
+        let egui_renderer = egui_wgpu::Renderer::new(
+            &device,
+            config.format,
+            egui_wgpu::RendererOptions::default(),
+        );
 
         // Initialize overlay as disabled (32 bytes: enabled + padding)
         queue.write_buffer(
