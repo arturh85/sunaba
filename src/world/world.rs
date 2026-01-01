@@ -1432,7 +1432,7 @@ impl World {
                     log::debug!(
                         "Plant growth check at ({}, {}): light={}, temp={:.1}°C, water={}, ready={}",
                         world_x, world_y, light_level, temp, has_water,
-                        light_level >= 8 && temp >= 10.0 && temp <= 40.0 && has_water
+                        light_level >= 8 && (10.0..=40.0).contains(&temp) && has_water
                     );
                     LAST_LOG_FRAME = FRAME_COUNT;
                 }

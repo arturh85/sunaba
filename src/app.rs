@@ -355,13 +355,12 @@ impl App {
 
                             // Manual save (F5)
                             KeyCode::F5 => {
-                                if pressed {
-                                    if matches!(game_mode, GameMode::PersistentWorld) {
+                                if pressed
+                                    && matches!(game_mode, GameMode::PersistentWorld) {
                                         world.save_all_dirty_chunks();
                                         ui_state.show_toast("World saved!");
                                         log::info!("Manual save completed");
                                     }
-                                }
                             }
 
                             // Zoom controls

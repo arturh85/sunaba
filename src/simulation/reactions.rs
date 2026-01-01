@@ -596,7 +596,7 @@ mod tests {
         let registry = ReactionRegistry::new();
 
         // Water + Lava should find reaction
-        let reaction = registry.find_reaction(MaterialId::WATER, MaterialId::LAVA, 20.0);
+        let reaction = registry.find_reaction(MaterialId::WATER, MaterialId::LAVA, 20.0, 0);
         assert!(reaction.is_some());
         assert_eq!(reaction.unwrap().name, "water_lava_steam");
     }
@@ -606,7 +606,7 @@ mod tests {
         let registry = ReactionRegistry::new();
 
         // Lava + Water should also find reaction (order doesn't matter)
-        let reaction = registry.find_reaction(MaterialId::LAVA, MaterialId::WATER, 20.0);
+        let reaction = registry.find_reaction(MaterialId::LAVA, MaterialId::WATER, 20.0, 0);
         assert!(reaction.is_some());
         assert_eq!(reaction.unwrap().name, "water_lava_steam");
     }
@@ -616,7 +616,7 @@ mod tests {
         let registry = ReactionRegistry::new();
 
         // Sand + Water has no reaction
-        let reaction = registry.find_reaction(MaterialId::SAND, MaterialId::WATER, 20.0);
+        let reaction = registry.find_reaction(MaterialId::SAND, MaterialId::WATER, 20.0, 0);
         assert!(reaction.is_none());
     }
 
@@ -625,7 +625,7 @@ mod tests {
         let registry = ReactionRegistry::new();
 
         let reaction = registry
-            .find_reaction(MaterialId::WATER, MaterialId::LAVA, 20.0)
+            .find_reaction(MaterialId::WATER, MaterialId::LAVA, 20.0, 0)
             .unwrap();
 
         // Water + Lava
