@@ -3,3 +3,4 @@
 *.iml
 /worlds/
 /web/pkg/
+.DS_Store

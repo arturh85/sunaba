@@ -63,6 +63,10 @@ git push origin v0.1.0
 - **Native Builds**: Download from [GitHub Releases](https://github.com/arturh85/sunaba/releases/)
 - **Web Version**: Play at [https://arturh85.github.io/sunaba](https://arturh85.github.io/sunaba/)
 
+## Name
+
+砂場 (Sunaba) literally means “sandbox” in Japanese—砂 (sand) and 場 (place)—a space where simple elements are poured together and allowed to interact freely. The name reflects the core philosophy of the game: a world built from tiny, simulated pieces where complex, emergent behaviors arise from basic rules. Like a real sandbox, 砂場 is a place for experimentation, play, and unexpected discovery, where physics, chemistry, and evolving life forms shape stories without a fixed script.
+
 ## Development Status
 
 🚧 **In Development**

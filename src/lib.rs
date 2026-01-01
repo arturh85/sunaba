@@ -41,10 +41,9 @@ pub fn start() {
 pub async fn run() -> Result<(), JsValue> {
     log::info!("Starting Sunaba (WASM)");
 
-    let app = App::new()
+    let (app, event_loop) = App::new()
         .await
         .map_err(|e| JsValue::from_str(&format!("Failed to create app: {}", e)))?;
 
-    app.run()
-        .map_err(|e| JsValue::from_str(&format!("Failed to run app: {}", e)))
+    App::run(event_loop, app).map_err(|e| JsValue::from_str(&format!("Failed to run app: {}", e)))
 }

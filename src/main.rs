@@ -31,6 +31,6 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn run() -> anyhow::Result<()> {
-    let app = App::new().await?;
-    app.run()
+    let (app, event_loop) = App::new().await?;
+    App::run(event_loop, app)
 }

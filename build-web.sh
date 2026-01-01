@@ -6,7 +6,7 @@ echo "Building Sunaba for Web (WASM)..."
 # Check if wasm-bindgen-cli is installed
 if ! command -v wasm-bindgen &> /dev/null; then
     echo "wasm-bindgen-cli not found. Installing..."
-    cargo install wasm-bindgen-cli --version 0.2.92
+    cargo install wasm-bindgen-cli --version 0.2.106
 fi
 
 # Create output directory
@@ -15,11 +15,11 @@ mkdir -p web/pkg
 
 # Build for wasm32 target
 echo "Compiling to WASM..."
-cargo build --release --target wasm32-unknown-unknown
+cargo build --lib --release --target wasm32-unknown-unknown
 
 # Generate JS bindings
 echo "Generating JS bindings..."
-wasm-bindgen --out-dir web/pkg --web --no-typescript --target web target/wasm32-unknown-unknown/release/sunaba.wasm
+wasm-bindgen --out-dir web/pkg --no-typescript --target web target/wasm32-unknown-unknown/release/sunaba.wasm
 
 echo "✅ Build complete! Output in web/pkg/"
 echo ""

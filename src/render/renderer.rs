@@ -143,12 +143,26 @@ impl Renderer {
             .ok_or_else(|| anyhow::anyhow!("Failed to find suitable GPU adapter"))?;
 
         // Create device and queue
+        // Use adapter's limits for WASM, but exclude removed maxInterStageShaderComponents
+        #[cfg(target_arch = "wasm32")]
+        let limits = {
+            let mut adapter_limits = adapter.limits();
+            // WebGPU removed maxInterStageShaderComponents in favor of maxInterStageShaderVariables
+            // Set to 0 to avoid requesting this obsolete limit
+            adapter_limits.max_inter_stage_shader_components = 0;
+            adapter_limits
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let limits = wgpu::Limits::default();
+
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
+                    required_limits: limits,
                     label: Some("device"),
+                    memory_hints: wgpu::MemoryHints::default(), // New field in wgpu 22+
                 },
                 None,
             )
@@ -474,6 +488,7 @@ impl Renderer {
                 unclipped_depth: false,
                 conservative: false,
             },
+            cache: None, // New field in wgpu 22+
             depth_stencil: None,
             multisample: wgpu::MultisampleState {
                 count: 1,
@@ -501,7 +516,7 @@ impl Renderer {
             vec![0u8; (Self::WORLD_TEXTURE_SIZE * Self::WORLD_TEXTURE_SIZE * 4) as usize];
 
         // Initialize egui renderer
-        let egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1);
+        let egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1, false);
 
         // Initialize overlay as disabled (32 bytes: enabled + padding)
         queue.write_buffer(
@@ -662,7 +677,7 @@ impl Renderer {
 
         // Render egui UI
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("egui_render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -676,8 +691,11 @@ impl Renderer {
                 ..Default::default()
             });
 
-            self.egui_renderer
-                .render(&mut render_pass, &primitives, &screen_descriptor);
+            self.egui_renderer.render(
+                &mut render_pass.forget_lifetime(),
+                &primitives,
+                &screen_descriptor,
+            );
         }
 
         // Free egui textures
