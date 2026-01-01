@@ -1,6 +1,6 @@
 # 砂場 Sunaba
 
-![sanuba.jpg](sanuba.jpg)
+![sunaba.jpg](sunaba.jpg)
 
 A 2D falling-sand physics sandbox survival game featuring ML-evolved creatures with articulated bodies and emergent behaviors, inspired by Noita and Terraria.
 
@@ -61,7 +61,7 @@ git push origin v0.1.0
 ## Downloads
 
 - **Native Builds**: Download from [GitHub Releases](https://github.com/yourusername/sunaba/releases)
-- **Web Version**: Play at [https://yourusername.github.io/sunaba](https://yourusername.github.io/sunuba)
+- **Web Version**: Play at [https://arturh.github.io/sunaba](https://yourusername.github.io/sunuba)
 
 ## Development Status
 
