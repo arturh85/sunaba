@@ -486,18 +486,19 @@ sunaba/
 - [x] Level selector UI (L key) with dropdown menu
 
 ### Phase 5: World Enhancement for Creatures
-- [ ] Extended material properties (nutritional_value, toxicity, structural_strength)
-- [ ] Ore materials and mining mechanics
-- [ ] Organic materials (plant_matter, flesh, bone)
-- [ ] Enhanced chemistry system (20+ reactions: smelting, cooking, fermentation, explosives)
-- [ ] Resource nodes and regeneration (ore veins, plant growth, fruit/seeds)
-- [ ] Light propagation and vision system (day/night cycle, light sources)
-- [ ] Advanced structural mechanics for creature-built structures
-- [ ] **Player inventory system** (resource collection and storage)
-- [ ] **Basic crafting mechanics** (material transformation)
+- [x] Extended material properties (nutritional_value, toxicity, structural_strength)
+- [x] Ore materials and mining mechanics
+- [x] Organic materials (plant_matter, flesh, bone)
+- [x] Enhanced chemistry system (20+ reactions: smelting, cooking, fermentation, explosives)
+- [x] Resource nodes and regeneration (ore veins, plant growth, fruit/seeds)
+- [x] Light propagation and vision system (day/night cycle, light sources)
+- [x] Advanced structural mechanics for creature-built structures
+- [x] **Player inventory system** (resource collection and storage)
+- [x] **Basic crafting mechanics** (material transformation)
 
 ### Phase 6: Creature Architecture
-- [ ] CPPN-NEAT genome representation
+- [ ] Make sure the world is ready for creatures, think of a few example behaviors we want to evolve. Expand the materials, reaction or whatever else as needed.
+- [ ] CPPN-NEAT genome representation plus markdown documentation of what that is and how it works in GENOME.md
 - [ ] Morphology generation (CPPN → rapier2d bodies/joints)
 - [ ] Neural controller (GNN or Transformer)
 - [ ] Sensory systems (raycasts, material sensors, chemical gradients)
