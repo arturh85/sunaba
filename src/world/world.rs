@@ -92,7 +92,7 @@ impl World {
             light_propagation: LightPropagation::new(),
             regeneration_system: RegenerationSystem::new(),
             physics_world: PhysicsWorld::new(),
-            creature_manager: crate::creature::spawning::CreatureManager::new(200),  // Max 200 creatures
+            creature_manager: crate::creature::spawning::CreatureManager::new(200), // Max 200 creatures
             player: Player::new(glam::Vec2::new(0.0, 100.0)),
             active_chunks: Vec::new(),
             time_accumulator: 0.0,
@@ -101,7 +101,7 @@ impl World {
             growth_timer: 0.0,
             persistence: None,
             generator: WorldGenerator::new(42), // Default seed
-            loaded_chunk_limit: 3000,  // ~19MB max memory
+            loaded_chunk_limit: 3000,           // ~19MB max memory
         };
 
         // Initialize with some test chunks
@@ -235,14 +235,14 @@ impl World {
 
         // Check 8 points around hitbox
         let check_points = [
-            (x - width/2.0, y - height/2.0),  // Bottom-left
-            (x + width/2.0, y - height/2.0),  // Bottom-right
-            (x - width/2.0, y + height/2.0),  // Top-left
-            (x + width/2.0, y + height/2.0),  // Top-right
-            (x, y - height/2.0),              // Bottom-center
-            (x, y + height/2.0),              // Top-center
-            (x - width/2.0, y),               // Left-center
-            (x + width/2.0, y),               // Right-center
+            (x - width / 2.0, y - height / 2.0), // Bottom-left
+            (x + width / 2.0, y - height / 2.0), // Bottom-right
+            (x - width / 2.0, y + height / 2.0), // Top-left
+            (x + width / 2.0, y + height / 2.0), // Top-right
+            (x, y - height / 2.0),               // Bottom-center
+            (x, y + height / 2.0),               // Top-center
+            (x - width / 2.0, y),                // Left-center
+            (x + width / 2.0, y),                // Right-center
         ];
 
         for (px, py) in check_points {
@@ -266,9 +266,15 @@ impl World {
         // Check 3 points just below player's feet
         let check_y = self.player.position.y - (crate::entity::player::Player::HEIGHT / 2.0) - 1.0;
         let check_points = [
-            (self.player.position.x - crate::entity::player::Player::WIDTH / 4.0, check_y),  // Left
-            (self.player.position.x, check_y),                                                // Center
-            (self.player.position.x + crate::entity::player::Player::WIDTH / 4.0, check_y),  // Right
+            (
+                self.player.position.x - crate::entity::player::Player::WIDTH / 4.0,
+                check_y,
+            ), // Left
+            (self.player.position.x, check_y), // Center
+            (
+                self.player.position.x + crate::entity::player::Player::WIDTH / 4.0,
+                check_y,
+            ), // Right
         ];
 
         for (px, py) in check_points {
@@ -342,14 +348,14 @@ impl World {
             new_x,
             self.player.position.y,
             Player::WIDTH,
-            Player::HEIGHT
+            Player::HEIGHT,
         );
 
         let can_move_y = !self.check_solid_collision(
             self.player.position.x,
             new_y,
             Player::WIDTH,
-            Player::HEIGHT
+            Player::HEIGHT,
         );
 
         // Apply movement only on non-colliding axes
@@ -437,12 +443,12 @@ impl World {
     }
 
     /// Spawn creature at player's current position
-    pub fn spawn_creature_at_player(&mut self, genome: crate::creature::genome::CreatureGenome) -> crate::entity::EntityId {
-        self.creature_manager.spawn_creature(
-            genome,
-            self.player.position,
-            &mut self.physics_world
-        )
+    pub fn spawn_creature_at_player(
+        &mut self,
+        genome: crate::creature::genome::CreatureGenome,
+    ) -> crate::entity::EntityId {
+        self.creature_manager
+            .spawn_creature(genome, self.player.position, &mut self.physics_world)
     }
 
     /// Mine a single pixel and add it to player's inventory
@@ -756,11 +762,11 @@ impl World {
         // Temporarily take creature_manager and physics_world to avoid borrow checker issues
         let mut creature_manager = std::mem::replace(
             &mut self.creature_manager,
-            crate::creature::spawning::CreatureManager::new(0) // Dummy placeholder
+            crate::creature::spawning::CreatureManager::new(0), // Dummy placeholder
         );
         let mut physics_world = std::mem::replace(
             &mut self.physics_world,
-            crate::physics::PhysicsWorld::empty() // Lightweight placeholder
+            crate::physics::PhysicsWorld::empty(), // Lightweight placeholder
         );
 
         creature_manager.update(1.0 / 60.0, self, &mut physics_world);
@@ -1374,7 +1380,8 @@ impl World {
         // Add to active chunks if within range of player
         let dist_x = (pos.x - (self.player.position.x as i32 / CHUNK_SIZE as i32)).abs();
         let dist_y = (pos.y - (self.player.position.y as i32 / CHUNK_SIZE as i32)).abs();
-        if dist_x <= Self::ACTIVE_CHUNK_RADIUS && dist_y <= Self::ACTIVE_CHUNK_RADIUS
+        if dist_x <= Self::ACTIVE_CHUNK_RADIUS
+            && dist_y <= Self::ACTIVE_CHUNK_RADIUS
             && !self.active_chunks.contains(&pos)
         {
             self.active_chunks.push(pos);

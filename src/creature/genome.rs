@@ -29,7 +29,13 @@ impl ActivationFunction {
             Self::Gaussian => (-x * x).exp(),
             Self::Sine => x.sin(),
             Self::Relu => x.max(0.0),
-            Self::Step => if x > 0.0 { 1.0 } else { 0.0 },
+            Self::Step => {
+                if x > 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
         }
     }
 }
@@ -45,9 +51,9 @@ pub struct CppnNode {
 /// Type of CPPN node
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum NodeType {
-    Input,   // Spatial coordinates (x, y, d)
-    Hidden,  // Internal computation
-    Output,  // Morphology properties
+    Input,  // Spatial coordinates (x, y, d)
+    Hidden, // Internal computation
+    Output, // Morphology properties
 }
 
 /// Connection between CPPN nodes
@@ -64,10 +70,10 @@ pub struct CppnGenome {
     #[serde(skip)]
     pub graph: DiGraph<CppnNode, CppnConnection>,
 
-    pub input_node_ids: Vec<u64>,    // Node IDs for input nodes
-    pub output_node_ids: Vec<u64>,   // Node IDs for output nodes
+    pub input_node_ids: Vec<u64>,  // Node IDs for input nodes
+    pub output_node_ids: Vec<u64>, // Node IDs for output nodes
 
-    pub innovation_numbers: HashMap<(u64, u64), u64>,  // Track connection innovations
+    pub innovation_numbers: HashMap<(u64, u64), u64>, // Track connection innovations
     pub next_node_id: u64,
     pub next_innovation: u64,
 }
@@ -105,10 +111,10 @@ impl CppnGenome {
 
         // Create 4 output nodes: radius, density, has_joint, joint_type
         for activation in [
-            ActivationFunction::Sigmoid,  // radius (0-1, scaled later)
-            ActivationFunction::Sigmoid,  // density (0-1)
-            ActivationFunction::Sigmoid,  // has_joint (0-1, threshold at 0.5)
-            ActivationFunction::Tanh,     // joint_type (-1 to 1)
+            ActivationFunction::Sigmoid, // radius (0-1, scaled later)
+            ActivationFunction::Sigmoid, // density (0-1)
+            ActivationFunction::Sigmoid, // has_joint (0-1, threshold at 0.5)
+            ActivationFunction::Tanh,    // joint_type (-1 to 1)
         ] {
             let node = CppnNode {
                 id: next_node_id,
@@ -210,10 +216,10 @@ impl CppnGenome {
         }
 
         CppnOutput {
-            radius: outputs[0].clamp(0.0, 1.0),       // Clamp to [0, 1]
-            density: outputs[1].clamp(0.0, 1.0),      // Clamp to [0, 1]
-            has_joint: outputs[2] > 0.5,              // Threshold
-            joint_type: outputs[3].clamp(-1.0, 1.0),  // Clamp to [-1, 1]
+            radius: outputs[0].clamp(0.0, 1.0),      // Clamp to [0, 1]
+            density: outputs[1].clamp(0.0, 1.0),     // Clamp to [0, 1]
+            has_joint: outputs[2] > 0.5,             // Threshold
+            joint_type: outputs[3].clamp(-1.0, 1.0), // Clamp to [-1, 1]
         }
     }
 
@@ -232,17 +238,17 @@ pub struct CppnOutput {
     pub radius: f32,
     pub density: f32,
     pub has_joint: bool,
-    pub joint_type: f32,  // Continuous value mapped to joint type
+    pub joint_type: f32, // Continuous value mapped to joint type
 }
 
 /// Controller genome (GNN weights)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControllerGenome {
-    pub message_weights: Vec<f32>,      // Message passing layer
-    pub update_weights: Vec<f32>,       // Node update layer
-    pub output_weights: Vec<f32>,       // Motor command projection
-    pub message_passing_steps: usize,   // Number of GNN rounds
-    pub hidden_dim: usize,              // Feature dimension
+    pub message_weights: Vec<f32>,    // Message passing layer
+    pub update_weights: Vec<f32>,     // Node update layer
+    pub output_weights: Vec<f32>,     // Motor command projection
+    pub message_passing_steps: usize, // Number of GNN rounds
+    pub hidden_dim: usize,            // Feature dimension
 }
 
 impl ControllerGenome {
@@ -257,8 +263,8 @@ impl ControllerGenome {
         // output_weights: hidden_dim -> output_dim (motor commands)
 
         // Estimate sizes (will be adjusted when morphology is known)
-        let input_dim_estimate = 10;  // Joint angles, velocities, contacts, etc.
-        let output_dim_estimate = 5;  // Motor commands per joint
+        let input_dim_estimate = 10; // Joint angles, velocities, contacts, etc.
+        let output_dim_estimate = 5; // Motor commands per joint
 
         let message_weight_count = input_dim_estimate * hidden_dim;
         let update_weight_count = hidden_dim * hidden_dim;
@@ -289,10 +295,10 @@ impl ControllerGenome {
 /// Behavioral traits
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BehavioralTraits {
-    pub aggression: f32,      // 0.0 - 1.0
-    pub curiosity: f32,       // 0.0 - 1.0
-    pub sociality: f32,       // 0.0 - 1.0
-    pub territoriality: f32,  // 0.0 - 1.0
+    pub aggression: f32,     // 0.0 - 1.0
+    pub curiosity: f32,      // 0.0 - 1.0
+    pub sociality: f32,      // 0.0 - 1.0
+    pub territoriality: f32, // 0.0 - 1.0
 }
 
 impl Default for BehavioralTraits {
@@ -309,9 +315,9 @@ impl Default for BehavioralTraits {
 /// Metabolic parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetabolicParams {
-    pub hunger_rate: f32,               // Units per second
-    pub temperature_tolerance: (f32, f32),  // (min, max) in Celsius
-    pub oxygen_requirement: f32,        // Units per second
+    pub hunger_rate: f32,                  // Units per second
+    pub temperature_tolerance: (f32, f32), // (min, max) in Celsius
+    pub oxygen_requirement: f32,           // Units per second
 }
 
 impl Default for MetabolicParams {

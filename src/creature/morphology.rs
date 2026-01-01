@@ -11,10 +11,7 @@ use super::genome::CreatureGenome;
 /// Joint type between body parts
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum JointType {
-    Revolute {
-        min_angle: f32,
-        max_angle: f32,
-    },
+    Revolute { min_angle: f32, max_angle: f32 },
     Fixed,
 }
 
@@ -69,8 +66,8 @@ impl CreatureMorphology {
 
                 // Only create body part if radius is significant
                 if output.radius > 0.3 {
-                    let radius = config.min_radius
-                        + output.radius * (config.max_radius - config.min_radius);
+                    let radius =
+                        config.min_radius + output.radius * (config.max_radius - config.min_radius);
 
                     let body_part = BodyPart {
                         local_position: Vec2::new(norm_x * 20.0, norm_y * 20.0), // Scale to world units
@@ -331,7 +328,7 @@ impl CreatureMorphology {
 /// Configuration for morphology generation
 #[derive(Debug, Clone)]
 pub struct MorphologyConfig {
-    pub grid_resolution: usize,  // Sample CPPN at NxN grid
+    pub grid_resolution: usize, // Sample CPPN at NxN grid
     pub max_body_parts: usize,
     pub min_radius: f32,
     pub max_radius: f32,
@@ -524,7 +521,10 @@ mod tests {
 
         for joint in &morph.joints {
             match joint.joint_type {
-                JointType::Revolute { min_angle, max_angle } => {
+                JointType::Revolute {
+                    min_angle,
+                    max_angle,
+                } => {
                     assert!(max_angle > min_angle);
                 }
                 JointType::Fixed => {}

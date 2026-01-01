@@ -15,7 +15,7 @@ mkdir -p web/pkg
 
 # Build for wasm32 target
 echo "Compiling to WASM..."
-cargo build --lib --release --target wasm32-unknown-unknown
+RUSTFLAGS='--cfg getrandom_backend="wasm_js"' cargo build --lib --release --target wasm32-unknown-unknown
 
 # Generate JS bindings
 echo "Generating JS bindings..."

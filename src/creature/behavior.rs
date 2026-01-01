@@ -11,9 +11,9 @@ use super::sensors::SensoryInput;
 /// High-level needs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatureNeeds {
-    pub hunger: f32,        // 0.0 = satisfied, 1.0 = starving
-    pub threat_level: f32,  // 0.0 = safe, 1.0 = extreme danger
-    pub energy: f32,        // 0.0 = exhausted, 1.0 = full
+    pub hunger: f32,       // 0.0 = satisfied, 1.0 = starving
+    pub threat_level: f32, // 0.0 = safe, 1.0 = extreme danger
+    pub energy: f32,       // 0.0 = exhausted, 1.0 = full
 }
 
 impl Default for CreatureNeeds {
@@ -188,15 +188,13 @@ impl GoalPlanner {
                     material_id: 0, // Placeholder
                 });
             } else {
-                self.action_plan.push_back(CreatureAction::Wander {
-                    duration: 5.0,
-                });
+                self.action_plan
+                    .push_back(CreatureAction::Wander { duration: 5.0 });
             }
         } else {
             // Default: wander
-            self.action_plan.push_back(CreatureAction::Wander {
-                duration: 5.0,
-            });
+            self.action_plan
+                .push_back(CreatureAction::Wander { duration: 5.0 });
         }
     }
 
@@ -276,8 +274,18 @@ mod tests {
     #[test]
     fn test_action_duration() {
         assert_eq!(CreatureAction::Wander { duration: 5.0 }.duration(), 5.0);
-        assert_eq!(CreatureAction::Eat { position: Vec2::ZERO, material_id: 1 }.duration(), 1.0);
-        assert_eq!(CreatureAction::MoveTo { target: Vec2::ZERO }.duration(), 2.0);
+        assert_eq!(
+            CreatureAction::Eat {
+                position: Vec2::ZERO,
+                material_id: 1
+            }
+            .duration(),
+            1.0
+        );
+        assert_eq!(
+            CreatureAction::MoveTo { target: Vec2::ZERO }.duration(),
+            2.0
+        );
     }
 
     #[test]
@@ -403,7 +411,9 @@ mod tests {
     #[test]
     fn test_plan_validation() {
         let mut planner = GoalPlanner::new();
-        planner.action_plan.push_back(CreatureAction::Wander { duration: 5.0 });
+        planner
+            .action_plan
+            .push_back(CreatureAction::Wander { duration: 5.0 });
 
         // Plan with no threat, sensory with no threat - valid
         let sensory_safe = SensoryInput {

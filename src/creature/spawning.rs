@@ -37,7 +37,10 @@ impl CreatureManager {
     ) -> EntityId {
         // Check if we can spawn
         if !self.can_spawn() {
-            log::warn!("Cannot spawn creature: max population reached ({})", self.max_creatures);
+            log::warn!(
+                "Cannot spawn creature: max population reached ({})",
+                self.max_creatures
+            );
             return EntityId::new(); // Return dummy ID
         }
 
@@ -51,8 +54,14 @@ impl CreatureManager {
         // Add to manager
         self.creatures.insert(id, creature);
 
-        log::info!("Spawned creature {} at ({:.1}, {:.1}). Population: {}/{}",
-            id, position.x, position.y, self.count(), self.max_creatures);
+        log::info!(
+            "Spawned creature {} at ({:.1}, {:.1}). Population: {}/{}",
+            id,
+            position.x,
+            position.y,
+            self.count(),
+            self.max_creatures
+        );
 
         id
     }
@@ -67,8 +76,12 @@ impl CreatureManager {
                 }
             }
 
-            log::info!("Removed creature {}. Population: {}/{}",
-                id, self.count(), self.max_creatures);
+            log::info!(
+                "Removed creature {}. Population: {}/{}",
+                id,
+                self.count(),
+                self.max_creatures
+            );
         }
     }
 
@@ -81,11 +94,8 @@ impl CreatureManager {
         // Update each creature
         for (id, creature) in self.creatures.iter_mut() {
             // Gather sensory input
-            let sensory_input = SensoryInput::gather(
-                world,
-                creature.position,
-                &creature.sensor_config,
-            );
+            let sensory_input =
+                SensoryInput::gather(world, creature.position, &creature.sensor_config);
 
             // Update creature state
             let died = creature.update(delta_time, &sensory_input);
@@ -101,7 +111,8 @@ impl CreatureManager {
             if let Some(ref physics) = creature.physics {
                 if !physics.link_handles.is_empty() {
                     // Get position from first body part (root)
-                    if let Some(body) = physics_world.rigid_body_set().get(physics.link_handles[0]) {
+                    if let Some(body) = physics_world.rigid_body_set().get(physics.link_handles[0])
+                    {
                         let translation = body.translation();
                         creature.position = Vec2::new(translation.x, translation.y);
                     }

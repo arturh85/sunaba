@@ -14,9 +14,9 @@ pub struct Player {
     pub id: EntityId,
     pub position: Vec2,
     pub velocity: Vec2,
-    pub grounded: bool,           // Is player standing on ground?
-    pub coyote_time: f32,         // Grace period after leaving ground (0.1s)
-    pub jump_buffer: f32,         // Jump input buffering (0.1s)
+    pub grounded: bool,   // Is player standing on ground?
+    pub coyote_time: f32, // Grace period after leaving ground (0.1s)
+    pub jump_buffer: f32, // Jump input buffering (0.1s)
     pub inventory: Inventory,
     pub health: Health,
     pub hunger: Hunger,
@@ -26,15 +26,15 @@ pub struct Player {
 }
 
 impl Player {
-    pub const WIDTH: f32 = 8.0;   // pixels
+    pub const WIDTH: f32 = 8.0; // pixels
     pub const HEIGHT: f32 = 16.0; // pixels
 
     // Physics constants
-    pub const GRAVITY: f32 = 800.0;        // px/s² (downward)
-    pub const JUMP_VELOCITY: f32 = 300.0;  // px/s (upward)
+    pub const GRAVITY: f32 = 800.0; // px/s² (downward)
+    pub const JUMP_VELOCITY: f32 = 300.0; // px/s (upward)
     pub const MAX_FALL_SPEED: f32 = 500.0; // Terminal velocity
-    pub const COYOTE_TIME: f32 = 0.1;      // Jump grace period (seconds)
-    pub const JUMP_BUFFER: f32 = 0.1;      // Jump input buffer (seconds)
+    pub const COYOTE_TIME: f32 = 0.1; // Jump grace period (seconds)
+    pub const JUMP_BUFFER: f32 = 0.1; // Jump input buffer (seconds)
 
     /// Create a new player at the specified position
     pub fn new(position: Vec2) -> Self {
@@ -42,7 +42,7 @@ impl Player {
             id: EntityId::new(),
             position,
             velocity: Vec2::ZERO,
-            grounded: false,      // Start in air
+            grounded: false, // Start in air
             coyote_time: 0.0,
             jump_buffer: 0.0,
             inventory: Inventory::new(50), // 50 slots
@@ -80,9 +80,9 @@ impl Player {
             id,
             position,
             velocity,
-            grounded: false,      // Runtime physics state
-            coyote_time: 0.0,     // Runtime physics state
-            jump_buffer: 0.0,     // Runtime physics state
+            grounded: false,  // Runtime physics state
+            coyote_time: 0.0, // Runtime physics state
+            jump_buffer: 0.0, // Runtime physics state
             inventory,
             health,
             hunger,

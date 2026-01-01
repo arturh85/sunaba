@@ -8,12 +8,12 @@
 
 #![allow(clippy::module_inception)]
 
+pub mod behavior;
+pub mod creature;
 pub mod genome;
 pub mod morphology;
 pub mod neural;
 pub mod sensors;
-pub mod behavior;
-pub mod creature;
 pub mod spawning;
 pub mod world_interaction;
 

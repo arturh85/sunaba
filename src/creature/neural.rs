@@ -44,8 +44,8 @@ impl BodyPartFeatures {
 /// Graph structure for GNN (mirrors morphology)
 #[derive(Debug, Clone)]
 pub struct MorphologyGraph {
-    pub node_features: Vec<Vec<f32>>,  // Per-node feature vectors
-    pub edges: Vec<(usize, usize)>,    // Adjacency list
+    pub node_features: Vec<Vec<f32>>, // Per-node feature vectors
+    pub edges: Vec<(usize, usize)>,   // Adjacency list
     pub num_nodes: usize,
 }
 
@@ -187,11 +187,11 @@ pub fn extract_body_part_features(
         let contact_materials = vec![0.0; 5]; // Placeholder for top 5 material types
 
         features.push(BodyPartFeatures {
-            joint_angle: 0.0,              // TODO: Extract from physics
-            joint_angular_velocity: 0.0,   // TODO: Extract from physics
-            orientation: 0.0,              // TODO: Extract from physics
-            velocity: Vec2::ZERO,          // TODO: Extract from physics
-            ground_contact: 0.0,           // TODO: Raycast downward
+            joint_angle: 0.0,            // TODO: Extract from physics
+            joint_angular_velocity: 0.0, // TODO: Extract from physics
+            orientation: 0.0,            // TODO: Extract from physics
+            velocity: Vec2::ZERO,        // TODO: Extract from physics
+            ground_contact: 0.0,         // TODO: Raycast downward
             raycast_distances,
             contact_materials,
         });
@@ -220,9 +220,9 @@ mod tests {
         assert_eq!(vec.len(), 10); // 6 base + 2 raycasts + 2 materials
 
         // Check values are in correct order
-        assert_eq!(vec[0], 0.5);  // joint_angle
-        assert_eq!(vec[3], 1.0);  // velocity.x
-        assert_eq!(vec[6], 0.5);  // first raycast
+        assert_eq!(vec[0], 0.5); // joint_angle
+        assert_eq!(vec[3], 1.0); // velocity.x
+        assert_eq!(vec[6], 0.5); // first raycast
     }
 
     #[test]
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn test_extract_body_part_features() {
         use crate::creature::morphology::CreatureMorphology;
-        use crate::creature::sensors::{SensoryInput, SensorConfig};
+        use crate::creature::sensors::{SensorConfig, SensoryInput};
         use crate::physics::PhysicsWorld;
         use crate::world::World;
 
@@ -297,17 +297,9 @@ mod tests {
         let world = World::new();
         let config = SensorConfig::default();
 
-        let sensory_input = SensoryInput::gather(
-            &world,
-            Vec2::new(100.0, 100.0),
-            &config,
-        );
+        let sensory_input = SensoryInput::gather(&world, Vec2::new(100.0, 100.0), &config);
 
-        let features = extract_body_part_features(
-            &morphology,
-            &physics_world,
-            &sensory_input,
-        );
+        let features = extract_body_part_features(&morphology, &physics_world, &sensory_input);
 
         // Should have features for each body part
         assert_eq!(features.len(), morphology.body_parts.len());

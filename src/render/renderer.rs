@@ -752,11 +752,14 @@ impl Renderer {
                 let py = player_y + dy;
 
                 // Bounds check
-                if px >= 0 && px < Self::WORLD_TEXTURE_SIZE as i32 &&
-                   py >= 0 && py < Self::WORLD_TEXTURE_SIZE as i32 {
+                if px >= 0
+                    && px < Self::WORLD_TEXTURE_SIZE as i32
+                    && py >= 0
+                    && py < Self::WORLD_TEXTURE_SIZE as i32
+                {
                     let idx = ((py as u32 * Self::WORLD_TEXTURE_SIZE + px as u32) * 4) as usize;
                     if idx + 3 < self.pixel_buffer.len() {
-                        self.pixel_buffer[idx..idx+4].copy_from_slice(&player_color);
+                        self.pixel_buffer[idx..idx + 4].copy_from_slice(&player_color);
                     }
                 }
             }

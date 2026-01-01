@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Raycast vision result
 #[derive(Debug, Clone)]
 pub struct RaycastHit {
-    pub distance: f32,       // Normalized by max_distance
+    pub distance: f32, // Normalized by max_distance
     pub material_id: u16,
     pub temperature: f32,
     pub light_level: u8,
@@ -17,16 +17,16 @@ pub struct RaycastHit {
 /// Chemical gradient detection
 #[derive(Debug, Clone)]
 pub struct ChemicalGradient {
-    pub food: f32,      // 0.0 - 1.0
-    pub danger: f32,    // 0.0 - 1.0
-    pub mate: f32,      // 0.0 - 1.0
+    pub food: f32,   // 0.0 - 1.0
+    pub danger: f32, // 0.0 - 1.0
+    pub mate: f32,   // 0.0 - 1.0
 }
 
 /// Complete sensory input
 #[derive(Debug, Clone)]
 pub struct SensoryInput {
-    pub raycasts: Vec<RaycastHit>,        // Typically 8 directions
-    pub contact_materials: Vec<u16>,      // Materials in contact
+    pub raycasts: Vec<RaycastHit>,   // Typically 8 directions
+    pub contact_materials: Vec<u16>, // Materials in contact
     pub gradients: ChemicalGradient,
     pub nearest_food: Option<Vec2>,
     pub nearest_threat: Option<Vec2>,
@@ -34,24 +34,26 @@ pub struct SensoryInput {
 
 impl SensoryInput {
     /// Gather all sensory input for creature at position
-    pub fn gather(
-        world: &crate::world::World,
-        position: Vec2,
-        config: &SensorConfig,
-    ) -> Self {
+    pub fn gather(world: &crate::world::World, position: Vec2, config: &SensorConfig) -> Self {
         // Raycast vision in multiple directions
-        let raycasts = raycast_vision(world, position, config.num_raycasts, config.raycast_distance);
+        let raycasts = raycast_vision(
+            world,
+            position,
+            config.num_raycasts,
+            config.raycast_distance,
+        );
 
         // Detect nearby food and threats
         let nearest_food = detect_nearby_food(world, position, config.food_detection_radius);
-        let nearest_threat =
-            detect_nearby_threats(world, position, config.threat_detection_radius);
+        let nearest_threat = detect_nearby_threats(world, position, config.threat_detection_radius);
 
         // Calculate chemical gradients
         let gradients = calculate_gradients(
             world,
             position,
-            config.food_detection_radius.max(config.threat_detection_radius),
+            config
+                .food_detection_radius
+                .max(config.threat_detection_radius),
         );
 
         // For now, contact materials is empty (would need physics integration)
@@ -157,7 +159,7 @@ fn raycast_dda(
 
     // No hit - return air at max distance
     RaycastHit {
-        distance: 1.0, // Max distance (normalized)
+        distance: 1.0,  // Max distance (normalized)
         material_id: 0, // Air
         temperature: 20.0,
         light_level: 15, // Max light (outdoor)

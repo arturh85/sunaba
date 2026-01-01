@@ -20,17 +20,17 @@ pub struct Creature {
     pub genome: CreatureGenome,
     pub morphology: CreatureMorphology,
 
-    #[serde(skip)]  // Rebuilt from morphology on load
+    #[serde(skip)] // Rebuilt from morphology on load
     pub physics: Option<MorphologyPhysics>,
 
     pub health: Health,
     pub hunger: Hunger,
     pub needs: CreatureNeeds,
 
-    #[serde(skip)]  // Rebuilt on load
+    #[serde(skip)] // Rebuilt on load
     pub planner: Option<GoalPlanner>,
 
-    #[serde(skip)]  // Rebuilt from genome on load
+    #[serde(skip)] // Rebuilt from genome on load
     pub brain: Option<SimpleNeuralController>,
 
     pub current_action: Option<CreatureAction>,
@@ -93,8 +93,7 @@ impl Creature {
         }
 
         // 2. Update needs from sensory input
-        self.needs
-            .update(sensory_input, self.hunger.percentage());
+        self.needs.update(sensory_input, self.hunger.percentage());
 
         // 3. Update behavior planning
         if let Some(ref mut planner) = self.planner {
@@ -131,11 +130,8 @@ impl Creature {
 
     /// Rebuild physics body (after loading from save)
     pub fn rebuild_physics(&mut self, physics_world: &mut crate::physics::PhysicsWorld) {
-        let physics = MorphologyPhysics::from_morphology(
-            &self.morphology,
-            self.position,
-            physics_world,
-        );
+        let physics =
+            MorphologyPhysics::from_morphology(&self.morphology, self.position, physics_world);
         self.physics = Some(physics);
     }
 
@@ -148,28 +144,21 @@ impl Creature {
             * super::neural::BodyPartFeatures::feature_dim(num_raycasts, num_materials);
         let output_dim = self.morphology.joints.len();
 
-        let brain = SimpleNeuralController::from_genome(
-            &self.genome.controller,
-            input_dim,
-            output_dim,
-        );
+        let brain =
+            SimpleNeuralController::from_genome(&self.genome.controller, input_dim, output_dim);
 
         self.brain = Some(brain);
         self.planner = Some(GoalPlanner::new());
     }
 
     /// Execute current action (called by CreatureManager)
-    pub fn execute_action(
-        &mut self,
-        world: &mut crate::world::World,
-        _delta_time: f32,
-    ) -> bool {
+    pub fn execute_action(&mut self, world: &mut crate::world::World, _delta_time: f32) -> bool {
         if let Some(ref action) = self.current_action {
             match action {
                 CreatureAction::Eat { position, .. } => {
-                    if let Some(nutrition) =
-                        super::world_interaction::consume_edible_material(world, *position, &self.id)
-                    {
+                    if let Some(nutrition) = super::world_interaction::consume_edible_material(
+                        world, *position, &self.id,
+                    ) {
                         self.hunger.eat(nutrition);
                         return true;
                     }

@@ -146,7 +146,7 @@ pub fn get_nutritional_value(world: &World, material_id: u16) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entity::{EntityId, health::Health};
+    use crate::entity::{health::Health, EntityId};
 
     #[test]
     fn test_is_edible() {
@@ -213,11 +213,7 @@ mod tests {
 
         // Safe area should not damage
         // May or may not be damaged depending on world state, just test it doesn't panic
-        let _damaged = apply_environmental_damage(
-            &world,
-            Vec2::new(100.0, 100.0),
-            &mut health,
-        );
+        let _damaged = apply_environmental_damage(&world, Vec2::new(100.0, 100.0), &mut health);
     }
 
     #[test]

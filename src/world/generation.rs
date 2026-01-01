@@ -11,7 +11,7 @@ pub struct WorldGenerator {
     iron_noise: Perlin,
     copper_noise: Perlin,
     gold_noise: Perlin,
-    plant_noise: Perlin,  // For surface plant matter distribution
+    plant_noise: Perlin, // For surface plant matter distribution
 }
 
 impl WorldGenerator {
@@ -78,10 +78,9 @@ impl WorldGenerator {
 
         // Plant matter on surface (20-30% coverage)
         if world_y == SURFACE_LEVEL {
-            let plant_value = self.plant_noise.get([
-                world_x as f64 * 0.05,
-                world_y as f64 * 0.05
-            ]);
+            let plant_value = self
+                .plant_noise
+                .get([world_x as f64 * 0.05, world_y as f64 * 0.05]);
 
             // Threshold 0.5 = ~25% coverage (medium density)
             if plant_value > 0.5 {
