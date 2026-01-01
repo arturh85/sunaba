@@ -1,6 +1,7 @@
 use crate::entity::player::Player;
 use crate::world::chunk::Chunk;
 use crate::world::generation::WorldGenerator;
+#[allow(unused_imports)]
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
