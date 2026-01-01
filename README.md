@@ -60,8 +60,8 @@ git push origin v0.1.0
 
 ## Downloads
 
-- **Native Builds**: Download from [GitHub Releases](https://github.com/yourusername/sunaba/releases)
-- **Web Version**: Play at [https://arturh.github.io/sunaba](https://yourusername.github.io/sunuba)
+- **Native Builds**: Download from [GitHub Releases](https://github.com/arturh85/sunaba/releases)
+- **Web Version**: Play at [https://arturh85.github.io/sunaba](https://arturh85.github.io/sunuba)
 
 ## Development Status
 
