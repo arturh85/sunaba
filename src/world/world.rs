@@ -237,16 +237,21 @@ impl World {
     fn check_solid_collision(&self, x: f32, y: f32, width: f32, height: f32) -> bool {
         use crate::simulation::MaterialType;
 
+        // Add collision tolerance - shrink hitbox slightly to prevent snagging on single pixels
+        const TOLERANCE: f32 = 0.5; // Pixels of wiggle room
+        let effective_width = width - TOLERANCE;
+        let effective_height = height - TOLERANCE;
+
         // Check 8 points around hitbox
         let check_points = [
-            (x - width / 2.0, y - height / 2.0), // Bottom-left
-            (x + width / 2.0, y - height / 2.0), // Bottom-right
-            (x - width / 2.0, y + height / 2.0), // Top-left
-            (x + width / 2.0, y + height / 2.0), // Top-right
-            (x, y - height / 2.0),               // Bottom-center
-            (x, y + height / 2.0),               // Top-center
-            (x - width / 2.0, y),                // Left-center
-            (x + width / 2.0, y),                // Right-center
+            (x - effective_width / 2.0, y - effective_height / 2.0), // Bottom-left
+            (x + effective_width / 2.0, y - effective_height / 2.0), // Bottom-right
+            (x - effective_width / 2.0, y + effective_height / 2.0), // Top-left
+            (x + effective_width / 2.0, y + effective_height / 2.0), // Top-right
+            (x, y - effective_height / 2.0),                         // Bottom-center
+            (x, y + effective_height / 2.0),                         // Top-center
+            (x - effective_width / 2.0, y),                          // Left-center
+            (x + effective_width / 2.0, y),                          // Right-center
         ];
 
         for (px, py) in check_points {
@@ -267,8 +272,8 @@ impl World {
     fn is_player_grounded(&self) -> bool {
         use crate::simulation::MaterialType;
 
-        // Check 3 points just below player's feet
-        let check_y = self.player.position.y - (crate::entity::player::Player::HEIGHT / 2.0) - 1.0;
+        // Check 3 points just below player's feet (more forgiving range)
+        let check_y = self.player.position.y - (crate::entity::player::Player::HEIGHT / 2.0) - 1.5;
         let check_points = [
             (
                 self.player.position.x - crate::entity::player::Player::WIDTH / 4.0,
@@ -315,15 +320,30 @@ impl World {
             self.player.jump_buffer = (self.player.jump_buffer - dt).max(0.0);
         }
 
-        // 4. Horizontal movement (A/D keys)
-        let mut horizontal_velocity = 0.0;
+        // 4. Horizontal movement (A/D keys) with friction
+        const PLAYER_DECELERATION: f32 = 800.0; // px/s² (friction when no input)
+
+        let mut horizontal_input = 0.0;
         if input.a_pressed {
-            horizontal_velocity -= 1.0;
+            horizontal_input -= 1.0;
         }
         if input.d_pressed {
-            horizontal_velocity += 1.0;
+            horizontal_input += 1.0;
         }
-        self.player.velocity.x = horizontal_velocity * Self::PLAYER_SPEED;
+
+        if horizontal_input != 0.0 {
+            // Apply movement input
+            self.player.velocity.x = horizontal_input * Self::PLAYER_SPEED;
+        } else if self.player.grounded {
+            // Apply friction when grounded and no input
+            let friction = PLAYER_DECELERATION * dt;
+            if self.player.velocity.x.abs() < friction {
+                self.player.velocity.x = 0.0;
+            } else {
+                self.player.velocity.x -= self.player.velocity.x.signum() * friction;
+            }
+        }
+        // Note: No friction in air - preserve momentum for better jump control
 
         // 5. Vertical movement (gravity + jump)
         if self.player.jump_buffer > 0.0 && self.player.coyote_time > 0.0 {
@@ -371,6 +391,32 @@ impl World {
         // Stop vertical velocity if hit ceiling/floor
         if !can_move_y {
             self.player.velocity.y = 0.0;
+        }
+
+        // 7. Automatic unstuck mechanic - nudge player out of tight spaces if completely stuck
+        if !can_move_x
+            && !can_move_y
+            && (input.a_pressed || input.d_pressed || input.w_pressed || input.s_pressed)
+        {
+            // Try small position adjustments to unstuck player
+            const UNSTUCK_OFFSET: f32 = 0.5;
+            let unstuck_attempts = [
+                (UNSTUCK_OFFSET, 0.0),
+                (-UNSTUCK_OFFSET, 0.0),
+                (0.0, UNSTUCK_OFFSET),
+                (0.0, -UNSTUCK_OFFSET),
+            ];
+
+            for (dx, dy) in unstuck_attempts {
+                let test_x = self.player.position.x + dx;
+                let test_y = self.player.position.y + dy;
+                if !self.check_solid_collision(test_x, test_y, Player::WIDTH, Player::HEIGHT) {
+                    self.player.position.x = test_x;
+                    self.player.position.y = test_y;
+                    log::debug!("Player unstuck: nudged ({}, {})", dx, dy);
+                    return; // Exit early after unstucking
+                }
+            }
         }
 
         if final_movement.length() > 0.0 {
@@ -693,6 +739,47 @@ impl World {
                 material_name
             );
         }
+    }
+
+    /// DEBUG: Instantly mine all materials in a circle around position
+    /// Used for quick world exploration during testing
+    pub fn debug_mine_circle(&mut self, center_x: i32, center_y: i32, radius: i32) {
+        // Iterate over square containing circle
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                // Check if point is inside circle (Euclidean distance)
+                if dx * dx + dy * dy <= radius * radius {
+                    let x = center_x + dx;
+                    let y = center_y + dy;
+
+                    // Get pixel material
+                    if let Some(pixel) = self.get_pixel(x, y) {
+                        let material_id = pixel.material_id;
+
+                        // Skip air and bedrock
+                        if material_id == MaterialId::AIR {
+                            continue;
+                        }
+
+                        let material = self.materials.get(material_id);
+                        if material.hardness.is_none() {
+                            continue; // Bedrock/unmineable materials
+                        }
+
+                        // Remove pixel and add to inventory
+                        self.player.mine_material(material_id);
+                        self.set_pixel(x, y, MaterialId::AIR);
+                    }
+                }
+            }
+        }
+
+        log::debug!(
+            "[DEBUG MINING] Mined circle at ({}, {}) with radius {}",
+            center_x,
+            center_y,
+            radius
+        );
     }
 
     /// Update simulation

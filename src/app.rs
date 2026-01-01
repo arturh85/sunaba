@@ -87,6 +87,7 @@ pub struct InputState {
     pub mouse_world_pos: Option<(i32, i32)>, // Converted to world coords
     pub left_mouse_pressed: bool,
     pub right_mouse_pressed: bool,
+    pub prev_right_mouse_pressed: bool, // Previous frame's right mouse state
 
     // Zoom control
     pub zoom_delta: f32, // Zoom change this frame (1.0 = no change)
@@ -104,6 +105,7 @@ impl InputState {
             mouse_world_pos: None,
             left_mouse_pressed: false,
             right_mouse_pressed: false,
+            prev_right_mouse_pressed: false,
             zoom_delta: 1.0, // No change by default
         }
     }
@@ -330,24 +332,14 @@ impl App {
             );
         }
 
-        // Mining with right mouse button (hold-to-mine)
-        if self.input_state.right_mouse_pressed {
-            if let Some((wx, wy)) = self.input_state.mouse_world_pos {
-                // Start mining if not already mining this pixel
-                let current_target = self.world.player.mining_progress.target_pixel;
-                if current_target != Some((wx, wy)) {
-                    self.world.start_mining(wx, wy);
-                }
-            }
-        } else {
-            // Cancel mining when mouse released
-            if self.world.player.mining_progress.is_mining() {
-                self.world.player.mining_progress.reset();
-            }
+        // DEBUG: Right-click instant mining circle (for exploration)
+        // Only trigger on initial click, not hold
+        if self.input_state.right_mouse_pressed && !self.input_state.prev_right_mouse_pressed {
+            let player_pos = self.world.player.position;
+            let center_x = player_pos.x as i32;
+            let center_y = player_pos.y as i32;
+            self.world.debug_mine_circle(center_x, center_y, 13);
         }
-
-        // Update mining progress each frame
-        self.world.update_mining(1.0 / 60.0);
 
         // Placing material from inventory with left mouse button
         if self.input_state.left_mouse_pressed {
@@ -487,6 +479,7 @@ impl App {
 
         // Reset per-frame input state
         self.input_state.zoom_delta = 1.0;
+        self.input_state.prev_right_mouse_pressed = self.input_state.right_mouse_pressed;
     }
 }
 
