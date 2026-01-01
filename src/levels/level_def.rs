@@ -142,6 +142,12 @@ impl LevelManager {
                 description: "Plant growth, composting ash to fertilizer, erosion, and decay chains",
                 generator: generate_level_20_crafting_workshop,
             },
+            LevelDef {
+                id: 20,
+                name: "Day/Night Cycle",
+                description: "Light propagation, day/night cycle, light-dependent plant growth",
+                generator: generate_level_21_day_night_cycle,
+            },
         ];
 
         Self {

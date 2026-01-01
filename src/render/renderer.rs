@@ -82,15 +82,18 @@ pub struct Renderer {
     // UI rendering
     egui_renderer: egui_wgpu::Renderer,
 
-    // Temperature overlay
+    // Debug overlays (temperature and light)
     temp_texture: wgpu::Texture,
     #[allow(dead_code)]
     temp_texture_view: wgpu::TextureView,
     #[allow(dead_code)]
     temp_sampler: wgpu::Sampler,
+    light_texture: wgpu::Texture,
+    light_texture_view: wgpu::TextureView,
+    light_sampler: wgpu::Sampler,
     overlay_uniform_buffer: wgpu::Buffer,
-    temp_bind_group: wgpu::BindGroup,
-    overlay_enabled: bool,
+    overlay_bind_group: wgpu::BindGroup,
+    overlay_type: u32,  // 0=none, 1=temperature, 2=light
 }
 
 impl Renderer {
@@ -289,7 +292,36 @@ impl Renderer {
             ..Default::default()
         });
 
-        // Overlay uniform buffer (enabled flag)
+        // Light overlay texture (40x40 for 5x5 chunks × 8x8 downsampled light grid)
+        const LIGHT_TEXTURE_SIZE: u32 = 40;
+        let light_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("light_texture"),
+            size: wgpu::Extent3d {
+                width: LIGHT_TEXTURE_SIZE,
+                height: LIGHT_TEXTURE_SIZE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        let light_texture_view = light_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let light_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        // Overlay uniform buffer (overlay type: 0=none, 1=temperature, 2=light)
         let overlay_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("overlay_uniform_buffer"),
             size: 32, // u32 (4) + vec3<u32> padding (16 due to alignment) + struct padding (12) = 32 bytes
@@ -297,10 +329,11 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
-        // Temperature overlay bind group layout
-        let temp_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("temp_bind_group_layout"),
+        // Debug overlay bind group layout (temperature and light)
+        let overlay_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("overlay_bind_group_layout"),
             entries: &[
+                // Binding 0: Temperature texture
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -311,14 +344,34 @@ impl Renderer {
                     },
                     count: None,
                 },
+                // Binding 1: Temperature sampler
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
                 },
+                // Binding 2: Light texture
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // Binding 3: Light sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+                // Binding 4: Overlay uniform (overlay_type)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
@@ -330,9 +383,9 @@ impl Renderer {
             ],
         });
 
-        let temp_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("temp_bind_group"),
-            layout: &temp_bind_group_layout,
+        let overlay_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("overlay_bind_group"),
+            layout: &overlay_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -344,6 +397,14 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&light_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&light_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
                     resource: overlay_uniform_buffer.as_entire_binding(),
                 },
             ],
@@ -358,7 +419,7 @@ impl Renderer {
         // Pipeline layout
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("render_pipeline_layout"),
-            bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout, &temp_bind_group_layout],
+            bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout, &overlay_bind_group_layout],
             push_constant_ranges: &[],
         });
         
@@ -448,9 +509,12 @@ impl Renderer {
             temp_texture,
             temp_texture_view,
             temp_sampler,
+            light_texture,
+            light_texture_view,
+            light_sampler,
             overlay_uniform_buffer,
-            temp_bind_group,
-            overlay_enabled: false,
+            overlay_bind_group,
+            overlay_type: 0,  // 0 = no overlay
         })
     }
     
@@ -551,7 +615,7 @@ impl Renderer {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.world_bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(2, &self.temp_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.overlay_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..6, 0, 0..1);
@@ -737,6 +801,7 @@ impl Renderer {
                         let world_y = chunk_y * CHUNK_SIZE as i32 + (cell_y * CHUNK_SIZE / CELLS_PER_CHUNK) as i32;
 
                         // Texture coordinates (40x40)
+                        // Linear mapping to match shader (no Y-flip needed)
                         let tex_x = ((cx + 2) * CELLS_PER_CHUNK as i32 + cell_x as i32) as usize;
                         let tex_y = ((cy + 2) * CELLS_PER_CHUNK as i32 + cell_y as i32) as usize;
 
@@ -774,20 +839,116 @@ impl Renderer {
         );
     }
 
-    /// Toggle temperature overlay on/off
-    pub fn toggle_temperature_overlay(&mut self) {
-        self.overlay_enabled = !self.overlay_enabled;
-        let enabled_value = if self.overlay_enabled { 1u32 } else { 0u32 };
+    /// Cycle debug overlay: none → temperature → light → none
+    /// T key cycles temperature, V key cycles light
+    pub fn cycle_overlay(&mut self) {
+        self.overlay_type = (self.overlay_type + 1) % 3;
         self.queue.write_buffer(
             &self.overlay_uniform_buffer,
             0,
-            bytemuck::cast_slice(&[enabled_value, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32]),
+            bytemuck::cast_slice(&[self.overlay_type, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32]),
         );
-        log::info!("Temperature overlay: {}", if self.overlay_enabled { "ON" } else { "OFF" });
+        let mode = match self.overlay_type {
+            0 => "OFF",
+            1 => "TEMPERATURE",
+            2 => "LIGHT",
+            _ => "UNKNOWN",
+        };
+        log::info!("Debug overlay: {}", mode);
+    }
+
+    /// Toggle temperature overlay (for T key)
+    pub fn toggle_temperature_overlay(&mut self) {
+        self.overlay_type = if self.overlay_type == 1 { 0 } else { 1 };
+        self.queue.write_buffer(
+            &self.overlay_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.overlay_type, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32]),
+        );
+        log::info!("Temperature overlay: {}", if self.overlay_type == 1 { "ON" } else { "OFF" });
+    }
+
+    /// Toggle light overlay (for V key)
+    pub fn toggle_light_overlay(&mut self) {
+        self.overlay_type = if self.overlay_type == 2 { 0 } else { 2 };
+        self.queue.write_buffer(
+            &self.overlay_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.overlay_type, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32]),
+        );
+        log::info!("Light overlay: {}", if self.overlay_type == 2 { "ON" } else { "OFF" });
     }
 
     /// Check if temperature overlay is enabled
     pub fn is_temperature_overlay_enabled(&self) -> bool {
-        self.overlay_enabled
+        self.overlay_type == 1
+    }
+
+    /// Check if light overlay is enabled
+    pub fn is_light_overlay_enabled(&self) -> bool {
+        self.overlay_type == 2
+    }
+
+    /// Update light overlay texture with data from world
+    pub fn update_light_overlay(&mut self, world: &World) {
+        const LIGHT_TEXTURE_SIZE: u32 = 40;
+        const SAMPLES_PER_CHUNK: usize = 8; // 8x8 downsampled light grid per chunk
+
+        // Create light data buffer (40x40 = 5x5 chunks × 8x8 samples)
+        let mut light_data = vec![0.0f32; (LIGHT_TEXTURE_SIZE * LIGHT_TEXTURE_SIZE) as usize];
+
+        // Sample light from 5x5 chunks around player
+        let player_chunk_x = (world.player.position.x / CHUNK_SIZE as f32).floor() as i32;
+        let player_chunk_y = (world.player.position.y / CHUNK_SIZE as f32).floor() as i32;
+
+        for cy in -2..=2 {
+            for cx in -2..=2 {
+                let chunk_x = player_chunk_x + cx;
+                let chunk_y = player_chunk_y + cy;
+
+                // Get light data for this chunk (8x8 downsampled)
+                for sample_y in 0..SAMPLES_PER_CHUNK {
+                    for sample_x in 0..SAMPLES_PER_CHUNK {
+                        // World coordinates of this sample (center of 8x8 pixel block)
+                        let world_x = chunk_x * CHUNK_SIZE as i32 + (sample_x * CHUNK_SIZE / SAMPLES_PER_CHUNK + CHUNK_SIZE / (SAMPLES_PER_CHUNK * 2)) as i32;
+                        let world_y = chunk_y * CHUNK_SIZE as i32 + (sample_y * CHUNK_SIZE / SAMPLES_PER_CHUNK + CHUNK_SIZE / (SAMPLES_PER_CHUNK * 2)) as i32;
+
+                        // Texture coordinates (40x40)
+                        // Linear mapping to match shader (no Y-flip needed)
+                        let tex_x = ((cx + 2) * SAMPLES_PER_CHUNK as i32 + sample_x as i32) as usize;
+                        let tex_y = ((cy + 2) * SAMPLES_PER_CHUNK as i32 + sample_y as i32) as usize;
+
+                        // Get light level at this world position
+                        let light = world.get_light_at(world_x, world_y).unwrap_or(0) as f32;
+
+                        let idx = tex_y * LIGHT_TEXTURE_SIZE as usize + tex_x;
+                        if idx < light_data.len() {
+                            light_data[idx] = light;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Upload to GPU
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.light_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytemuck::cast_slice(&light_data),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(LIGHT_TEXTURE_SIZE * 4), // 4 bytes per f32
+                rows_per_image: Some(LIGHT_TEXTURE_SIZE),
+            },
+            wgpu::Extent3d {
+                width: LIGHT_TEXTURE_SIZE,
+                height: LIGHT_TEXTURE_SIZE,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 }

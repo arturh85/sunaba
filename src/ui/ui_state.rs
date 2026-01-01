@@ -75,8 +75,8 @@ impl UiState {
     }
 
     /// Update tooltip with world data
-    pub fn update_tooltip(&mut self, world: &crate::world::World, materials: &crate::simulation::Materials, mouse_world_pos: Option<(i32, i32)>) {
-        self.tooltip.update(world, materials, mouse_world_pos);
+    pub fn update_tooltip(&mut self, world: &crate::world::World, materials: &crate::simulation::Materials, mouse_world_pos: Option<(i32, i32)>, light_overlay_active: bool) {
+        self.tooltip.update(world, materials, mouse_world_pos, light_overlay_active);
     }
 
     /// Render all UI elements

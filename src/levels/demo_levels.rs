@@ -1612,3 +1612,155 @@ pub fn generate_level_20_crafting_workshop(world: &mut World) {
         }
     }
 }
+
+/// Level 21: Day/Night Cycle Demo
+/// Showcases light propagation, day/night cycle, and light-dependent plant growth
+pub fn generate_level_21_day_night_cycle(world: &mut World) {
+    world.clear_all_chunks();
+
+    for cy in -2..=2 {
+        for cx in -2..=2 {
+            let mut chunk = Chunk::new(cx, cy);
+
+            // BEDROCK base (y=0-7)
+            for y in 0..8 {
+                for x in 0..CHUNK_SIZE {
+                    chunk.set_material(x, y, MaterialId::BEDROCK);
+                }
+            }
+
+            // Stone foundation (y=8-23)
+            for y in 8..24 {
+                for x in 0..CHUNK_SIZE {
+                    chunk.set_material(x, y, MaterialId::STONE);
+                }
+            }
+
+            // Central chunk (0, 0): Main demonstration area
+            if cx == 0 && cy == 0 {
+                // Underground cave with lava light source (left side)
+                // Hollow out cave (y=12-22, x=8-20)
+                for y in 12..22 {
+                    for x in 8..20 {
+                        chunk.set_material(x, y, MaterialId::AIR);
+                    }
+                }
+
+                // Lava pool at bottom of cave
+                for y in 12..14 {
+                    for x in 10..18 {
+                        chunk.set_material(x, y, MaterialId::LAVA);
+                    }
+                }
+
+                // Plant farm at surface (y=33-37, x=24-40)
+                // MOVED ABOVE SURFACE_LEVEL=32 to receive sky light
+                // Soil layer
+                for x in 24..40 {
+                    chunk.set_material(x, 33, MaterialId::DIRT);
+                }
+
+                // Water irrigation channel (middle)
+                for y in 33..35 {
+                    chunk.set_material(31, y, MaterialId::WATER);
+                    chunk.set_material(32, y, MaterialId::WATER);
+                }
+
+                // Plant seeds around water
+                let plant_positions = [
+                    (26, 34), (27, 34), (28, 34), (29, 34), (30, 34),
+                    (33, 34), (34, 34), (35, 34), (36, 34), (37, 34),
+                    (26, 35), (27, 35), (37, 35), (38, 35),
+                ];
+                for (x, y) in plant_positions {
+                    chunk.set_material(x, y, MaterialId::PLANT_MATTER);
+                }
+
+                // Underground grow room with fire (right side)
+                // Hollow out room (y=12-22, x=44-56)
+                for y in 12..22 {
+                    for x in 44..56 {
+                        chunk.set_material(x, y, MaterialId::AIR);
+                    }
+                }
+
+                // Fire light sources
+                chunk.set_material(46, 20, MaterialId::FIRE);
+                chunk.set_material(54, 20, MaterialId::FIRE);
+                chunk.set_material(50, 21, MaterialId::FIRE);
+
+                // Soil platform in underground room
+                for x in 46..54 {
+                    chunk.set_material(x, 16, MaterialId::DIRT);
+                }
+
+                // Water irrigation
+                chunk.set_material(49, 16, MaterialId::WATER);
+                chunk.set_material(50, 16, MaterialId::WATER);
+
+                // Plants in underground (will grow with fire light)
+                let underground_plants = [
+                    (46, 17), (47, 17), (48, 17),
+                    (51, 17), (52, 17), (53, 17),
+                ];
+                for (x, y) in underground_plants {
+                    chunk.set_material(x, y, MaterialId::PLANT_MATTER);
+                }
+
+                // Observation platform (y=36-38)
+                for y in 36..38 {
+                    for x in 28..36 {
+                        chunk.set_material(x, y, MaterialId::STONE);
+                    }
+                }
+            }
+
+            // Left chunk (-1, 0): Additional surface farm
+            if cx == -1 && cy == 0 {
+                // Soil layer
+                for x in 40..CHUNK_SIZE {
+                    chunk.set_material(x, 24, MaterialId::DIRT);
+                }
+
+                // Plant rows
+                for x in 42..(CHUNK_SIZE - 2) {
+                    if x % 3 == 0 {
+                        chunk.set_material(x, 25, MaterialId::PLANT_MATTER);
+                    }
+                }
+
+                // Water channels every 6 pixels
+                for x in 44..CHUNK_SIZE {
+                    if x % 6 == 0 {
+                        chunk.set_material(x, 24, MaterialId::WATER);
+                        chunk.set_material(x, 25, MaterialId::WATER);
+                    }
+                }
+            }
+
+            // Right chunk (1, 0): Light source tower
+            if cx == 1 && cy == 0 {
+                // Stone tower (x=8-16, y=24-50)
+                for y in 24..50 {
+                    for x in 8..16 {
+                        if x == 8 || x == 15 || y == 24 {
+                            chunk.set_material(x, y, MaterialId::STONE);
+                        }
+                    }
+                }
+
+                // Fire beacon at top
+                chunk.set_material(11, 48, MaterialId::FIRE);
+                chunk.set_material(12, 48, MaterialId::FIRE);
+                chunk.set_material(13, 48, MaterialId::FIRE);
+            }
+
+            world.add_chunk(chunk);
+        }
+    }
+
+    log::info!("Level 21: Day/Night Cycle - Press V to toggle light overlay!");
+    log::info!("  - Surface plants grow during day (light ≥ 8)");
+    log::info!("  - Underground plants grow near fire/lava");
+    log::info!("  - Watch the day/night cycle (20 min real-time)");
+}

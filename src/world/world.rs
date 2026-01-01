@@ -9,7 +9,7 @@ use super::persistence::{ChunkPersistence, WorldMetadata};
 use crate::simulation::{
     Materials, MaterialId, MaterialType,
     TemperatureSimulator, StateChangeSystem, ReactionRegistry,
-    StructuralIntegritySystem,
+    StructuralIntegritySystem, LightPropagation,
     add_heat_at_pixel, get_temperature_at_pixel,
 };
 use crate::physics::PhysicsWorld;
@@ -18,7 +18,7 @@ use crate::entity::player::Player;
 /// The game world, composed of chunks
 pub struct World {
     /// Loaded chunks, keyed by chunk coordinates
-    chunks: HashMap<IVec2, Chunk>,
+    pub chunks: HashMap<IVec2, Chunk>,
 
     /// Material definitions
     pub materials: Materials,
@@ -32,6 +32,9 @@ pub struct World {
     /// Structural integrity checker
     structural_system: StructuralIntegritySystem,
 
+    /// Light propagation system
+    light_propagation: LightPropagation,
+
     /// Physics world for rigid bodies
     physics_world: PhysicsWorld,
 
@@ -43,6 +46,15 @@ pub struct World {
 
     /// Simulation time accumulator
     time_accumulator: f32,
+
+    /// Light propagation time accumulator (15fps throttled)
+    light_time_accumulator: f32,
+
+    /// Day/night cycle time (in seconds, 0-1200, where 1200s = 20 min = 24 hours game time)
+    day_night_time: f32,
+
+    /// Growth cycle timer (0-10 seconds, wraps) for tooltip progress display
+    growth_timer: f32,
 
     /// Chunk persistence manager (None for demo levels)
     persistence: Option<ChunkPersistence>,
@@ -62,10 +74,14 @@ impl World {
             temperature_sim: TemperatureSimulator::new(),
             reactions: ReactionRegistry::new(),
             structural_system: StructuralIntegritySystem::new(),
+            light_propagation: LightPropagation::new(),
             physics_world: PhysicsWorld::new(),
             player: Player::new(glam::Vec2::new(0.0, 100.0)),
             active_chunks: Vec::new(),
             time_accumulator: 0.0,
+            light_time_accumulator: 0.0,
+            day_night_time: 600.0, // Start at noon (midpoint of 0-1200)
+            growth_timer: 0.0,
             persistence: None,
             generator: WorldGenerator::new(42), // Default seed
             loaded_chunk_limit: 100,
@@ -73,6 +89,9 @@ impl World {
 
         // Initialize with some test chunks
         world.generate_test_world();
+
+        // Initialize light levels before first CA update
+        world.initialize_light();
 
         world
     }
@@ -319,6 +338,14 @@ impl World {
             // TODO: Handle player death (respawn, game over screen, etc.)
         }
 
+        // Update day/night cycle (20 min real-time = 24 hours game-time)
+        const DAY_NIGHT_CYCLE_DURATION: f32 = 1200.0; // 20 minutes in seconds
+        self.day_night_time = (self.day_night_time + dt) % DAY_NIGHT_CYCLE_DURATION;
+
+        // Update growth timer (10-second cycle for tooltip progress)
+        const GROWTH_CYCLE_DURATION: f32 = 10.0;
+        self.growth_timer = (self.growth_timer + dt) % GROWTH_CYCLE_DURATION;
+
         self.time_accumulator += dt;
 
         while self.time_accumulator >= FIXED_TIMESTEP {
@@ -328,6 +355,8 @@ impl World {
     }
     
     fn step_simulation(&mut self, stats: &mut crate::ui::StatsCollector) {
+        const LIGHT_TIMESTEP: f32 = 1.0 / 15.0; // 15fps for light propagation
+
         // 1. Clear update flags
         for pos in &self.active_chunks {
             if let Some(chunk) = self.chunks.get_mut(pos) {
@@ -345,28 +374,68 @@ impl World {
         // 3. Temperature diffusion (30fps throttled)
         self.temperature_sim.update(&mut self.chunks);
 
-        // 4. State changes based on temperature
+        // 4. Light propagation (15fps throttled)
+        self.light_time_accumulator += 1.0 / 60.0; // Fixed timestep
+        if self.light_time_accumulator >= LIGHT_TIMESTEP {
+            let sky_light = self.calculate_sky_light();
+            self.light_propagation.propagate_light(&mut self.chunks, &self.materials, sky_light);
+            self.light_time_accumulator -= LIGHT_TIMESTEP;
+        }
+
+        // 5. State changes based on temperature
         for pos in &self.active_chunks.clone() {
             self.check_chunk_state_changes(*pos, stats);
         }
 
-        // 5. Process structural integrity checks
+        // 6. Process structural integrity checks
         let positions = self.structural_system.drain_queue();
         let checks_processed = StructuralIntegritySystem::process_checks(self, positions);
         if checks_processed > 0 {
             log::debug!("Processed {} structural integrity checks", checks_processed);
         }
 
-        // 6. Update rigid body physics
+        // 7. Update rigid body physics
         self.physics_world.step();
 
-        // 7. Check for settled debris and reconstruct as pixels
+        // 8. Check for settled debris and reconstruct as pixels
         let settled = self.physics_world.get_settled_debris();
         for handle in settled {
             self.reconstruct_debris(handle);
         }
     }
-    
+
+    /// Calculate sky light level based on day/night cycle (0-15)
+    /// Day/night cycle: 0-1200 seconds (20 min real-time = 24 hours game-time)
+    /// 0s = midnight, 300s = dawn, 600s = noon, 900s = dusk, 1200s = midnight
+    fn calculate_sky_light(&self) -> u8 {
+        const DAY_NIGHT_CYCLE_DURATION: f32 = 1200.0;
+
+        // Convert time to angle (0-2π)
+        let angle = (self.day_night_time / DAY_NIGHT_CYCLE_DURATION) * 2.0 * std::f32::consts::PI;
+
+        // Cosine wave: -1 (midnight) to 1 (noon)
+        // Shift so 0s = midnight (cos(0) = 1, we want -1)
+        let cosine = -(angle.cos());
+
+        // Map -1..1 to 0..15
+        // -1 (midnight) → 0, 0 (dawn/dusk) → 7.5, 1 (noon) → 15
+        let normalized = (cosine + 1.0) / 2.0; // 0..1
+        (normalized * 15.0) as u8
+    }
+
+    /// Initialize light levels before first CA update
+    /// This ensures that light_levels are valid before reactions start checking them
+    fn initialize_light(&mut self) {
+        let sky_light = self.calculate_sky_light();
+        self.light_propagation.propagate_light(&mut self.chunks, &self.materials, sky_light);
+        log::info!("Initialized light propagation (sky_light={})", sky_light);
+    }
+
+    /// Get growth progress as percentage (0-100) through the 10-second cycle
+    pub fn get_growth_progress_percent(&self) -> f32 {
+        (self.growth_timer / 10.0) * 100.0
+    }
+
     fn update_chunk_ca(&mut self, chunk_pos: IVec2, stats: &mut crate::ui::StatsCollector) {
         // Update from bottom to top so falling works correctly
         for y in 0..CHUNK_SIZE {
@@ -692,6 +761,25 @@ impl World {
         }
     }
 
+    /// Get light level at world coordinates (0-15)
+    pub fn get_light_at(&self, world_x: i32, world_y: i32) -> Option<u8> {
+        let (chunk_pos, local_x, local_y) = Self::world_to_chunk_coords(world_x, world_y);
+        self.chunks.get(&chunk_pos).map(|c| c.get_light(local_x, local_y))
+    }
+
+    /// Set light level at world coordinates (0-15)
+    pub fn set_light_at(&mut self, world_x: i32, world_y: i32, level: u8) {
+        let (chunk_pos, local_x, local_y) = Self::world_to_chunk_coords(world_x, world_y);
+        if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
+            chunk.set_light(local_x, local_y, level);
+        }
+    }
+
+    /// Get material ID at world coordinates
+    pub fn get_pixel_material(&self, world_x: i32, world_y: i32) -> Option<u16> {
+        self.get_pixel(world_x, world_y).map(|p| p.material_id)
+    }
+
     /// Convert world coordinates to chunk coordinates + local offset
     fn world_to_chunk_coords(world_x: i32, world_y: i32) -> (IVec2, usize, usize) {
         let chunk_x = world_x.div_euclid(CHUNK_SIZE as i32);
@@ -895,6 +983,9 @@ impl World {
 
         // Load initial chunks around spawn
         self.load_chunks_around_player();
+
+        // Initialize light levels before first CA update
+        self.initialize_light();
 
         log::info!("Loaded persistent world (seed: {})", metadata.seed);
     }
@@ -1138,6 +1229,8 @@ impl World {
 
     /// Check for chemical reactions with neighboring pixels
     fn check_pixel_reactions(&mut self, chunk_pos: IVec2, x: usize, y: usize, stats: &mut crate::ui::StatsCollector) {
+        use crate::simulation::MaterialId;
+
         let chunk = match self.chunks.get(&chunk_pos) {
             Some(c) => c,
             None => return,
@@ -1149,8 +1242,38 @@ impl World {
         }
 
         let temp = get_temperature_at_pixel(chunk, x, y);
+        let light_level = chunk.get_light(x, y);
         let world_x = chunk_pos.x * CHUNK_SIZE as i32 + x as i32;
         let world_y = chunk_pos.y * CHUNK_SIZE as i32 + y as i32;
+
+        // Debug logging for plant matter growth conditions
+        if pixel.material_id == MaterialId::PLANT_MATTER {
+            // Check if there's water nearby
+            let mut has_water = false;
+            for (dx, dy) in [(0, 1), (1, 0), (0, -1), (-1, 0)] {
+                if let Some(neighbor) = self.get_pixel(world_x + dx, world_y + dy) {
+                    if neighbor.material_id == MaterialId::WATER {
+                        has_water = true;
+                        break;
+                    }
+                }
+            }
+
+            // Log growth check conditions (throttled - only once every 600 frames ≈ 10 seconds)
+            static mut LAST_LOG_FRAME: u32 = 0;
+            static mut FRAME_COUNT: u32 = 0;
+            unsafe {
+                FRAME_COUNT += 1;
+                if FRAME_COUNT - LAST_LOG_FRAME > 600 {
+                    log::debug!(
+                        "Plant growth check at ({}, {}): light={}, temp={:.1}°C, water={}, ready={}",
+                        world_x, world_y, light_level, temp, has_water,
+                        light_level >= 8 && temp >= 10.0 && temp <= 40.0 && has_water
+                    );
+                    LAST_LOG_FRAME = FRAME_COUNT;
+                }
+            }
+        }
 
         // Check 4 neighbors for reactions
         for (dx, dy) in [(0, 1), (1, 0), (0, -1), (-1, 0)] {
@@ -1168,6 +1291,7 @@ impl World {
                 pixel.material_id,
                 neighbor.material_id,
                 temp,
+                light_level,
             ) {
                 // Probability check
                 if rand::random::<f32>() < reaction.probability {

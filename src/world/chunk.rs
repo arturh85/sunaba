@@ -54,6 +54,14 @@ pub struct Chunk {
     #[serde(with = "serde_big_array::BigArray")]
     pub pressure: [f32; 64],
 
+    /// Light levels per pixel (0-15, where 0=dark, 15=full light)
+    #[serde(with = "serde_big_array::BigArray")]
+    pub light_levels: [u8; CHUNK_AREA],
+
+    /// Whether light needs recalculation (not persisted)
+    #[serde(skip)]
+    pub light_dirty: bool,
+
     /// Whether chunk has been modified since last save (not persisted)
     #[serde(skip)]
     pub dirty: bool,
@@ -92,6 +100,8 @@ impl Chunk {
             pixels: [Pixel::AIR; CHUNK_AREA],
             temperature: [20.0; 64],  // Room temperature (Celsius)
             pressure: [1.0; 64],       // Atmospheric pressure
+            light_levels: [0; CHUNK_AREA], // Start dark, will be calculated
+            light_dirty: true,         // Needs initial light calculation
             dirty: false,
             dirty_rect: None,
         }
@@ -140,9 +150,30 @@ impl Chunk {
         self.mark_dirty(x1, y1);
         self.mark_dirty(x2, y2);
     }
-    
+
+    /// Get light level at local coordinates (0-15)
+    #[inline]
+    pub fn get_light(&self, x: usize, y: usize) -> u8 {
+        debug_assert!(x < CHUNK_SIZE && y < CHUNK_SIZE);
+        self.light_levels[y * CHUNK_SIZE + x]
+    }
+
+    /// Set light level at local coordinates (0-15)
+    #[inline]
+    pub fn set_light(&mut self, x: usize, y: usize, level: u8) {
+        debug_assert!(x < CHUNK_SIZE && y < CHUNK_SIZE);
+        debug_assert!(level <= 15);
+        self.light_levels[y * CHUNK_SIZE + x] = level;
+    }
+
+    /// Mark chunk as needing light recalculation
+    pub fn mark_light_dirty(&mut self) {
+        self.light_dirty = true;
+    }
+
     fn mark_dirty(&mut self, x: usize, y: usize) {
         self.dirty = true;
+        self.light_dirty = true; // Pixel changes require light recalculation
         match &mut self.dirty_rect {
             Some(rect) => rect.expand(x, y),
             None => self.dirty_rect = Some(DirtyRect::new(x, y)),

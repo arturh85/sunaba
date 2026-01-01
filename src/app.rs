@@ -278,6 +278,9 @@ impl App {
                             KeyCode::KeyT => if pressed {
                                 renderer.toggle_temperature_overlay();
                             },
+                            KeyCode::KeyV => if pressed {
+                                renderer.toggle_light_overlay();
+                            },
                             KeyCode::KeyL => if pressed {
                                 ui_state.toggle_level_selector();
                             },
@@ -412,7 +415,7 @@ impl App {
                     ui_state.stats.collect_world_stats(&world);
 
                     // Update tooltip with world data
-                    ui_state.update_tooltip(&world, world.materials(), input_state.mouse_world_pos);
+                    ui_state.update_tooltip(&world, world.materials(), input_state.mouse_world_pos, renderer.is_light_overlay_enabled());
 
                     // Prepare egui frame
                     let raw_input = egui_state.take_egui_input(&window);
@@ -449,8 +452,9 @@ impl App {
                     // Handle egui output
                     egui_state.handle_platform_output(&window, full_output.platform_output);
 
-                    // Update temperature overlay texture
+                    // Update overlay textures
                     renderer.update_temperature_overlay(&world);
+                    renderer.update_light_overlay(&world);
 
                     // Render world + UI
                     if let Err(e) = renderer.render(&world, &egui_ctx, full_output.textures_delta, full_output.shapes) {

@@ -34,18 +34,22 @@ var world_texture: texture_2d<f32>;
 @group(0) @binding(1)
 var world_sampler: sampler;
 
-// Temperature overlay
+// Debug overlays (temperature and light)
 @group(2) @binding(0)
 var temp_texture: texture_2d<f32>;
 @group(2) @binding(1)
 var temp_sampler: sampler;
+@group(2) @binding(2)
+var light_texture: texture_2d<f32>;
+@group(2) @binding(3)
+var light_sampler: sampler;
 
 struct OverlayUniform {
-    enabled: u32,
+    overlay_type: u32,  // 0=none, 1=temperature, 2=light
     _padding: vec3<u32>,
 };
 
-@group(2) @binding(2)
+@group(2) @binding(4)
 var<uniform> overlay: OverlayUniform;
 
 // Map temperature (in Celsius) to color gradient
@@ -81,6 +85,37 @@ fn temperature_to_color(temp: f32) -> vec3<f32> {
     }
 }
 
+// Map light level (0-15) to color gradient
+fn light_to_color(light_level: f32) -> vec3<f32> {
+    // Light levels (0-15):
+    // 0: Complete darkness (black)
+    // 1-3: Very dark (deep purple/blue)
+    // 4-7: Dim (purple to blue)
+    // 8-11: Moderate (blue to cyan)
+    // 12-14: Bright (cyan to white)
+    // 15: Full light (bright white)
+
+    let normalized = clamp(light_level / 15.0, 0.0, 1.0);
+
+    if normalized < 0.2 {
+        // 0-3: Black to deep purple
+        let t = normalized / 0.2;
+        return mix(vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(0.2, 0.0, 0.4), t);
+    } else if normalized < 0.5 {
+        // 4-7: Deep purple to blue
+        let t = (normalized - 0.2) / 0.3;
+        return mix(vec3<f32>(0.2, 0.0, 0.4), vec3<f32>(0.0, 0.3, 0.8), t);
+    } else if normalized < 0.75 {
+        // 8-11: Blue to cyan
+        let t = (normalized - 0.5) / 0.25;
+        return mix(vec3<f32>(0.0, 0.3, 0.8), vec3<f32>(0.0, 0.8, 1.0), t);
+    } else {
+        // 12-15: Cyan to bright white
+        let t = (normalized - 0.75) / 0.25;
+        return mix(vec3<f32>(0.0, 0.8, 1.0), vec3<f32>(1.0, 1.0, 1.0), t);
+    }
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Transform screen space to NDC to world space
@@ -107,14 +142,32 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let color = textureSample(world_texture, world_sampler, tex_coords);
 
-    // Apply temperature overlay if enabled
-    if overlay.enabled != 0u {
-        // Sample temperature texture (40x40 for 5x5 chunks × 8x8 cells)
-        let temp_value = textureSample(temp_texture, temp_sampler, tex_coords).r;
+    // Apply debug overlays
+    if overlay.overlay_type == 1u {
+        // Temperature overlay - use player-relative coordinates
+        let temp_texture_size = 320.0;  // 5 chunks × 64 pixels
+        let temp_tex_coords = vec2<f32>(
+            (world_pos.x - camera.position.x + temp_texture_size * 0.5) / temp_texture_size,
+            (world_pos.y - camera.position.y + temp_texture_size * 0.5) / temp_texture_size
+        );
+        let temp_value = textureSample(temp_texture, temp_sampler, temp_tex_coords).r;
         let temp_color = temperature_to_color(temp_value);
 
         // Blend with 40% overlay opacity
         let blended = mix(color.rgb, temp_color, 0.4);
+        return vec4<f32>(blended * color.a, color.a);
+    } else if overlay.overlay_type == 2u {
+        // Light overlay - use player-relative coordinates
+        let light_texture_size = 320.0;  // 5 chunks × 64 pixels
+        let light_tex_coords = vec2<f32>(
+            (world_pos.x - camera.position.x + light_texture_size * 0.5) / light_texture_size,
+            (world_pos.y - camera.position.y + light_texture_size * 0.5) / light_texture_size
+        );
+        let light_value = textureSample(light_texture, light_sampler, light_tex_coords).r;
+        let light_color = light_to_color(light_value);
+
+        // Blend with 50% overlay opacity (slightly more visible than temperature)
+        let blended = mix(color.rgb, light_color, 0.5);
         return vec4<f32>(blended * color.a, color.a);
     }
 

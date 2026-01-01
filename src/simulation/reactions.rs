@@ -520,7 +520,7 @@ impl ReactionRegistry {
     ///
     /// Returns the first matching reaction, or None if no reaction possible
     /// O(1) HashMap lookup + O(k) where k = reactions for this material pair (typically 1-3)
-    pub fn find_reaction(&self, mat_a: u16, mat_b: u16, temp: f32) -> Option<&Reaction> {
+    pub fn find_reaction(&self, mat_a: u16, mat_b: u16, temp: f32, light_level: u8) -> Option<&Reaction> {
         // Normalize material order for HashMap key
         let key = if mat_a <= mat_b {
             (mat_a, mat_b)
@@ -545,7 +545,14 @@ impl ReactionRegistry {
                 }
             }
 
-            // TODO: Check advanced conditions (light, pressure, catalyst) when available
+            // Check light condition (Phase 5)
+            if let Some(min_light) = reaction.requires_light {
+                if light_level < min_light {
+                    continue;  // Insufficient light
+                }
+            }
+
+            // TODO: Check pressure and catalyst conditions when available
 
             // Reaction found!
             return Some(reaction);
