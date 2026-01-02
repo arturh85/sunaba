@@ -55,10 +55,10 @@ impl Player {
 
         // Give player some starting materials for testing
         // Using material IDs from simulation/materials.rs
-        player.inventory.add_item(2, 100); // Stone
-        player.inventory.add_item(3, 100); // Sand
-        player.inventory.add_item(4, 50); // Water
-        player.inventory.add_item(5, 50); // Wood
+        player.inventory.add_item(2, 1000); // Stone
+        player.inventory.add_item(3, 1000); // Sand
+        player.inventory.add_item(4, 1000); // Water
+        player.inventory.add_item(5, 1000); // Wood
 
         player
     }

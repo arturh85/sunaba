@@ -93,6 +93,7 @@ impl ControlsHelpState {
                 ui.heading("UI");
                 ui.label("T - Toggle temperature overlay");
                 ui.label("F1 - Toggle stats");
+                ui.label("F2 - Toggle active chunks");
                 ui.label("H - Toggle this help");
 
                 ui.add_space(8.0);
@@ -187,6 +188,7 @@ impl ControlsHelpState {
                 ui.heading("UI");
                 ui.label("T - Toggle temperature overlay");
                 ui.label("F1 - Toggle stats");
+                ui.label("F2 - Toggle active chunks");
                 ui.label("H - Toggle this help");
 
                 ui.add_space(8.0);

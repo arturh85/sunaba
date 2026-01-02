@@ -463,6 +463,10 @@ impl World {
                 // If chunk is loaded but not active, add it to active list
                 if self.chunks.contains_key(&pos) && !self.active_chunks.contains(&pos) {
                     self.active_chunks.push(pos);
+                    // Mark newly activated chunks for simulation so physics/chemistry runs
+                    if let Some(chunk) = self.chunks.get_mut(&pos) {
+                        chunk.set_simulation_active(true);
+                    }
                 }
             }
         }
@@ -863,6 +867,14 @@ impl World {
         // Note: dirty_rect is cleared by the renderer after rendering
         // This allows proper dirty tracking for render optimization
 
+        // Clear simulation_active for chunks we're about to update
+        // It will be re-set by try_move_world() if any material actually moves
+        for pos in &chunks_to_update {
+            if let Some(chunk) = self.chunks.get_mut(pos) {
+                chunk.set_simulation_active(false);
+            }
+        }
+
         for pos in &chunks_to_update {
             self.update_chunk_ca(*pos, stats);
         }
@@ -969,11 +981,11 @@ impl World {
     }
 
     /// Check if a chunk needs CA update based on dirty state of itself and neighbors
-    /// Returns true if this chunk or any of its 8 neighbors have dirty_rect set
+    /// Returns true if this chunk or any of its 8 neighbors have dirty_rect set or simulation_active
     fn chunk_needs_ca_update(&self, pos: IVec2) -> bool {
         // Check the chunk itself
         if let Some(chunk) = self.chunks.get(&pos) {
-            if chunk.dirty_rect.is_some() {
+            if chunk.dirty_rect.is_some() || chunk.is_simulation_active() {
                 return true;
             }
         }
@@ -986,7 +998,7 @@ impl World {
                 }
                 let neighbor_pos = IVec2::new(pos.x + dx, pos.y + dy);
                 if let Some(neighbor) = self.chunks.get(&neighbor_pos) {
-                    if neighbor.dirty_rect.is_some() {
+                    if neighbor.dirty_rect.is_some() || neighbor.is_simulation_active() {
                         return true;
                     }
                 }
@@ -1262,6 +1274,7 @@ impl World {
             // Same chunk - use swap for efficiency
             if let Some(chunk) = self.chunks.get_mut(&src_chunk_pos) {
                 chunk.swap_pixels(src_x, src_y, dst_x, dst_y);
+                chunk.set_simulation_active(true);
                 stats.record_pixel_moved();
                 return true;
             }
@@ -1270,6 +1283,7 @@ impl World {
             // First, clear source
             if let Some(src_chunk) = self.chunks.get_mut(&src_chunk_pos) {
                 src_chunk.set_pixel(src_x, src_y, Pixel::AIR);
+                src_chunk.set_simulation_active(true);
             } else {
                 return false;
             }
@@ -1277,6 +1291,7 @@ impl World {
             // Then, set destination
             if let Some(dst_chunk) = self.chunks.get_mut(&dst_chunk_pos) {
                 dst_chunk.set_pixel(dst_x, dst_y, src_pixel);
+                dst_chunk.set_simulation_active(true);
                 stats.record_pixel_moved();
                 return true;
             } else {
@@ -1403,6 +1418,11 @@ impl World {
         self.active_chunks
             .iter()
             .filter_map(|pos| self.chunks.get(pos))
+    }
+
+    /// Get positions of active chunks
+    pub fn active_chunk_positions(&self) -> &[IVec2] {
+        &self.active_chunks
     }
 
     /// Get all loaded chunks

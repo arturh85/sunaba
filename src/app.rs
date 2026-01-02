@@ -40,6 +40,7 @@ fn print_controls() {
     println!("Spawn Creature: G");
     println!("Toggle Temperature Overlay: T");
     println!("Toggle Stats: F1");
+    println!("Toggle Active Chunks: F2");
     println!("Toggle Help: H");
     println!("Level Selector: L");
     println!("Manual Save: F5");
@@ -69,6 +70,28 @@ fn screen_to_world(
                screen_x, screen_y, ndc_x, ndc_y, world_x, world_y, aspect, camera_zoom, camera_pos);
 
     (world_x as i32, world_y as i32)
+}
+
+/// Convert world coordinates to screen coordinates
+fn world_to_screen(
+    world_x: f32,
+    world_y: f32,
+    window_width: u32,
+    window_height: u32,
+    camera_pos: Vec2,
+    camera_zoom: f32,
+) -> (f32, f32) {
+    let aspect = window_width as f32 / window_height as f32;
+
+    // Transform from world space to NDC
+    let ndc_x = (world_x - camera_pos.x) * camera_zoom / aspect;
+    let ndc_y = (world_y - camera_pos.y) * camera_zoom;
+
+    // Convert from NDC to screen coordinates
+    let screen_x = (ndc_x + 1.0) * window_width as f32 / 2.0;
+    let screen_y = (1.0 - ndc_y) * window_height as f32 / 2.0; // Flip Y
+
+    (screen_x, screen_y)
 }
 
 /// Tracks current input state
@@ -371,6 +394,20 @@ impl App {
         // Prepare egui frame
         let raw_input = self.egui_state.take_egui_input(&self.window);
         let egui_build_start = Instant::now();
+
+        // Extract data for active chunks overlay before the closure to avoid borrow issues
+        let show_active_chunks = self.renderer.is_active_chunks_overlay_enabled();
+        let active_chunks_data = if show_active_chunks {
+            Some((
+                self.window.inner_size(),
+                self.renderer.camera_position(),
+                self.renderer.camera_zoom(),
+                self.world.active_chunk_positions().to_vec(),
+            ))
+        } else {
+            None
+        };
+
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             // Get cursor position from egui context
             let cursor_pos = ctx.pointer_hover_pos().unwrap_or(egui::pos2(0.0, 0.0));
@@ -435,6 +472,18 @@ impl App {
                         }
                     }
                 }
+            }
+
+            // Draw active chunks overlay if enabled
+            if let Some((window_size, camera_pos, camera_zoom, active_chunks)) = &active_chunks_data
+            {
+                draw_active_chunks_overlay(
+                    ctx,
+                    *window_size,
+                    *camera_pos,
+                    *camera_zoom,
+                    active_chunks,
+                );
             }
         });
         let egui_build_time = egui_build_start.elapsed().as_secs_f32() * 1000.0;
@@ -517,6 +566,121 @@ impl App {
         // Reset per-frame input state
         self.input_state.zoom_delta = 1.0;
         self.input_state.prev_right_mouse_pressed = self.input_state.right_mouse_pressed;
+    }
+}
+
+/// Draw active chunks overlay using egui painter (free function to avoid borrow issues)
+fn draw_active_chunks_overlay(
+    ctx: &egui::Context,
+    window_size: winit::dpi::PhysicalSize<u32>,
+    camera_pos: Vec2,
+    camera_zoom: f32,
+    active_chunks: &[glam::IVec2],
+) {
+    use crate::world::CHUNK_SIZE;
+
+    if active_chunks.is_empty() {
+        return;
+    }
+
+    // Calculate bounding box of active chunks in world coordinates
+    let mut min_chunk_x = i32::MAX;
+    let mut min_chunk_y = i32::MAX;
+    let mut max_chunk_x = i32::MIN;
+    let mut max_chunk_y = i32::MIN;
+
+    for chunk_pos in active_chunks {
+        min_chunk_x = min_chunk_x.min(chunk_pos.x);
+        min_chunk_y = min_chunk_y.min(chunk_pos.y);
+        max_chunk_x = max_chunk_x.max(chunk_pos.x);
+        max_chunk_y = max_chunk_y.max(chunk_pos.y);
+    }
+
+    // Draw on the background layer (behind UI windows)
+    let painter = ctx.layer_painter(egui::LayerId::background());
+
+    // Colors for the overlay
+    let outer_color = egui::Color32::from_rgba_unmultiplied(0, 255, 0, 180);
+    let grid_color = egui::Color32::from_rgba_unmultiplied(0, 200, 0, 100);
+
+    // Draw outer rectangle around entire active region
+    let outer_min_world = (
+        (min_chunk_x * CHUNK_SIZE as i32) as f32,
+        (min_chunk_y * CHUNK_SIZE as i32) as f32,
+    );
+    let outer_max_world = (
+        ((max_chunk_x + 1) * CHUNK_SIZE as i32) as f32,
+        ((max_chunk_y + 1) * CHUNK_SIZE as i32) as f32,
+    );
+
+    let outer_min_screen = world_to_screen(
+        outer_min_world.0,
+        outer_max_world.1, // Note: Y is flipped in screen space
+        window_size.width,
+        window_size.height,
+        camera_pos,
+        camera_zoom,
+    );
+    let outer_max_screen = world_to_screen(
+        outer_max_world.0,
+        outer_min_world.1,
+        window_size.width,
+        window_size.height,
+        camera_pos,
+        camera_zoom,
+    );
+
+    let outer_rect = egui::Rect::from_min_max(
+        egui::pos2(outer_min_screen.0, outer_min_screen.1),
+        egui::pos2(outer_max_screen.0, outer_max_screen.1),
+    );
+    painter.rect_stroke(
+        outer_rect,
+        0.0,
+        egui::Stroke::new(2.0, outer_color),
+        egui::StrokeKind::Inside,
+    );
+
+    // Draw grid lines for individual chunks
+    for chunk_x in min_chunk_x..=max_chunk_x {
+        for chunk_y in min_chunk_y..=max_chunk_y {
+            let chunk_min_world = (
+                (chunk_x * CHUNK_SIZE as i32) as f32,
+                (chunk_y * CHUNK_SIZE as i32) as f32,
+            );
+            let chunk_max_world = (
+                ((chunk_x + 1) * CHUNK_SIZE as i32) as f32,
+                ((chunk_y + 1) * CHUNK_SIZE as i32) as f32,
+            );
+
+            let chunk_min_screen = world_to_screen(
+                chunk_min_world.0,
+                chunk_max_world.1,
+                window_size.width,
+                window_size.height,
+                camera_pos,
+                camera_zoom,
+            );
+            let chunk_max_screen = world_to_screen(
+                chunk_max_world.0,
+                chunk_min_world.1,
+                window_size.width,
+                window_size.height,
+                camera_pos,
+                camera_zoom,
+            );
+
+            let chunk_rect = egui::Rect::from_min_max(
+                egui::pos2(chunk_min_screen.0, chunk_min_screen.1),
+                egui::pos2(chunk_max_screen.0, chunk_max_screen.1),
+            );
+            painter.rect_stroke(
+                chunk_rect,
+                0.0,
+                egui::Stroke::new(1.0, grid_color),
+                egui::StrokeKind::Inside,
+            );
+        }
     }
 }
 
@@ -620,6 +784,11 @@ impl ApplicationHandler for App {
                         KeyCode::F1 => {
                             if pressed {
                                 self.ui_state.toggle_stats();
+                            }
+                        }
+                        KeyCode::F2 => {
+                            if pressed {
+                                self.renderer.toggle_active_chunks_overlay();
                             }
                         }
                         KeyCode::KeyH => {

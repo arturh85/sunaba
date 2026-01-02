@@ -121,6 +121,9 @@ pub struct Renderer {
     overlay_bind_group: wgpu::BindGroup,
     overlay_type: u32, // 0=none, 1=temperature, 2=light
 
+    // Active chunks debug overlay
+    show_active_chunks: bool,
+
     // Texture origin tracking for dynamic camera-centered rendering
     /// World coordinate at texture pixel [0, 0]
     texture_origin: glam::Vec2,
@@ -611,6 +614,7 @@ impl Renderer {
             overlay_uniform_buffer,
             overlay_bind_group,
             overlay_type: 0, // 0 = no overlay
+            show_active_chunks: false,
             texture_origin,
             texture_origin_buffer,
             rendered_chunks: std::collections::HashSet::new(),
@@ -1254,6 +1258,11 @@ impl Renderer {
         self.camera.zoom
     }
 
+    /// Get current camera position
+    pub fn camera_position(&self) -> glam::Vec2 {
+        glam::Vec2::new(self.camera.position[0], self.camera.position[1])
+    }
+
     /// Update camera zoom level with delta and clamp to min/max
     pub fn update_zoom(&mut self, zoom_delta: f32, min_zoom: f32, max_zoom: f32) {
         self.camera.zoom *= zoom_delta;
@@ -1474,6 +1483,20 @@ impl Renderer {
     /// Check if light overlay is enabled
     pub fn is_light_overlay_enabled(&self) -> bool {
         self.overlay_type == 2
+    }
+
+    /// Toggle active chunks debug overlay (F2)
+    pub fn toggle_active_chunks_overlay(&mut self) {
+        self.show_active_chunks = !self.show_active_chunks;
+        log::info!(
+            "Active chunks overlay: {}",
+            if self.show_active_chunks { "ON" } else { "OFF" }
+        );
+    }
+
+    /// Check if active chunks overlay is enabled
+    pub fn is_active_chunks_overlay_enabled(&self) -> bool {
+        self.show_active_chunks
     }
 
     /// Update light overlay texture with data from world

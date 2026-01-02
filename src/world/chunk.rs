@@ -76,6 +76,12 @@ pub struct Chunk {
     /// Bounding rect of modified pixels (not persisted)
     #[serde(skip)]
     pub dirty_rect: Option<DirtyRect>,
+
+    /// Whether chunk has active physics/chemistry that needs simulation (not persisted)
+    /// This is separate from dirty_rect because the renderer clears dirty_rect after rendering,
+    /// but we need to keep simulating chunks with active materials until they settle.
+    #[serde(skip)]
+    pub simulation_active: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -116,6 +122,7 @@ impl Chunk {
             light_dirty: true,             // Needs initial light calculation
             dirty: false,
             dirty_rect: None,
+            simulation_active: false,
         }
     }
 
@@ -203,6 +210,16 @@ impl Chunk {
         for pixel in &mut self.pixels {
             pixel.flags &= !pixel_flags::UPDATED;
         }
+    }
+
+    /// Mark chunk as having active simulation (materials moving)
+    pub fn set_simulation_active(&mut self, active: bool) {
+        self.simulation_active = active;
+    }
+
+    /// Check if chunk needs continued simulation
+    pub fn is_simulation_active(&self) -> bool {
+        self.simulation_active
     }
 
     /// Get raw pixel slice for rendering
