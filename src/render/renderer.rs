@@ -6,6 +6,7 @@ use std::iter;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
+use crate::render::sprite::PlayerSprite;
 use crate::world::{Chunk, World, CHUNK_SIZE};
 
 /// Vertex for fullscreen quad
@@ -135,6 +136,9 @@ pub struct Renderer {
     render_dirty_chunks: std::collections::HashSet<glam::IVec2>,
     /// Previous player position (to clear old sprite location)
     prev_player_pos: glam::Vec2,
+
+    /// Player sprite for animated rendering
+    player_sprite: PlayerSprite,
 }
 
 impl Renderer {
@@ -613,6 +617,8 @@ impl Renderer {
             needs_full_rebuffer: true, // Start with full rebuffer
             render_dirty_chunks: std::collections::HashSet::new(),
             prev_player_pos: glam::Vec2::ZERO,
+            player_sprite: PlayerSprite::new(include_bytes!("../entity/player_sprite.png"))
+                .expect("Failed to load player sprite"),
         })
     }
 
@@ -633,6 +639,13 @@ impl Renderer {
             self.queue
                 .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera]));
         }
+    }
+
+    /// Update player sprite animation state and timing
+    pub fn update_player_sprite(&mut self, velocity: glam::Vec2, is_mining: bool, delta_time: f32) {
+        self.player_sprite
+            .update_state(velocity.x, velocity.y, is_mining);
+        self.player_sprite.update(delta_time);
     }
 
     pub fn render(
@@ -886,9 +899,7 @@ impl Renderer {
             self.render_debris_to_buffer(debris_data, world.materials());
         }
 
-        // Draw player as cyan 8×16 rectangle
-        use crate::entity::player::Player;
-
+        // Draw player sprite
         // Convert world coordinates to texture coordinates using dynamic texture origin
         let player_world_x = world.player.position.x as i32;
         let player_world_y = world.player.position.y as i32;
@@ -896,26 +907,31 @@ impl Renderer {
         let player_x = player_world_x - self.texture_origin.x as i32;
         let player_y = player_world_y - self.texture_origin.y as i32;
 
-        let half_width = (Player::WIDTH / 2.0) as i32;
-        let half_height = (Player::HEIGHT / 2.0) as i32;
+        let half_width = (self.player_sprite.display_width / 2) as i32;
+        let half_height = (self.player_sprite.display_height / 2) as i32;
 
-        let player_color = [0, 255, 255, 255]; // Cyan (RGB: 0, 255, 255)
+        // Determine if we need to flip horizontally (for left-facing animations)
+        let flip_h = !self.player_sprite.facing_right;
 
-        // Draw rectangle centered on player position
-        for dy in -half_height..=half_height {
-            for dx in -half_width..=half_width {
-                let px = player_x + dx;
-                let py = player_y + dy;
+        // Draw sprite centered on player position
+        for local_y in 0..self.player_sprite.display_height as i32 {
+            for local_x in 0..self.player_sprite.display_width as i32 {
+                // Sample from sprite (handles scaling and flipping)
+                if let Some(pixel) = self.player_sprite.sample_pixel(local_x, local_y, flip_h) {
+                    // Calculate destination in texture buffer
+                    let px = player_x + local_x - half_width;
+                    let py = player_y + local_y - half_height;
 
-                // Bounds check
-                if px >= 0
-                    && px < Self::WORLD_TEXTURE_SIZE as i32
-                    && py >= 0
-                    && py < Self::WORLD_TEXTURE_SIZE as i32
-                {
-                    let idx = ((py as u32 * Self::WORLD_TEXTURE_SIZE + px as u32) * 4) as usize;
-                    if idx + 3 < self.pixel_buffer.len() {
-                        self.pixel_buffer[idx..idx + 4].copy_from_slice(&player_color);
+                    // Bounds check
+                    if px >= 0
+                        && px < Self::WORLD_TEXTURE_SIZE as i32
+                        && py >= 0
+                        && py < Self::WORLD_TEXTURE_SIZE as i32
+                    {
+                        let idx = ((py as u32 * Self::WORLD_TEXTURE_SIZE + px as u32) * 4) as usize;
+                        if idx + 3 < self.pixel_buffer.len() {
+                            self.pixel_buffer[idx..idx + 4].copy_from_slice(&pixel);
+                        }
                     }
                 }
             }
@@ -964,15 +980,17 @@ impl Renderer {
 
     /// Add chunks that need re-rendering due to player movement
     fn add_player_affected_chunks(&mut self, world: &World) {
-        use crate::entity::player::Player;
+        // Use sprite display size (larger than collision box)
+        let sprite_width = self.player_sprite.display_width as f32;
+        let sprite_height = self.player_sprite.display_height as f32;
 
         // Current player position - get affected chunks
         let player_pos = world.player.position;
-        let curr_chunks = self.get_chunks_for_rect(player_pos, Player::WIDTH, Player::HEIGHT);
+        let curr_chunks = self.get_chunks_for_rect(player_pos, sprite_width, sprite_height);
 
         // Previous player position - need to clear old sprite
         let prev_chunks =
-            self.get_chunks_for_rect(self.prev_player_pos, Player::WIDTH, Player::HEIGHT);
+            self.get_chunks_for_rect(self.prev_player_pos, sprite_width, sprite_height);
 
         for chunk_pos in curr_chunks.into_iter().chain(prev_chunks.into_iter()) {
             self.render_dirty_chunks.insert(chunk_pos);

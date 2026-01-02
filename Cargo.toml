@@ -57,6 +57,9 @@ pollster = "0.3"  # Simple async executor for wgpu init
 # Noise generation for procedural terrain
 noise = "0.9"
 
+# Image loading (for sprites)
+image = { version = "0.25", default-features = false, features = ["png"] }
+
 # Time handling (cross-platform, WASM-compatible)
 instant = { version = "0.1", features = ["wasm-bindgen"] }
 

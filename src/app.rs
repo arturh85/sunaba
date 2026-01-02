@@ -476,6 +476,13 @@ impl App {
             .stats
             .set_frame_loop_timing(egui_build_time, overlay_time);
 
+        // Update player sprite animation
+        self.renderer.update_player_sprite(
+            self.world.player.velocity,
+            self.world.player.mining_progress.is_mining(),
+            1.0 / 60.0,
+        );
+
         // Render world + UI
         match self.renderer.render(
             &mut self.world,
