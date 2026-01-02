@@ -10,7 +10,6 @@ use rayon::prelude::*;
 use crate::creature::genome::{crossover_genome, CreatureGenome, MutationConfig};
 use crate::creature::spawning::CreatureManager;
 use crate::physics::PhysicsWorld;
-use crate::simulation::Materials;
 use crate::ui::StatsCollector;
 
 use super::fitness::BehaviorDescriptor;
@@ -90,8 +89,6 @@ pub struct TrainingEnv {
     pub scenario: Scenario,
     /// MAP-Elites grid
     pub grid: MapElitesGrid,
-    /// Materials registry
-    materials: Materials,
     /// Current generation
     generation: usize,
     /// Statistics history
@@ -103,14 +100,12 @@ pub struct TrainingEnv {
 impl TrainingEnv {
     /// Create a new training environment
     pub fn new(config: TrainingConfig, scenario: Scenario) -> Self {
-        let materials = Materials::new();
         let report_gen = ReportGenerator::new(&config.output_dir, &scenario.config);
 
         Self {
             config,
             scenario,
             grid: MapElitesGrid::default_grid(),
-            materials,
             generation: 0,
             stats_history: Vec::new(),
             report_gen,

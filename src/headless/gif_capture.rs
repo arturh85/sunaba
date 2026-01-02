@@ -85,7 +85,7 @@ impl GifCapture {
     }
 
     /// Save with custom palette for smaller file size
-    pub fn save_with_palette<P: AsRef<Path>>(&self, path: P, max_colors: usize) -> Result<()> {
+    pub fn save_with_palette<P: AsRef<Path>>(&self, path: P, _max_colors: usize) -> Result<()> {
         if self.frames.is_empty() {
             anyhow::bail!("No frames to save");
         }
