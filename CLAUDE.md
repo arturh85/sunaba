@@ -42,8 +42,9 @@ pub fn load_chunk(&self, x: i32, y: i32) -> Result<Chunk> {
     let path = self.chunk_path(x, y);
     let data = std::fs::read(&path)
         .context("Failed to read chunk file")?;
-    bincode::deserialize(&data)
-        .context("Failed to deserialize chunk")
+    let (chunk, _) = bincode::serde::decode_from_slice(&data, bincode::config::standard())
+        .context("Failed to deserialize chunk")?;
+    Ok(chunk)
 }
 ```
 
