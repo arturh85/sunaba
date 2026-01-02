@@ -581,7 +581,7 @@ impl MorphologyPhysics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::creature::genome::CreatureGenome;
+    use crate::genome::CreatureGenome;
 
     #[test]
     fn test_biped_morphology() {

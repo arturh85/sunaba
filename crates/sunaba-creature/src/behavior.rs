@@ -237,7 +237,7 @@ impl GoalPlanner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::creature::sensors::ChemicalGradient;
+    use crate::sensors::ChemicalGradient;
 
     #[test]
     fn test_needs_creation() {

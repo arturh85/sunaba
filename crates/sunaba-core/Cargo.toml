@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+sunaba-simulation = { path = "../sunaba-simulation" }
+sunaba-creature = { path = "../sunaba-creature" }
 ahash = "0.8"
 anyhow = "1.0"
 bincode-next = { version = "2.0", features = ["serde"] }

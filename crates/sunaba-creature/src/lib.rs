@@ -1,10 +1,10 @@
-//! Creature system - CPPN-NEAT morphology generation with neural control
+//! ML-evolved creatures for Sunaba
 //!
-//! This module implements:
+//! This crate implements:
 //! - CPPN-NEAT genomes for articulated morphology generation
-//! - Graph Neural Networks for morphology-agnostic control
+//! - Neural controllers for morphology-agnostic control
 //! - GOAP behavior planning for high-level decision making
-//! - Full world interaction (sensing, eating, mining, building)
+//! - World interaction traits for sensing, eating, mining, building
 
 #![allow(clippy::module_inception)]
 
@@ -15,15 +15,21 @@ pub mod creature;
 pub mod genome;
 pub mod morphology;
 pub mod neural;
+pub mod physics;
 pub mod sensors;
 pub mod spawning;
+pub mod traits;
+pub mod types;
 pub mod world_interaction;
 
 // Re-export main types for convenience
 pub use creature::Creature;
 pub use genome::CreatureGenome;
 pub use morphology::{CreatureMorphology, MorphologyPhysics};
+pub use physics::PhysicsWorld;
 pub use spawning::CreatureManager;
+pub use traits::{WorldAccess, WorldMutAccess};
+pub use types::{EntityId, Health, Hunger};
 
 /// Body part render data for a single body part
 #[derive(Debug, Clone)]

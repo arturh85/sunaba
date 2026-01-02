@@ -6,7 +6,7 @@
 //! - Boiling (liquid → gas)
 //! - Condensing (gas → liquid)
 
-use crate::simulation::materials::MaterialDef;
+use crate::simulation::MaterialDef;
 use crate::world::Pixel;
 
 /// System for checking and applying state changes

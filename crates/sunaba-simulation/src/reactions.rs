@@ -3,7 +3,7 @@
 //! Handles interactions between different materials when they come into contact.
 //! Examples: water + lava → steam + stone, acid + metal → air + air (corrosion)
 
-use crate::simulation::MaterialId;
+use crate::MaterialId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

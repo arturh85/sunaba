@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "crates/sunaba-simulation",
+    "crates/sunaba-creature",
     "crates/sunaba-core",
     "crates/sunaba",
 ]

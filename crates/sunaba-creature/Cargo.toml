@@ -1,0 +1,19 @@
+[package]
+name = "sunaba-creature"
+version.workspace = true
+edition.workspace = true
+description = "ML-evolved creatures for Sunaba"
+
+[dependencies]
+sunaba-simulation = { path = "../sunaba-simulation" }
+ahash = "0.8"
+glam = { version = "0.25", features = ["serde"] }
+log = "0.4"
+petgraph = "0.6"
+rand = "0.9"
+rand_xoshiro = "0.7"
+rapier2d = "0.18"
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+bincode-next = { version = "2.0", features = ["serde"] }

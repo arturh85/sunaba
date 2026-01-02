@@ -624,7 +624,7 @@ impl World {
     pub fn spawn_creature_at_player(
         &mut self,
         genome: crate::creature::genome::CreatureGenome,
-    ) -> crate::entity::EntityId {
+    ) -> sunaba_creature::EntityId {
         self.creature_manager
             .spawn_creature(genome, self.player.position, &mut self.physics_world)
     }
@@ -2194,5 +2194,97 @@ impl World {
 impl Default for World {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// Implement WorldAccess trait for creature integration
+impl sunaba_creature::WorldAccess for World {
+    fn get_pixel(&self, x: i32, y: i32) -> Option<sunaba_simulation::Pixel> {
+        World::get_pixel(self, x, y)
+    }
+
+    fn get_temperature_at_pixel(&self, x: i32, y: i32) -> f32 {
+        World::get_temperature_at_pixel(self, x, y)
+    }
+
+    fn get_light_at(&self, x: i32, y: i32) -> Option<u8> {
+        World::get_light_at(self, x, y)
+    }
+
+    fn materials(&self) -> &sunaba_simulation::Materials {
+        World::materials(self)
+    }
+
+    fn is_solid_at(&self, x: i32, y: i32) -> bool {
+        if let Some(pixel) = self.get_pixel(x, y) {
+            let material = self.materials().get(pixel.material_id);
+            matches!(
+                material.material_type,
+                sunaba_simulation::MaterialType::Solid | sunaba_simulation::MaterialType::Powder
+            )
+        } else {
+            false
+        }
+    }
+
+    fn check_circle_collision(&self, x: f32, y: f32, radius: f32) -> bool {
+        World::check_circle_collision(self, x, y, radius)
+    }
+
+    fn raycast(
+        &self,
+        from: glam::Vec2,
+        direction: glam::Vec2,
+        max_distance: f32,
+    ) -> Option<(i32, i32, u16)> {
+        // Simple raycast implementation
+        let step = 0.5;
+        let mut dist = 0.0;
+        while dist < max_distance {
+            let pos = from + direction * dist;
+            let px = pos.x.round() as i32;
+            let py = pos.y.round() as i32;
+            if let Some(pixel) = self.get_pixel(px, py)
+                && pixel.material_id != sunaba_simulation::MaterialId::AIR
+            {
+                return Some((px, py, pixel.material_id));
+            }
+            dist += step;
+        }
+        None
+    }
+
+    fn get_pressure_at(&self, x: i32, y: i32) -> f32 {
+        // Get pressure from chunk's coarse grid
+        let (chunk_pos, local_x, local_y) = Self::world_to_chunk_coords(x, y);
+        if let Some(chunk) = self.chunks.get(&chunk_pos) {
+            chunk.get_pressure_at(local_x, local_y)
+        } else {
+            1.0 // Default atmospheric pressure
+        }
+    }
+
+    fn is_creature_grounded(&self, positions: &[(glam::Vec2, f32)]) -> bool {
+        World::is_creature_grounded(self, positions)
+    }
+
+    fn get_blocking_pixel(
+        &self,
+        from: glam::Vec2,
+        direction: glam::Vec2,
+        radius: f32,
+        max_distance: f32,
+    ) -> Option<(i32, i32, u16)> {
+        World::get_blocking_pixel(self, from, direction, radius, max_distance)
+    }
+}
+
+impl sunaba_creature::WorldMutAccess for World {
+    fn set_pixel(&mut self, x: i32, y: i32, material_id: u16) {
+        World::set_pixel(self, x, y, material_id)
+    }
+
+    fn set_pixel_full(&mut self, x: i32, y: i32, pixel: sunaba_simulation::Pixel) {
+        World::set_pixel_full(self, x, y, pixel)
     }
 }

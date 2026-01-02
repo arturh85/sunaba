@@ -1,0 +1,9 @@
+[package]
+name = "sunaba-simulation"
+version.workspace = true
+edition.workspace = true
+description = "Material simulation data and reactions for Sunaba"
+
+[dependencies]
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }

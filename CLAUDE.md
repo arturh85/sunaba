@@ -28,22 +28,30 @@ cargo fmt --all
 
 ## Workspace Structure
 
-sunaba is organized as a Cargo workspace with 2 crates:
+sunaba is organized as a Cargo workspace with 4 crates:
 
 | Crate | Purpose | Key Dependencies |
 |-------|---------|------------------|
-| `sunaba-core` | Game logic: world, simulation, entity, physics, levels, creature | rapier2d, petgraph, noise |
+| `sunaba-simulation` | Material definitions, reactions, pixel data | serde, log |
+| `sunaba-creature` | ML-evolved creatures, physics, neural control | sunaba-simulation, rapier2d, petgraph, rand |
+| `sunaba-core` | World, entity, levels (re-exports simulation + creature) | sunaba-simulation, sunaba-creature, noise |
 | `sunaba` | Main binary, rendering, UI, headless training | wgpu, egui, winit, sunaba-core |
 
 ### Crate Dependency Graph
 ```
 sunaba (main binary + cdylib for WASM)
-  └── sunaba-core (all game logic)
+├── sunaba-core
+│   ├── sunaba-simulation
+│   └── sunaba-creature
+│       └── sunaba-simulation
+└── (render deps: wgpu, egui, winit)
 ```
 
 ### Developing Individual Crates
 ```bash
 # Test individual crates
+cargo test -p sunaba-simulation
+cargo test -p sunaba-creature
 cargo test -p sunaba-core
 cargo test -p sunaba
 
@@ -120,7 +128,7 @@ pub fn load_chunk(&self, x: i32, y: i32) -> Result<Chunk> {
 | Serialization | serde + bincode + ron |
 | Compression | lz4_flex |
 | RNG | rand + rand_xoshiro (deterministic) |
-| ML | burn 0.18 + petgraph 0.6 |
+| Neural/Graph | petgraph 0.6 |
 
 ### World Structure
 ```
@@ -144,63 +152,73 @@ World
 
 ```
 crates/
-├── sunaba-core/            # Game logic crate (no GUI deps)
+├── sunaba-simulation/      # Material simulation foundation
 │   └── src/
 │       ├── lib.rs
+│       ├── materials.rs          # MaterialDef, MaterialId, Materials
+│       ├── reactions.rs          # Reaction, ReactionRegistry
+│       └── pixel.rs              # Pixel, pixel_flags, CHUNK_SIZE
+│
+├── sunaba-creature/        # ML-evolved creatures + physics
+│   └── src/
+│       ├── lib.rs
+│       ├── traits.rs             # WorldAccess, WorldMutAccess traits
+│       ├── types.rs              # EntityId, Health, Hunger
+│       ├── physics.rs            # PhysicsWorld (rapier2d integration)
+│       ├── genome.rs             # CPPN-NEAT genome
+│       ├── morphology.rs         # Body generation from CPPN
+│       ├── neural.rs             # DeepNeuralController brain
+│       ├── behavior.rs           # GOAP planner
+│       ├── sensors.rs            # Raycasts, material detection
+│       ├── spawning.rs           # CreatureManager
+│       ├── world_interaction.rs  # Eating, mining, building
+│       └── creature.rs           # Main Creature entity
+│
+├── sunaba-core/            # World + entity + levels
+│   └── src/
+│       ├── lib.rs                # Re-exports simulation + creature
 │       ├── world/
-│       │   ├── chunk.rs            # Chunk data structure (64x64)
-│       │   ├── world.rs            # World manager, chunk loading
-│       │   ├── generation.rs       # Procedural terrain (Perlin noise)
-│       │   ├── persistence.rs      # Save/load (bincode + lz4)
-│       │   ├── stats.rs            # SimStats trait
-│       │   └── biome.rs            # Biome definitions
+│       │   ├── chunk.rs          # Chunk data structure (64x64)
+│       │   ├── world.rs          # World manager, chunk loading
+│       │   ├── generation.rs     # Procedural terrain (Perlin noise)
+│       │   ├── persistence.rs    # Save/load (bincode + lz4)
+│       │   ├── stats.rs          # SimStats trait
+│       │   └── biome.rs          # Biome definitions
 │       ├── simulation/
-│       │   ├── materials.rs        # Material registry (15+ materials)
-│       │   ├── reactions.rs        # Chemistry system (20+ reactions)
-│       │   ├── temperature.rs      # Heat diffusion
-│       │   ├── state_changes.rs    # Melt, freeze, boil
-│       │   ├── structural.rs       # Structural integrity
-│       │   ├── mining.rs           # Mining mechanics
-│       │   ├── regeneration.rs     # Resource regeneration
-│       │   └── light.rs            # Light propagation
-│       ├── physics/
-│       │   └── rigid_body.rs       # rapier2d integration, debris
+│       │   ├── temperature.rs    # Heat diffusion
+│       │   ├── state_changes.rs  # Melt, freeze, boil
+│       │   ├── structural.rs     # Structural integrity
+│       │   ├── mining.rs         # Mining mechanics
+│       │   ├── regeneration.rs   # Resource regeneration
+│       │   └── light.rs          # Light propagation
 │       ├── entity/
-│       │   ├── player.rs           # Player controller
-│       │   ├── input.rs            # InputState
-│       │   ├── inventory.rs        # Inventory system
-│       │   ├── crafting.rs         # Crafting recipes
-│       │   ├── tools.rs            # Tool definitions
-│       │   └── health.rs           # Health/hunger system
-│       ├── creature/               # ML creatures (Phase 6+)
-│       │   ├── genome.rs           # CPPN-NEAT genome
-│       │   ├── morphology.rs       # Body generation
-│       │   ├── neural.rs           # Brain (GNN/Transformer)
-│       │   ├── behavior.rs         # GOAP planner
-│       │   ├── sensors.rs          # Raycasts, material detection
-│       │   ├── spawning.rs         # Creature manager
-│       │   └── world_interaction.rs
+│       │   ├── player.rs         # Player controller
+│       │   ├── input.rs          # InputState
+│       │   ├── inventory.rs      # Inventory system
+│       │   ├── crafting.rs       # Crafting recipes
+│       │   ├── tools.rs          # Tool definitions
+│       │   └── health.rs         # Health/hunger system
 │       └── levels/
-│           ├── level_def.rs        # Level definition
-│           └── demo_levels.rs      # 16 demo scenarios
+│           ├── level_def.rs      # Level definition
+│           └── demo_levels.rs    # 16 demo scenarios
 │
 └── sunaba/                 # Main binary + rendering crate
     └── src/
-        ├── main.rs                 # Entry point, CLI
-        ├── lib.rs                  # Library root, WASM entry
-        ├── app.rs                  # Application state, game loop
+        ├── main.rs               # Entry point, CLI
+        ├── lib.rs                # Library root, WASM entry
+        ├── app.rs                # Application state, game loop
         ├── render/
-        │   └── renderer.rs         # wgpu pipeline, camera
+        │   └── renderer.rs       # wgpu pipeline, camera
         ├── ui/
-        │   ├── ui_state.rs         # Central UI state
-        │   ├── hud.rs              # Heads-up display
-        │   ├── stats.rs            # Debug stats (F1)
-        │   ├── tooltip.rs          # Mouse hover info
-        │   ├── inventory_ui.rs     # Inventory panel
-        │   ├── crafting_ui.rs      # Crafting interface
-        │   ├── level_selector.rs   # Level dropdown (L)
-        │   └── controls_help.rs    # Help overlay (H)
-        └── headless/               # Offline training (native only)
+        │   ├── ui_state.rs       # Central UI state
+        │   ├── hud.rs            # Heads-up display
+        │   ├── stats.rs          # Debug stats (F1)
+        │   ├── tooltip.rs        # Mouse hover info
+        │   ├── inventory_ui.rs   # Inventory panel
+        │   ├── crafting_ui.rs    # Crafting interface
+        │   ├── level_selector.rs # Level dropdown (L)
+        │   └── controls_help.rs  # Help overlay (H)
+        └── headless/             # Offline training (native only)
             ├── training_env.rs
             ├── scenario.rs
             └── map_elites.rs

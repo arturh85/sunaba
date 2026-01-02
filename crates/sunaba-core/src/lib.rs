@@ -1,6 +1,13 @@
-pub mod creature;
 pub mod entity;
 pub mod levels;
-pub mod physics;
 pub mod simulation;
 pub mod world;
+
+// Re-export from sunaba-creature for backward compatibility
+pub mod creature {
+    pub use sunaba_creature::*;
+}
+
+pub mod physics {
+    pub use sunaba_creature::physics::*;
+}
