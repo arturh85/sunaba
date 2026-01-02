@@ -169,11 +169,12 @@ impl ChunkPersistence {
         log::debug!("Decompressed to {} bytes", serialized.len());
 
         let (chunk, _): (Chunk, _) =
-            bincode::serde::decode_from_slice(&serialized, bincode::config::standard())
-                .map_err(|e| {
+            bincode::serde::decode_from_slice(&serialized, bincode::config::standard()).map_err(
+                |e| {
                     log::error!("Bincode deserialization error: {:?}", e);
                     anyhow::anyhow!("Failed to deserialize chunk: {:?}", e)
-                })?;
+                },
+            )?;
         log::debug!("Successfully deserialized chunk");
         Ok(chunk)
     }
