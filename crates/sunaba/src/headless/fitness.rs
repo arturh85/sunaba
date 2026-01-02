@@ -19,6 +19,65 @@ pub trait FitnessFunction: Send + Sync {
     fn description(&self) -> &str;
 }
 
+/// Measures actual movement with motor activity bonus
+/// Designed to reward creatures that ACTUALLY MOVE, not just exist
+pub struct MovementFitness {
+    /// Weight for displacement score (pixels traveled)
+    pub displacement_weight: f32,
+    /// Minimum displacement to be considered "moving"
+    pub min_displacement: f32,
+    /// Penalty multiplier for not moving
+    pub stationary_penalty: f32,
+}
+
+impl MovementFitness {
+    pub fn new() -> Self {
+        Self {
+            displacement_weight: 10.0, // 10 points per pixel moved
+            min_displacement: 5.0,     // Must move at least 5 pixels
+            stationary_penalty: 0.1,   // 90% penalty for not moving
+        }
+    }
+}
+
+impl Default for MovementFitness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FitnessFunction for MovementFitness {
+    fn evaluate(&self, creature: &Creature, _world: &World, spawn_pos: Vec2, duration: f32) -> f32 {
+        let displacement = (creature.position - spawn_pos).length();
+
+        // Primary fitness: displacement (heavily weighted)
+        let movement_score = displacement * self.displacement_weight;
+
+        // Survival bonus: only if creature moved
+        let survival_bonus =
+            if displacement >= self.min_displacement && creature.health.current > 0.0 {
+                duration * 2.0 // 2 points per second survived while moving
+            } else {
+                0.0
+            };
+
+        // Penalty for not moving
+        if displacement < self.min_displacement {
+            (movement_score + survival_bonus) * self.stationary_penalty
+        } else {
+            movement_score + survival_bonus
+        }
+    }
+
+    fn name(&self) -> &str {
+        "Movement"
+    }
+
+    fn description(&self) -> &str {
+        "Heavily rewards actual displacement, penalizes stationary creatures"
+    }
+}
+
 /// Measures distance traveled from spawn point
 pub struct DistanceFitness;
 

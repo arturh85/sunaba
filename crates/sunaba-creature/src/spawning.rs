@@ -28,12 +28,28 @@ impl CreatureManager {
         }
     }
 
-    /// Spawn creature from genome
+    /// Spawn creature from genome (uses default morphology config)
     pub fn spawn_creature(
         &mut self,
         genome: CreatureGenome,
         position: Vec2,
         physics_world: &mut PhysicsWorld,
+    ) -> EntityId {
+        self.spawn_creature_with_config(
+            genome,
+            position,
+            physics_world,
+            &super::morphology::MorphologyConfig::default(),
+        )
+    }
+
+    /// Spawn creature from genome with custom morphology config
+    pub fn spawn_creature_with_config(
+        &mut self,
+        genome: CreatureGenome,
+        position: Vec2,
+        physics_world: &mut PhysicsWorld,
+        morph_config: &super::morphology::MorphologyConfig,
     ) -> EntityId {
         // Check if we can spawn
         if !self.can_spawn() {
@@ -44,8 +60,8 @@ impl CreatureManager {
             return EntityId::new(); // Return dummy ID
         }
 
-        // Create creature from genome
-        let mut creature = Creature::from_genome(genome, position);
+        // Create creature from genome with the specified morphology config
+        let mut creature = Creature::from_genome_with_config(genome, position, morph_config);
         let id = creature.id;
 
         // Build physics body
@@ -66,7 +82,7 @@ impl CreatureManager {
         id
     }
 
-    /// Spawn creature from genome with specified initial hunger level
+    /// Spawn creature from genome with specified initial hunger level (uses default morphology)
     ///
     /// # Arguments
     /// * `initial_hunger_percent` - 0.0 to 1.0, where 1.0 is full and 0.0 is starving
@@ -77,6 +93,24 @@ impl CreatureManager {
         initial_hunger_percent: f32,
         physics_world: &mut PhysicsWorld,
     ) -> EntityId {
+        self.spawn_creature_with_hunger_and_config(
+            genome,
+            position,
+            initial_hunger_percent,
+            physics_world,
+            &super::morphology::MorphologyConfig::default(),
+        )
+    }
+
+    /// Spawn creature from genome with specified initial hunger level and morphology config
+    pub fn spawn_creature_with_hunger_and_config(
+        &mut self,
+        genome: CreatureGenome,
+        position: Vec2,
+        initial_hunger_percent: f32,
+        physics_world: &mut PhysicsWorld,
+        morph_config: &super::morphology::MorphologyConfig,
+    ) -> EntityId {
         // Check if we can spawn
         if !self.can_spawn() {
             log::warn!(
@@ -86,8 +120,8 @@ impl CreatureManager {
             return EntityId::new(); // Return dummy ID
         }
 
-        // Create creature from genome
-        let mut creature = Creature::from_genome(genome, position);
+        // Create creature from genome with the specified morphology config
+        let mut creature = Creature::from_genome_with_config(genome, position, morph_config);
         let id = creature.id;
 
         // Set initial hunger level

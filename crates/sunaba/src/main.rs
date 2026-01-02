@@ -13,7 +13,7 @@ struct Args {
     #[arg(long)]
     train: bool,
 
-    /// Training scenario: locomotion, foraging, survival, balanced, parcour
+    /// Training scenario: locomotion, foraging, survival, balanced, parcour, simple
     #[arg(long, default_value = "locomotion")]
     scenario: String,
 
@@ -28,6 +28,10 @@ struct Args {
     /// Output directory for training reports
     #[arg(long, default_value = "training_output")]
     output: String,
+
+    /// Use simple morphology (fewer body parts, viability filter)
+    #[arg(long)]
+    simple: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -79,23 +83,32 @@ fn run_training(args: &Args) -> anyhow::Result<()> {
     log::info!("  Generations: {}", args.generations);
     log::info!("  Population: {}", args.population);
     log::info!("  Output: {}", args.output);
+    log::info!("  Simple morphology: {}", args.simple);
 
-    let scenario = match args.scenario.as_str() {
-        "foraging" => Scenario::foraging(),
-        "survival" => Scenario::survival(),
-        "balanced" => Scenario::balanced(),
-        "locomotion" => Scenario::locomotion(),
-        "parcour" => Scenario::parcour(),
-        other => {
-            log::warn!("Unknown scenario '{}', defaulting to locomotion", other);
-            Scenario::locomotion()
-        }
+    // If --simple flag or "simple" scenario, use simple locomotion
+    let (scenario, use_simple) = if args.simple || args.scenario == "simple" {
+        log::info!("Using simple morphology with viability filter");
+        (Scenario::simple_locomotion(), true)
+    } else {
+        let s = match args.scenario.as_str() {
+            "foraging" => Scenario::foraging(),
+            "survival" => Scenario::survival(),
+            "balanced" => Scenario::balanced(),
+            "locomotion" => Scenario::locomotion(),
+            "parcour" => Scenario::parcour(),
+            other => {
+                log::warn!("Unknown scenario '{}', defaulting to locomotion", other);
+                Scenario::locomotion()
+            }
+        };
+        (s, false)
     };
 
     let config = TrainingConfig {
         generations: args.generations,
         population_size: args.population,
         output_dir: args.output.clone(),
+        use_simple_morphology: use_simple,
         ..TrainingConfig::default()
     };
 

@@ -202,23 +202,48 @@ impl DeepNeuralController {
     /// - hidden_dim=16 (biped) -> 48, 24
     /// - hidden_dim=24 (quadruped) -> 72, 36
     pub fn from_genome(genome: &ControllerGenome, input_dim: usize, output_dim: usize) -> Self {
+        use rand::Rng;
+        use rand::SeedableRng;
+
         // Scale hidden layer sizes from genome's hidden_dim
         let scale = genome.hidden_dim as f32 / 16.0;
         let hidden1_dim = (48.0 * scale).round() as usize;
         let hidden2_dim = (24.0 * scale).round() as usize;
-
-        // Flatten all genome weights
-        let mut weights = Vec::new();
-        weights.extend(&genome.message_weights);
-        weights.extend(&genome.update_weights);
-        weights.extend(&genome.output_weights);
 
         // Expected weight count for 2-layer network:
         // input->hidden1 + hidden1->hidden2 + hidden2->output
         let expected_size =
             input_dim * hidden1_dim + hidden1_dim * hidden2_dim + hidden2_dim * output_dim;
 
-        weights.resize(expected_size, 0.0);
+        // Create seeded RNG from genome weights for deterministic initialization
+        // This ensures same genome always produces same network
+        let seed: u64 = genome
+            .message_weights
+            .iter()
+            .chain(genome.update_weights.iter())
+            .chain(genome.output_weights.iter())
+            .fold(0u64, |acc, &w| acc.wrapping_add((w * 1000.0) as i64 as u64));
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(seed);
+
+        // Generate all weights randomly, seeded by genome
+        // Xavier/Glorot initialization scaled by layer sizes
+        let weights: Vec<f32> = (0..expected_size)
+            .map(|i| {
+                // Determine which layer this weight belongs to for proper scaling
+                let in_h1 = input_dim * hidden1_dim;
+                let h1_h2 = hidden1_dim * hidden2_dim;
+
+                let scale = if i < in_h1 {
+                    (2.0 / (input_dim + hidden1_dim) as f32).sqrt()
+                } else if i < in_h1 + h1_h2 {
+                    (2.0 / (hidden1_dim + hidden2_dim) as f32).sqrt()
+                } else {
+                    (2.0 / (hidden2_dim + output_dim) as f32).sqrt()
+                };
+
+                rng.random_range(-1.0..1.0) * scale
+            })
+            .collect();
 
         Self {
             weights,

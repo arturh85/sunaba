@@ -7,7 +7,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
 use crate::creature::genome::{CreatureGenome, MutationConfig, crossover_genome};
+use crate::creature::morphology::{CreatureMorphology, MorphologyConfig};
 use crate::creature::spawning::CreatureManager;
+use crate::creature::viability::analyze_viability;
 use crate::physics::PhysicsWorld;
 use crate::simulation::Materials;
 
@@ -41,6 +43,10 @@ pub struct TrainingConfig {
     pub gif_fps: u16,
     /// Output directory for reports
     pub output_dir: String,
+    /// Use simple morphology (fewer body parts, viability filter)
+    pub use_simple_morphology: bool,
+    /// Minimum viability score to accept a creature (0.0-1.0)
+    pub min_viability: f32,
 }
 
 impl Default for TrainingConfig {
@@ -56,6 +62,8 @@ impl Default for TrainingConfig {
             gif_size: 128,
             gif_fps: 10,
             output_dir: "training_output".to_string(),
+            use_simple_morphology: false,
+            min_viability: 0.3,
         }
     }
 }
@@ -73,6 +81,10 @@ pub struct TrainingStats {
     pub grid_coverage: f32,
     /// New elites discovered this generation
     pub new_elites: usize,
+    /// Maximum displacement this generation (for debugging)
+    pub max_displacement: f32,
+    /// Average displacement this generation
+    pub avg_displacement: f32,
 }
 
 /// Single creature evaluation result
@@ -80,6 +92,8 @@ struct EvalResult {
     genome: CreatureGenome,
     fitness: f32,
     behavior: BehaviorDescriptor,
+    /// Actual displacement from spawn position (for debugging)
+    displacement: f32,
 }
 
 /// Main training environment
@@ -96,12 +110,19 @@ pub struct TrainingEnv {
     pub stats_history: Vec<TrainingStats>,
     /// Report generator
     report_gen: ReportGenerator,
+    /// Morphology configuration (simple or default)
+    morphology_config: MorphologyConfig,
 }
 
 impl TrainingEnv {
     /// Create a new training environment
     pub fn new(config: TrainingConfig, scenario: Scenario) -> Self {
         let report_gen = ReportGenerator::new(&config.output_dir, &scenario.config);
+        let morphology_config = if config.use_simple_morphology {
+            MorphologyConfig::simple()
+        } else {
+            MorphologyConfig::default()
+        };
 
         Self {
             config,
@@ -110,7 +131,35 @@ impl TrainingEnv {
             generation: 0,
             stats_history: Vec::new(),
             report_gen,
+            morphology_config,
         }
+    }
+
+    /// Check if a genome produces a viable morphology
+    fn is_viable(&self, genome: &CreatureGenome) -> bool {
+        let morphology = CreatureMorphology::from_genome(genome, &self.morphology_config);
+        let viability = analyze_viability(&morphology);
+        viability.overall >= self.config.min_viability && viability.has_locomotion
+    }
+
+    /// Generate a viable genome (retries until viability threshold met)
+    fn generate_viable_genome(&self) -> CreatureGenome {
+        const MAX_ATTEMPTS: usize = 100;
+
+        for _ in 0..MAX_ATTEMPTS {
+            let mut genome = CreatureGenome::test_biped();
+            genome.mutate(
+                &self.config.mutation_config,
+                self.config.controller_mutation_rate,
+            );
+
+            if self.is_viable(&genome) {
+                return genome;
+            }
+        }
+
+        // Fallback: return test_biped without mutation (known to be viable)
+        CreatureGenome::test_biped()
     }
 
     /// Create a progress bar style
@@ -164,12 +213,14 @@ impl TrainingEnv {
             // Log progress
             if generation_num % 5 == 0 {
                 pb.println(format!(
-                    "Gen {}: best={:.2}, avg={:.2}, coverage={:.1}%, new={}",
+                    "Gen {}: best={:.2}, avg={:.2}, coverage={:.1}%, new={}, disp_max={:.1}px, disp_avg={:.1}px",
                     generation_num,
                     stats.best_fitness,
                     stats.avg_fitness,
                     stats.grid_coverage * 100.0,
-                    stats.new_elites
+                    stats.new_elites,
+                    stats.max_displacement,
+                    stats.avg_displacement,
                 ));
             }
 
@@ -179,6 +230,122 @@ impl TrainingEnv {
             {
                 self.save_checkpoint(&pb)?;
             }
+        }
+
+        // Evaluate champion displacement for verification with detailed logging
+        let champion_displacement = if let Some(best) = self.grid.best_elite() {
+            // Set up world and evaluate champion with position tracking
+            let (world, food_positions) = self.scenario.setup_world();
+            let mut physics_world = PhysicsWorld::new();
+            let mut creature_manager = CreatureManager::new(1);
+            let spawn_pos = self.scenario.config.spawn_position;
+
+            let creature_id = creature_manager.spawn_creature_with_config(
+                best.genome.clone(),
+                spawn_pos,
+                &mut physics_world,
+                &self.morphology_config,
+            );
+
+            // Log initial state
+            pb.println(format!("=== Champion Debug ==="));
+            pb.println(format!(
+                "  Spawn position: ({:.1}, {:.1})",
+                spawn_pos.x, spawn_pos.y
+            ));
+
+            // Run simulation and track positions
+            let dt = 1.0 / 60.0;
+            let steps = (self.config.eval_duration / dt) as usize;
+            const SENSORY_SKIP: usize = 6;
+
+            let mut min_x = spawn_pos.x;
+            let mut max_x = spawn_pos.x;
+            let mut pos_samples: Vec<glam::Vec2> = Vec::new();
+
+            for step in 0..steps {
+                if step % SENSORY_SKIP == 0 {
+                    creature_manager.update_with_cache(
+                        dt * SENSORY_SKIP as f32,
+                        &world,
+                        &mut physics_world,
+                        &food_positions,
+                    );
+                }
+                physics_world.step();
+
+                // Sample position every 5 seconds
+                if step % (60 * 5) == 0 {
+                    if let Some(creature) = creature_manager.get(creature_id) {
+                        pos_samples.push(creature.position);
+                        min_x = min_x.min(creature.position.x);
+                        max_x = max_x.max(creature.position.x);
+                    }
+                }
+            }
+
+            // Get final position
+            let final_displacement = if let Some(creature) = creature_manager.get(creature_id) {
+                let disp = (creature.position - spawn_pos).length();
+                let debug_info = format!(
+                    "=== Champion Debug ===\n\
+                     Spawn position: ({:.1}, {:.1})\n\
+                     Final position: ({:.1}, {:.1})\n\
+                     Displacement: {:.1}px\n\
+                     X range: {:.1} to {:.1} (width: {:.1})\n\
+                     Position samples: {:?}",
+                    spawn_pos.x,
+                    spawn_pos.y,
+                    creature.position.x,
+                    creature.position.y,
+                    disp,
+                    min_x,
+                    max_x,
+                    max_x - min_x,
+                    pos_samples
+                        .iter()
+                        .map(|p| format!("({:.0},{:.0})", p.x, p.y))
+                        .collect::<Vec<_>>()
+                );
+                eprintln!("{}", debug_info);
+                pb.println(debug_info.clone());
+
+                // Also write to file for easier access
+                let debug_path = format!("{}/champion_debug.txt", self.config.output_dir);
+                let _ = std::fs::write(&debug_path, &debug_info);
+
+                disp
+            } else {
+                0.0
+            };
+
+            let result = self.evaluate_single(best.genome.clone());
+            let eval_info = format!(
+                "Fitness from evaluate_single: {:.2}\n\
+                 Displacement from evaluate_single: {:.1}px",
+                result.fitness, result.displacement
+            );
+            eprintln!("{}", eval_info);
+            pb.println(eval_info);
+
+            final_displacement
+        } else {
+            0.0
+        };
+
+        // Check movement threshold (25px = half distance to first food in parcour)
+        const MOVEMENT_THRESHOLD: f32 = 25.0;
+        if champion_displacement < MOVEMENT_THRESHOLD {
+            pb.println(format!(
+                "⚠️  WARNING: Champion displacement ({:.1}px) below threshold ({:.0}px)!",
+                champion_displacement, MOVEMENT_THRESHOLD
+            ));
+            pb.println("   Creatures may not be moving properly.");
+        } else {
+            pb.println(format!(
+                "✓ Champion displacement ({:.1}px) meets threshold ({:.0}px)",
+                champion_displacement, MOVEMENT_THRESHOLD
+            ));
         }
 
         // Capture GIFs of evolved creatures
@@ -194,22 +361,34 @@ impl TrainingEnv {
 
     /// Initialize with random population
     fn initialize_population_with_progress(&mut self, pb: &ProgressBar) -> Result<()> {
+        let mode = if self.config.use_simple_morphology {
+            "simple morphology + viability filter"
+        } else {
+            "default morphology"
+        };
         pb.println(format!(
-            "Initializing population with {} creatures",
-            self.config.population_size
+            "Initializing population with {} creatures ({})",
+            self.config.population_size, mode
         ));
 
-        // Use test_biped as a starting point and mutate for variety
-        let genomes: Vec<CreatureGenome> = (0..self.config.population_size)
-            .map(|_| {
-                let mut genome = CreatureGenome::test_biped();
-                genome.mutate(
-                    &self.config.mutation_config,
-                    self.config.controller_mutation_rate,
-                );
-                genome
-            })
-            .collect();
+        // Generate viable genomes (or default if simple morphology disabled)
+        let genomes: Vec<CreatureGenome> = if self.config.use_simple_morphology {
+            (0..self.config.population_size)
+                .map(|_| self.generate_viable_genome())
+                .collect()
+        } else {
+            // Use test_biped as a starting point and mutate for variety
+            (0..self.config.population_size)
+                .map(|_| {
+                    let mut genome = CreatureGenome::test_biped();
+                    genome.mutate(
+                        &self.config.mutation_config,
+                        self.config.controller_mutation_rate,
+                    );
+                    genome
+                })
+                .collect()
+        };
 
         let results = self.evaluate_population_with_progress(&genomes, pb)?;
 
@@ -230,38 +409,55 @@ impl TrainingEnv {
         let mut offspring = Vec::with_capacity(self.config.population_size);
 
         for _ in 0..self.config.population_size {
-            let child = if let Some((parent1, parent2)) = self.grid.sample_parents() {
-                // Crossover
-                let mut child = crossover_genome(
-                    &parent1.genome,
-                    &parent2.genome,
-                    parent1.fitness,
-                    parent2.fitness,
-                );
-                child.mutate(
-                    &self.config.mutation_config,
-                    self.config.controller_mutation_rate,
-                );
-                child
-            } else if let Some(parent) = self.grid.sample_elite() {
-                // Mutation only
-                let mut child = parent.genome.clone();
-                child.mutate(
-                    &self.config.mutation_config,
-                    self.config.controller_mutation_rate,
-                );
-                child
+            // Try to generate a viable child (up to 10 attempts if using simple morphology)
+            let max_attempts = if self.config.use_simple_morphology {
+                10
             } else {
-                // Random (shouldn't happen after initialization)
-                let mut genome = CreatureGenome::test_biped();
-                genome.mutate(
-                    &self.config.mutation_config,
-                    self.config.controller_mutation_rate,
-                );
-                genome
+                1
             };
 
-            offspring.push(child);
+            let mut child = None;
+            for _ in 0..max_attempts {
+                let candidate = if let Some((parent1, parent2)) = self.grid.sample_parents() {
+                    // Crossover
+                    let mut c = crossover_genome(
+                        &parent1.genome,
+                        &parent2.genome,
+                        parent1.fitness,
+                        parent2.fitness,
+                    );
+                    c.mutate(
+                        &self.config.mutation_config,
+                        self.config.controller_mutation_rate,
+                    );
+                    c
+                } else if let Some(parent) = self.grid.sample_elite() {
+                    // Mutation only
+                    let mut c = parent.genome.clone();
+                    c.mutate(
+                        &self.config.mutation_config,
+                        self.config.controller_mutation_rate,
+                    );
+                    c
+                } else {
+                    // Random (shouldn't happen after initialization)
+                    let mut genome = CreatureGenome::test_biped();
+                    genome.mutate(
+                        &self.config.mutation_config,
+                        self.config.controller_mutation_rate,
+                    );
+                    genome
+                };
+
+                // Check viability if using simple morphology
+                if !self.config.use_simple_morphology || self.is_viable(&candidate) {
+                    child = Some(candidate);
+                    break;
+                }
+            }
+
+            // Use fallback if no viable child found
+            offspring.push(child.unwrap_or_else(|| self.generate_viable_genome()));
         }
 
         offspring
@@ -292,18 +488,24 @@ impl TrainingEnv {
         let mut physics_world = PhysicsWorld::new();
         let mut creature_manager = CreatureManager::new(1);
 
-        // Spawn creature (with partial hunger for Parcour scenario)
+        // Spawn creature using the configured morphology
         let spawn_pos = self.scenario.config.spawn_position;
         let creature_id = if self.scenario.config.name == "Parcour" {
             // Start with 50% hunger for parcour - creates survival pressure
-            creature_manager.spawn_creature_with_hunger(
+            creature_manager.spawn_creature_with_hunger_and_config(
                 genome.clone(),
                 spawn_pos,
                 0.5,
                 &mut physics_world,
+                &self.morphology_config,
             )
         } else {
-            creature_manager.spawn_creature(genome.clone(), spawn_pos, &mut physics_world)
+            creature_manager.spawn_creature_with_config(
+                genome.clone(),
+                spawn_pos,
+                &mut physics_world,
+                &self.morphology_config,
+            )
         };
 
         // Run simulation (physics only - skip world.update() for speed)
@@ -329,7 +531,8 @@ impl TrainingEnv {
         // Get final creature state for evaluation
         let creature = creature_manager.get(creature_id);
 
-        let (fitness, behavior) = if let Some(creature) = creature {
+        let (fitness, behavior, displacement) = if let Some(creature) = creature {
+            let displacement = (creature.position - spawn_pos).length();
             let fitness = self.scenario.fitness.evaluate(
                 creature,
                 &world,
@@ -342,7 +545,7 @@ impl TrainingEnv {
                 self.config.eval_duration,
                 &world,
             );
-            (fitness, behavior)
+            (fitness, behavior, displacement)
         } else {
             // Creature died
             (
@@ -353,6 +556,7 @@ impl TrainingEnv {
                     exploration: 0.0,
                     activity: 0.0,
                 },
+                0.0,
             )
         };
 
@@ -360,6 +564,7 @@ impl TrainingEnv {
             genome,
             fitness,
             behavior,
+            displacement,
         }
     }
 
@@ -367,6 +572,8 @@ impl TrainingEnv {
     fn update_grid(&mut self, results: Vec<EvalResult>) -> TrainingStats {
         let mut new_elites = 0;
         let mut total_fitness = 0.0;
+        let mut total_displacement = 0.0;
+        let mut max_displacement = 0.0f32;
 
         for result in &results {
             if self.grid.try_insert(
@@ -378,9 +585,12 @@ impl TrainingEnv {
                 new_elites += 1;
             }
             total_fitness += result.fitness;
+            total_displacement += result.displacement;
+            max_displacement = max_displacement.max(result.displacement);
         }
 
         let stats = self.grid.stats();
+        let n = results.len() as f32;
 
         TrainingStats {
             generation: self.generation,
@@ -388,10 +598,16 @@ impl TrainingEnv {
             avg_fitness: if results.is_empty() {
                 0.0
             } else {
-                total_fitness / results.len() as f32
+                total_fitness / n
             },
             grid_coverage: stats.coverage,
             new_elites,
+            max_displacement,
+            avg_displacement: if results.is_empty() {
+                0.0
+            } else {
+                total_displacement / n
+            },
         }
     }
 
@@ -440,14 +656,20 @@ impl TrainingEnv {
         let mut creature_manager = CreatureManager::new(1);
         let spawn_pos = self.scenario.config.spawn_position;
         let creature_id = if self.scenario.config.name == "Parcour" {
-            creature_manager.spawn_creature_with_hunger(
+            creature_manager.spawn_creature_with_hunger_and_config(
                 genome.clone(),
                 spawn_pos,
                 0.5,
                 &mut physics_world,
+                &self.morphology_config,
             )
         } else {
-            creature_manager.spawn_creature(genome.clone(), spawn_pos, &mut physics_world)
+            creature_manager.spawn_creature_with_config(
+                genome.clone(),
+                spawn_pos,
+                &mut physics_world,
+                &self.morphology_config,
+            )
         };
 
         // Simulation with frame capture

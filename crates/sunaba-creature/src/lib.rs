@@ -12,6 +12,7 @@ use glam::Vec2;
 
 pub mod behavior;
 pub mod creature;
+pub mod critter;
 pub mod genome;
 pub mod morphology;
 pub mod neural;
@@ -25,6 +26,7 @@ pub mod world_interaction;
 
 // Re-export main types for convenience
 pub use creature::Creature;
+pub use critter::{Critter, CritterManager, CritterState};
 pub use genome::CreatureGenome;
 pub use morphology::{CreatureMorphology, MorphologyPhysics};
 pub use physics::PhysicsWorld;

@@ -60,13 +60,14 @@ pub struct Creature {
 }
 
 impl Creature {
-    /// Create creature from genome
-    pub fn from_genome(genome: CreatureGenome, position: Vec2) -> Self {
-        use super::morphology::MorphologyConfig;
-
-        // Generate morphology from genome
-        let config = MorphologyConfig::default();
-        let morphology = CreatureMorphology::from_genome(&genome, &config);
+    /// Create creature from genome with custom morphology config
+    pub fn from_genome_with_config(
+        genome: CreatureGenome,
+        position: Vec2,
+        config: &super::morphology::MorphologyConfig,
+    ) -> Self {
+        // Generate morphology from genome using provided config
+        let morphology = CreatureMorphology::from_genome(&genome, config);
 
         // Create neural controller from genome
         let num_raycasts = 8;
@@ -103,6 +104,12 @@ impl Creature {
             grounded: false,
             pending_motor_commands: None,
         }
+    }
+
+    /// Create creature from genome using default morphology config
+    pub fn from_genome(genome: CreatureGenome, position: Vec2) -> Self {
+        use super::morphology::MorphologyConfig;
+        Self::from_genome_with_config(genome, position, &MorphologyConfig::default())
     }
 
     /// Update creature state
@@ -395,19 +402,16 @@ impl Creature {
         false
     }
 
-    /// Apply physics movement to creature (gravity, collision, wandering)
-    /// This is the main movement logic that replaces rapier2d dynamic physics
+    /// Apply physics movement to creature (gravity, collision, motor-driven locomotion)
+    /// Motor commands from the neural network drive horizontal movement.
     pub fn apply_movement(
         &mut self,
         world: &impl crate::WorldAccess,
         physics_world: &mut crate::PhysicsWorld,
         delta_time: f32,
     ) {
-        use rand::Rng;
-
         const GRAVITY: f32 = 300.0;
-        const MOVE_SPEED: f32 = 30.0;
-        const WANDER_INTERVAL: f32 = 3.0;
+        const MAX_SPEED: f32 = 80.0; // Max horizontal speed
 
         // Get body part positions from physics
         let body_positions: Vec<(Vec2, f32)> = if let Some(ref physics) = self.physics {
@@ -443,53 +447,66 @@ impl Creature {
             self.velocity.y = 0.0;
         }
 
-        // Update wander timer and pick new target if needed
-        self.wander_timer -= delta_time;
-        if self.wander_timer <= 0.0 || self.wander_target.is_none() {
-            let mut rng = rand::rng();
-            let angle = rng.random::<f32>() * std::f32::consts::TAU;
-            let dist = rng.random::<f32>() * 30.0 + 10.0;
-            self.wander_target =
-                Some(self.position + Vec2::new(angle.cos() * dist, angle.sin().abs() * dist * 0.3));
-            self.wander_timer = WANDER_INTERVAL;
-        }
+        // Apply motor commands from neural network (rotates body parts)
+        // and extract locomotion velocity from motor activity
+        self.apply_motor_commands_to_physics(delta_time, physics_world);
 
-        // Calculate movement toward target
-        if let Some(target) = self.wander_target {
-            let to_target = target - self.position;
-            let distance = to_target.length();
+        // Compute locomotion velocity from motor activity
+        // The neural network controls movement through motor commands
+        if let Some(ref physics) = self.physics {
+            // Get motor activity: use angular velocities to drive movement
+            // Positive angular velocity = clockwise = push right
+            // Negative angular velocity = counterclockwise = push left
+            let mut thrust_x = 0.0;
+            let mut thrust_y = 0.0;
+            let motor_count = physics.motor_angular_velocities.len();
 
-            if distance > 2.0 {
-                let dir = to_target.normalize();
-                self.facing_direction = if dir.x >= 0.0 { 1.0 } else { -1.0 };
+            if motor_count > 0 {
+                for (i, &angular_vel) in physics.motor_angular_velocities.iter().enumerate() {
+                    // Get the body part position relative to center
+                    if let Some(motor_idx) = physics.motor_link_indices.get(i)
+                        && let Some(part) = self.morphology.body_parts.get(*motor_idx) {
+                            // Body parts on the left (negative x) contribute differently than right
+                            // This creates asymmetric locomotion like legs
+                            let side = if part.local_position.x < 0.0 {
+                                -1.0
+                            } else {
+                                1.0
+                            };
+                            let height_factor = if part.local_position.y < 0.0 {
+                                1.5 // Lower body parts contribute more (like legs)
+                            } else {
+                                0.5 // Upper parts contribute less
+                            };
 
-                // Check for blocking pixels
-                let root_radius = body_positions.first().map(|(_, r)| *r).unwrap_or(3.0);
-                if let Some((bx, by, material_id)) =
-                    world.get_blocking_pixel(self.position, dir, root_radius, root_radius + 3.0)
-                {
-                    // 70% chance to mine, 30% to turn around
-                    let mut rng = rand::rng();
-                    if rng.random::<f32>() < 0.7 {
-                        // Check if it's not bedrock (material_id 14)
-                        if material_id != 14 {
-                            self.current_action = Some(CreatureAction::Mine {
-                                position: Vec2::new(bx as f32, by as f32),
-                                material_id,
-                            });
-                            self.action_timer = 0.5; // Mining takes time
+                            // Motor activity creates thrust
+                            // Opposing sides with opposite rotations = forward motion
+                            thrust_x += angular_vel * side * height_factor * 5.0;
+
+                            // Vertical thrust (for jumping attempts)
+                            if self.grounded && angular_vel.abs() > 2.0 {
+                                thrust_y += angular_vel.abs() * height_factor * 0.5;
+                            }
                         }
-                    }
-                    // Either way, pick new target
-                    self.wander_target = None;
-                } else {
-                    // Move toward target
-                    self.velocity.x = dir.x * MOVE_SPEED;
                 }
-            } else {
-                // Reached target, pick new one next frame
-                self.wander_target = None;
-                self.velocity.x = 0.0;
+
+                // Normalize by motor count for consistent behavior
+                thrust_x /= motor_count as f32;
+                thrust_y /= motor_count as f32;
+            }
+
+            // Apply thrust to velocity with damping
+            self.velocity.x = self.velocity.x * 0.9 + thrust_x * delta_time * 100.0;
+            self.velocity.x = self.velocity.x.clamp(-MAX_SPEED, MAX_SPEED);
+
+            // Small upward thrust when grounded and motors are active
+            if self.grounded && thrust_y > 0.5 {
+                self.velocity.y += thrust_y * delta_time * 50.0;
+            }
+
+            // Update facing direction based on velocity
+            if self.velocity.x.abs() > 1.0 {
+                self.facing_direction = if self.velocity.x > 0.0 { 1.0 } else { -1.0 };
             }
         }
 
@@ -498,7 +515,7 @@ impl Creature {
         let new_x = self.position.x + movement.x;
         let new_y = self.position.y + movement.y;
 
-        // Check collision for horizontal movement
+        // Check collision for movement
         let root_radius = body_positions.first().map(|(_, r)| *r).unwrap_or(3.0);
         let can_move_x = !world.check_circle_collision(new_x, self.position.y, root_radius);
         let can_move_y = !world.check_circle_collision(self.position.x, new_y, root_radius);
@@ -509,16 +526,21 @@ impl Creature {
             self.velocity.x = 0.0;
         }
 
-        if can_move_y {
+        // Also check world bounds - stop at ground level (y=20 + radius)
+        // This prevents falling through the world into negative coordinates
+        let min_y = 20.0 + root_radius; // Ground is at y=0-20, stop just above it
+        if can_move_y && new_y >= min_y {
             self.position.y = new_y;
         } else {
             self.velocity.y = 0.0;
+            self.grounded = true;
+            // Snap to ground if falling below minimum
+            if self.position.y < min_y {
+                self.position.y = min_y;
+            }
         }
 
-        // Apply motor commands from neural network (rotates body parts)
-        self.apply_motor_commands_to_physics(delta_time, physics_world);
-
-        // Update physics body positions (for non-motorized parts)
+        // Update physics body positions
         self.sync_physics_positions(physics_world);
     }
 

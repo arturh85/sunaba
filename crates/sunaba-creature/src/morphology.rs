@@ -345,6 +345,19 @@ impl Default for MorphologyConfig {
     }
 }
 
+impl MorphologyConfig {
+    /// Simple morphology config for basic locomotion training
+    /// Produces creatures with 3-6 body parts that are easier to evolve
+    pub fn simple() -> Self {
+        Self {
+            grid_resolution: 4, // 4x4 = 16 positions max (was 8x8=64)
+            max_body_parts: 6,  // Max 6 parts (was 20)
+            min_radius: 4.0,    // Larger, chunkier parts
+            max_radius: 8.0,
+        }
+    }
+}
+
 /// Runtime physics representation (not serialized)
 pub struct MorphologyPhysics {
     pub multibody_handle: MultibodyJointHandle,

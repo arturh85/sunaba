@@ -9,7 +9,7 @@ use crate::world::World;
 
 use super::fitness::{
     CompositeFitness, DistanceFitness, FitnessFunction, FoodCollectionFitness, ForagingFitness,
-    SurvivalFitness,
+    MovementFitness, SurvivalFitness,
 };
 
 /// Configuration for a training scenario
@@ -67,6 +67,23 @@ impl Scenario {
                 world_height: 128,
             },
             fitness: Box::new(DistanceFitness),
+        }
+    }
+
+    /// Create a simple locomotion scenario with movement-focused fitness
+    /// Uses simple morphology (fewer body parts) and penalizes stationary creatures
+    pub fn simple_locomotion() -> Self {
+        Self {
+            config: ScenarioConfig {
+                name: "SimpleLocomotion".to_string(),
+                description: "Flat terrain optimized for simple creatures".to_string(),
+                expected_behavior: "Basic walking locomotion".to_string(),
+                spawn_position: Vec2::new(100.0, 50.0),
+                eval_duration: 30.0,
+                world_width: 400,
+                world_height: 100,
+            },
+            fitness: Box::new(MovementFitness::new()),
         }
     }
 
