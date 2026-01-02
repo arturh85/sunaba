@@ -97,7 +97,7 @@ getrandom_v03 = { package = "getrandom", version = "0.3", features = ["wasm_js"]
 egui-winit = { version = "0.33", default-features = false }
 
 [dev-dependencies]
-criterion = "0.5"  # Benchmarking
+criterion = "0.8"  # Benchmarking
 
 [profile.dev]
 opt-level = 1  # Some optimization even in debug for playable simulation
