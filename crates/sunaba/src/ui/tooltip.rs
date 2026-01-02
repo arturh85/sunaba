@@ -29,9 +29,15 @@ pub struct TooltipState {
     creature_action: String,
     creature_body_parts: usize,
     creature_joints: usize,
+    creature_motors: usize, // Motorized joints count
     creature_generation: u64,
     creature_grounded: bool,
     creature_velocity: Vec2,
+    // Viability info
+    creature_viability: f32,       // Overall viability score (0.0-1.0)
+    creature_can_walk: bool,       // Suitable for walking
+    creature_can_mine: bool,       // Suitable for mining
+    creature_has_locomotion: bool, // Has locomotion capability
 }
 
 impl TooltipState {
@@ -55,9 +61,15 @@ impl TooltipState {
             creature_action: String::new(),
             creature_body_parts: 0,
             creature_joints: 0,
+            creature_motors: 0,
             creature_generation: 0,
             creature_grounded: false,
             creature_velocity: Vec2::ZERO,
+            // Viability fields
+            creature_viability: 0.0,
+            creature_can_walk: false,
+            creature_can_mine: false,
+            creature_has_locomotion: false,
         }
     }
 
@@ -264,6 +276,8 @@ impl TooltipState {
 
     /// Update creature tooltip with information from world at mouse position
     pub fn update_creature(&mut self, world: &World, mouse_pos: Option<(i32, i32)>) {
+        use crate::creature::analyze_viability;
+
         self.creature_visible = false;
 
         let Some((mx, my)) = mouse_pos else {
@@ -290,6 +304,14 @@ impl TooltipState {
         self.creature_generation = creature.generation;
         self.creature_grounded = creature.grounded;
         self.creature_velocity = creature.velocity;
+
+        // Compute viability score
+        let viability = analyze_viability(&creature.morphology);
+        self.creature_motors = viability.motor_count;
+        self.creature_viability = viability.overall;
+        self.creature_can_walk = viability.suitable_for_walking;
+        self.creature_can_mine = viability.suitable_for_mining;
+        self.creature_has_locomotion = viability.has_locomotion;
     }
 
     /// Render creature tooltip near cursor position
@@ -385,15 +407,58 @@ impl TooltipState {
 
                 ui.separator();
 
-                // Morphology
+                // Morphology with color-coded parts
                 ui.label(
                     egui::RichText::new(format!(
-                        "Body: {} parts, {} joints",
-                        self.creature_body_parts, self.creature_joints
+                        "Body: {} parts, {} joints ({} motors)",
+                        self.creature_body_parts, self.creature_joints, self.creature_motors
                     ))
                     .color(egui::Color32::LIGHT_GRAY)
                     .size(11.0),
                 );
+
+                // Viability score with color coding
+                let viability_pct = self.creature_viability * 100.0;
+                let viability_color = if self.creature_viability > 0.7 {
+                    egui::Color32::GREEN
+                } else if self.creature_viability > 0.3 {
+                    egui::Color32::YELLOW
+                } else {
+                    egui::Color32::RED
+                };
+                ui.label(
+                    egui::RichText::new(format!("Viability: {:.0}%", viability_pct))
+                        .color(viability_color)
+                        .size(11.0),
+                );
+
+                // Capabilities
+                let mut capabilities = Vec::new();
+                if self.creature_can_walk {
+                    capabilities.push("Walk");
+                }
+                if self.creature_can_mine {
+                    capabilities.push("Mine");
+                }
+                if self.creature_has_locomotion {
+                    capabilities.push("Move");
+                }
+
+                if capabilities.is_empty() {
+                    ui.label(
+                        egui::RichText::new("Capabilities: None")
+                            .color(egui::Color32::DARK_GRAY)
+                            .size(10.0),
+                    );
+                } else {
+                    ui.label(
+                        egui::RichText::new(format!("Capabilities: {}", capabilities.join(", ")))
+                            .color(egui::Color32::from_rgb(100, 200, 100))
+                            .size(10.0),
+                    );
+                }
+
+                ui.separator();
 
                 // Movement state
                 let state = if self.creature_grounded {
@@ -407,6 +472,22 @@ impl TooltipState {
                         .color(egui::Color32::DARK_GRAY)
                         .size(11.0),
                 );
+
+                // Color legend
+                ui.separator();
+                ui.label(
+                    egui::RichText::new("Body Part Colors:")
+                        .color(egui::Color32::WHITE)
+                        .size(10.0),
+                );
+                ui.horizontal(|ui| {
+                    ui.colored_label(egui::Color32::from_rgb(255, 200, 50), "■");
+                    ui.label(egui::RichText::new("Root").size(9.0));
+                    ui.colored_label(egui::Color32::from_rgb(50, 200, 255), "■");
+                    ui.label(egui::RichText::new("Motor").size(9.0));
+                    ui.colored_label(egui::Color32::from_rgb(150, 150, 150), "■");
+                    ui.label(egui::RichText::new("Fixed").size(9.0));
+                });
             });
     }
 }

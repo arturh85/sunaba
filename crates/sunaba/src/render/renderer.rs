@@ -1321,8 +1321,79 @@ impl Renderer {
 
     /// Render a single creature to the pixel buffer
     fn render_creature_to_buffer(&mut self, creature: &crate::creature::CreatureRenderData) {
+        // First, draw joint connections (so they appear behind body parts)
+        for joint in &creature.joints {
+            // Color: cyan for motorized joints, gray for fixed
+            let color = if joint.is_motorized {
+                // Brighter when rotating (based on angle magnitude)
+                let activity = joint.angle.abs() / (std::f32::consts::PI / 4.0);
+                let base_brightness = 100 + (155.0 * activity.clamp(0.0, 1.0)) as u8;
+                [0, base_brightness, base_brightness, 255] // Cyan tint
+            } else {
+                [100, 100, 100, 255] // Gray for fixed
+            };
+            self.render_line(joint.start, joint.end, color);
+        }
+
+        // Then draw body parts on top
         for body_part in &creature.body_parts {
             self.render_filled_circle(body_part.position, body_part.radius, body_part.color);
+        }
+    }
+
+    /// Render a line between two world positions
+    fn render_line(&mut self, start: glam::Vec2, end: glam::Vec2, color: [u8; 4]) {
+        // Convert to texture coordinates
+        let start_tex_x = start.x as i32 - self.texture_origin.x as i32;
+        let start_tex_y = start.y as i32 - self.texture_origin.y as i32;
+        let end_tex_x = end.x as i32 - self.texture_origin.x as i32;
+        let end_tex_y = end.y as i32 - self.texture_origin.y as i32;
+
+        // Bresenham's line algorithm
+        let dx = (end_tex_x - start_tex_x).abs();
+        let dy = -(end_tex_y - start_tex_y).abs();
+        let sx = if start_tex_x < end_tex_x { 1 } else { -1 };
+        let sy = if start_tex_y < end_tex_y { 1 } else { -1 };
+        let mut err = dx + dy;
+
+        let mut x = start_tex_x;
+        let mut y = start_tex_y;
+
+        loop {
+            // Draw pixel if in bounds
+            if x >= 0
+                && x < Self::WORLD_TEXTURE_SIZE as i32
+                && y >= 0
+                && y < Self::WORLD_TEXTURE_SIZE as i32
+            {
+                let idx = ((y as u32 * Self::WORLD_TEXTURE_SIZE + x as u32) * 4) as usize;
+                if idx + 3 < self.pixel_buffer.len() {
+                    self.pixel_buffer[idx] = color[0];
+                    self.pixel_buffer[idx + 1] = color[1];
+                    self.pixel_buffer[idx + 2] = color[2];
+                    self.pixel_buffer[idx + 3] = color[3];
+                }
+            }
+
+            if x == end_tex_x && y == end_tex_y {
+                break;
+            }
+
+            let e2 = 2 * err;
+            if e2 >= dy {
+                if x == end_tex_x {
+                    break;
+                }
+                err += dy;
+                x += sx;
+            }
+            if e2 <= dx {
+                if y == end_tex_y {
+                    break;
+                }
+                err += dx;
+                y += sy;
+            }
         }
     }
 

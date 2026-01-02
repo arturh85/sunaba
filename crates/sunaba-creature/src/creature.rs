@@ -239,25 +239,72 @@ impl Creature {
         &self,
         physics_world: &crate::PhysicsWorld,
     ) -> Option<super::CreatureRenderData> {
+        use super::{BodyPartRenderData, BodyPartType, JointRenderData};
+        use crate::morphology::JointType;
+
         let physics = self.physics.as_ref()?;
 
-        let mut body_parts = Vec::new();
+        // Build set of motorized body part indices for quick lookup
+        let motor_indices: std::collections::HashSet<usize> =
+            physics.motor_link_indices.iter().copied().collect();
 
-        // Iterate through body parts and their physics handles
-        for (i, body_part) in self.morphology.body_parts.iter().enumerate() {
+        // Get positions of all body parts first (needed for joint rendering)
+        let mut positions: Vec<Option<Vec2>> = Vec::with_capacity(self.morphology.body_parts.len());
+        for (i, _) in self.morphology.body_parts.iter().enumerate() {
             if let Some(&handle) = physics.link_handles.get(i)
                 && let Some(rigid_body) = physics_world.rigid_body_set().get(handle)
             {
                 let translation = rigid_body.translation();
-                let position = Vec2::new(translation.x, translation.y);
+                positions.push(Some(Vec2::new(translation.x, translation.y)));
+            } else {
+                positions.push(None);
+            }
+        }
 
-                // Magenta color to stand out from environment
-                let color = [200, 50, 200, 255];
+        let mut body_parts = Vec::new();
 
-                body_parts.push(super::BodyPartRenderData {
+        // Classify and render each body part
+        for (i, body_part) in self.morphology.body_parts.iter().enumerate() {
+            if let Some(position) = positions[i] {
+                // Determine body part type
+                let part_type = if i == self.morphology.root_part_index {
+                    BodyPartType::Root
+                } else if motor_indices.contains(&i) {
+                    BodyPartType::Motor
+                } else {
+                    BodyPartType::Fixed
+                };
+
+                // Calculate motor activity level (0.0-1.0)
+                let motor_activity = if let Some(motor_idx) =
+                    physics.motor_link_indices.iter().position(|&idx| idx == i)
+                {
+                    physics
+                        .motor_angular_velocities
+                        .get(motor_idx)
+                        .map(|v| v.abs() / 3.0) // Normalize by max angular velocity
+                        .unwrap_or(0.0)
+                        .clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+
+                // Blend color based on motor activity (brighter when moving)
+                let base_color = part_type.color();
+                let dim_color = part_type.dim_color();
+                let color = [
+                    lerp_u8(dim_color[0], base_color[0], motor_activity),
+                    lerp_u8(dim_color[1], base_color[1], motor_activity),
+                    lerp_u8(dim_color[2], base_color[2], motor_activity),
+                    255,
+                ];
+
+                body_parts.push(BodyPartRenderData {
                     position,
                     radius: body_part.radius,
                     color,
+                    part_type,
+                    motor_activity,
                 });
             }
         }
@@ -266,7 +313,39 @@ impl Creature {
             return None;
         }
 
-        Some(super::CreatureRenderData { body_parts })
+        // Generate joint connection data
+        let mut joints = Vec::new();
+        for (joint_idx, joint) in self.morphology.joints.iter().enumerate() {
+            if let (Some(start_pos), Some(end_pos)) = (
+                positions.get(joint.parent_index).and_then(|p| *p),
+                positions.get(joint.child_index).and_then(|p| *p),
+            ) {
+                let is_motorized = matches!(joint.joint_type, JointType::Revolute { .. });
+
+                // Get rotation angle for this joint if motorized
+                let angle = if is_motorized {
+                    // Find motor index for this joint's child
+                    physics
+                        .motor_link_indices
+                        .iter()
+                        .position(|&idx| idx == joint.child_index)
+                        .and_then(|motor_idx| physics.motor_target_angles.get(motor_idx).copied())
+                        .unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+
+                joints.push(JointRenderData {
+                    start: start_pos,
+                    end: end_pos,
+                    is_motorized,
+                    angle,
+                });
+            }
+            let _ = joint_idx; // Silence unused warning
+        }
+
+        Some(super::CreatureRenderData { body_parts, joints })
     }
 
     /// Execute current action (called by CreatureManager)
@@ -483,6 +562,13 @@ impl Creature {
             vec![]
         }
     }
+}
+
+/// Linear interpolation for u8 values
+fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
+    let a = a as f32;
+    let b = b as f32;
+    (a + (b - a) * t.clamp(0.0, 1.0)) as u8
 }
 
 #[cfg(test)]
