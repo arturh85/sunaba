@@ -100,14 +100,15 @@
 - [x] **Basic crafting mechanics** (material transformation)
 
 ### Phase 6: Creature Architecture
-- [ ] Make sure the world is ready for creatures, think of a few example behaviors we want to evolve. Expand the materials, reaction or whatever else as needed.
-- [ ] CPPN-NEAT genome representation plus markdown documentation of what that is and how it works in GENOME.md
-- [ ] Morphology generation (CPPN → rapier2d bodies/joints)
-- [ ] Neural controller (GNN or Transformer)
-- [ ] Sensory systems (raycasts, material sensors, chemical gradients)
-- [ ] GOAP behavior planner (needs, actions, planning)
-- [ ] Creature-world interaction (digging, building, damage)
-- [ ] Basic creature spawning system
+- [x] Make sure the world is ready for creatures, think of a few example behaviors we want to evolve. Expand the materials, reaction or whatever else as needed.
+- [x] CPPN-NEAT genome representation plus markdown documentation of what that is and how it works in GENOME.md
+- [x] Morphology generation (CPPN → rapier2d bodies/joints)
+- [x] Neural controller (GNN or Transformer) - SimpleNeuralController implemented
+- [x] Sensory systems (raycasts, material sensors, chemical gradients)
+- [x] GOAP behavior planner (needs, actions, planning)
+- [x] Creature-world interaction (digging, building, damage)
+- [x] Basic creature spawning system
+- [x] **Creature movement with pixel-based collision** (gravity, wandering, 70% mining when blocked)
 - [ ] **Player-creature interaction foundation** (detection, targeting)
 
 ### Phase 7: Offline Evolution Pipeline
@@ -118,6 +119,7 @@
 - [ ] Parallel simulation infrastructure (rayon + bevy ECS or custom)
 - [ ] Checkpoint system (genome serialization, metrics logging)
 - [ ] Pre-evolved creature library (100+ behavioral archetypes across niches)
+- [ ] **GPU-accelerated CA simulation** (wgpu compute shaders for faster training)
 
 ### Phase 8: Survival Integration & Creature Deployment
 - [ ] Creature spawning from pre-trained library

@@ -40,6 +40,18 @@ pub struct Creature {
 
     pub position: Vec2,
     pub generation: u64,
+
+    // Movement state (not serialized - runtime only)
+    #[serde(skip)]
+    pub velocity: Vec2,
+    #[serde(skip)]
+    pub wander_target: Option<Vec2>,
+    #[serde(skip)]
+    pub wander_timer: f32,
+    #[serde(skip)]
+    pub facing_direction: f32, // -1.0 = left, 1.0 = right
+    #[serde(skip)]
+    pub grounded: bool,
 }
 
 impl Creature {
@@ -78,6 +90,11 @@ impl Creature {
             sensor_config: SensorConfig::default(),
             position,
             generation: 0,
+            velocity: Vec2::ZERO,
+            wander_target: None,
+            wander_timer: 0.0,
+            facing_direction: 1.0,
+            grounded: false,
         }
     }
 
@@ -220,12 +237,180 @@ impl Creature {
                     }
                 }
                 _ => {
-                    // MoveTo, Wander, Flee, Rest - handled by neural controller/physics
+                    // MoveTo, Wander, Flee, Rest - handled by apply_movement
                 }
             }
         }
 
         false
+    }
+
+    /// Apply physics movement to creature (gravity, collision, wandering)
+    /// This is the main movement logic that replaces rapier2d dynamic physics
+    pub fn apply_movement(
+        &mut self,
+        world: &crate::world::World,
+        physics_world: &mut crate::physics::PhysicsWorld,
+        delta_time: f32,
+    ) {
+        use rand::Rng;
+
+        const GRAVITY: f32 = 300.0;
+        const MOVE_SPEED: f32 = 30.0;
+        const WANDER_INTERVAL: f32 = 3.0;
+
+        // Get body part positions from physics
+        let body_positions: Vec<(Vec2, f32)> = if let Some(ref physics) = self.physics {
+            self.morphology
+                .body_parts
+                .iter()
+                .enumerate()
+                .filter_map(|(i, part)| {
+                    physics.link_handles.get(i).and_then(|&handle| {
+                        physics_world.rigid_body_set().get(handle).map(|rb| {
+                            let pos = rb.translation();
+                            (Vec2::new(pos.x, pos.y), part.radius)
+                        })
+                    })
+                })
+                .collect()
+        } else {
+            return;
+        };
+
+        if body_positions.is_empty() {
+            return;
+        }
+
+        // Check if grounded
+        self.grounded = world.is_creature_grounded(&body_positions);
+
+        // Apply gravity if not grounded
+        if !self.grounded {
+            self.velocity.y -= GRAVITY * delta_time;
+            self.velocity.y = self.velocity.y.max(-500.0); // Terminal velocity
+        } else {
+            self.velocity.y = 0.0;
+        }
+
+        // Update wander timer and pick new target if needed
+        self.wander_timer -= delta_time;
+        if self.wander_timer <= 0.0 || self.wander_target.is_none() {
+            let mut rng = rand::rng();
+            let angle = rng.random::<f32>() * std::f32::consts::TAU;
+            let dist = rng.random::<f32>() * 30.0 + 10.0;
+            self.wander_target =
+                Some(self.position + Vec2::new(angle.cos() * dist, angle.sin().abs() * dist * 0.3));
+            self.wander_timer = WANDER_INTERVAL;
+        }
+
+        // Calculate movement toward target
+        if let Some(target) = self.wander_target {
+            let to_target = target - self.position;
+            let distance = to_target.length();
+
+            if distance > 2.0 {
+                let dir = to_target.normalize();
+                self.facing_direction = if dir.x >= 0.0 { 1.0 } else { -1.0 };
+
+                // Check for blocking pixels
+                let root_radius = body_positions.first().map(|(_, r)| *r).unwrap_or(3.0);
+                if let Some((bx, by, material_id)) =
+                    world.get_blocking_pixel(self.position, dir, root_radius, root_radius + 3.0)
+                {
+                    // 70% chance to mine, 30% to turn around
+                    let mut rng = rand::rng();
+                    if rng.random::<f32>() < 0.7 {
+                        // Check if it's not bedrock (material_id 14)
+                        if material_id != 14 {
+                            self.current_action = Some(CreatureAction::Mine {
+                                position: Vec2::new(bx as f32, by as f32),
+                                material_id,
+                            });
+                            self.action_timer = 0.5; // Mining takes time
+                        }
+                    }
+                    // Either way, pick new target
+                    self.wander_target = None;
+                } else {
+                    // Move toward target
+                    self.velocity.x = dir.x * MOVE_SPEED;
+                }
+            } else {
+                // Reached target, pick new one next frame
+                self.wander_target = None;
+                self.velocity.x = 0.0;
+            }
+        }
+
+        // Calculate new position
+        let movement = self.velocity * delta_time;
+        let new_x = self.position.x + movement.x;
+        let new_y = self.position.y + movement.y;
+
+        // Check collision for horizontal movement
+        let root_radius = body_positions.first().map(|(_, r)| *r).unwrap_or(3.0);
+        let can_move_x = !world.check_circle_collision(new_x, self.position.y, root_radius);
+        let can_move_y = !world.check_circle_collision(self.position.x, new_y, root_radius);
+
+        if can_move_x {
+            self.position.x = new_x;
+        } else {
+            self.velocity.x = 0.0;
+        }
+
+        if can_move_y {
+            self.position.y = new_y;
+        } else {
+            self.velocity.y = 0.0;
+        }
+
+        // Update physics body positions
+        self.sync_physics_positions(physics_world);
+    }
+
+    /// Sync creature position to all physics body parts
+    fn sync_physics_positions(&mut self, physics_world: &mut crate::physics::PhysicsWorld) {
+        use rapier2d::prelude::*;
+
+        let Some(ref physics) = self.physics else {
+            return;
+        };
+
+        // Move root body part to creature position
+        // Other body parts follow with their local offsets
+        for (i, part) in self.morphology.body_parts.iter().enumerate() {
+            if let Some(&handle) = physics.link_handles.get(i) {
+                if let Some(rb) = physics_world.rigid_body_set_mut().get_mut(handle) {
+                    let world_pos = self.position + part.local_position;
+                    rb.set_translation(vector![world_pos.x, world_pos.y], true);
+                }
+            }
+        }
+    }
+
+    /// Get all body part positions (for external use)
+    pub fn get_body_positions(
+        &self,
+        physics_world: &crate::physics::PhysicsWorld,
+    ) -> Vec<(Vec2, f32)> {
+        if let Some(ref physics) = self.physics {
+            self.morphology
+                .body_parts
+                .iter()
+                .enumerate()
+                .filter_map(|(i, part)| {
+                    physics.link_handles.get(i).and_then(|&handle| {
+                        physics_world.rigid_body_set().get(handle).map(|rb| {
+                            let pos = rb.translation();
+                            (Vec2::new(pos.x, pos.y), part.radius)
+                        })
+                    })
+                })
+                .collect()
+        } else {
+            vec![]
+        }
     }
 }
 

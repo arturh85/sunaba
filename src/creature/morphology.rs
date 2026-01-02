@@ -353,9 +353,8 @@ pub struct MorphologyPhysics {
 }
 
 impl MorphologyPhysics {
-    /// Build rapier2d multibody from morphology
-    /// For Phase 6, we create individual rigid bodies connected with impulse joints
-    /// Full multibody joints can be added in a later phase for better stability
+    /// Build rapier2d bodies from morphology
+    /// Uses kinematic bodies so we control position manually via pixel-based collision
     pub fn from_morphology(
         morphology: &CreatureMorphology,
         position: Vec2,
@@ -365,11 +364,12 @@ impl MorphologyPhysics {
 
         let mut link_handles = Vec::new();
 
-        // Create rigid bodies for each body part
+        // Create kinematic rigid bodies for each body part
+        // We use kinematic_position_based so we can set position directly
         for part in &morphology.body_parts {
             let world_pos = position + part.local_position;
 
-            let rigid_body = RigidBodyBuilder::dynamic()
+            let rigid_body = RigidBodyBuilder::kinematic_position_based()
                 .translation(vector![world_pos.x, world_pos.y])
                 .build();
 
@@ -378,7 +378,7 @@ impl MorphologyPhysics {
             link_handles.push(body_handle);
         }
 
-        // Create colliders in a second pass
+        // Create colliders in a second pass (for rendering and future collision)
         for (i, part) in morphology.body_parts.iter().enumerate() {
             let collider = ColliderBuilder::ball(part.radius)
                 .density(part.density)

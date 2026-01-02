@@ -1,7 +1,9 @@
 //! Mouseover tooltip showing pixel information
 
+use crate::entity::EntityId;
 use crate::simulation::Materials;
 use crate::world::World;
+use glam::Vec2;
 
 /// Tooltip state for displaying pixel information at cursor
 pub struct TooltipState {
@@ -18,6 +20,18 @@ pub struct TooltipState {
     // Mining time estimate
     mining_time: Option<f32>, // None if can't mine, Some(time) otherwise
     mining_tool: String,      // Tool name being used
+
+    // Creature tooltip state
+    creature_visible: bool,
+    creature_id: Option<EntityId>,
+    creature_health: (f32, f32), // (current, max)
+    creature_hunger: (f32, f32), // (current, max)
+    creature_action: String,
+    creature_body_parts: usize,
+    creature_joints: usize,
+    creature_generation: u64,
+    creature_grounded: bool,
+    creature_velocity: Vec2,
 }
 
 impl TooltipState {
@@ -33,6 +47,17 @@ impl TooltipState {
             light_overlay_active: false,
             mining_time: None,
             mining_tool: String::new(),
+            // Creature tooltip fields
+            creature_visible: false,
+            creature_id: None,
+            creature_health: (0.0, 0.0),
+            creature_hunger: (0.0, 0.0),
+            creature_action: String::new(),
+            creature_body_parts: 0,
+            creature_joints: 0,
+            creature_generation: 0,
+            creature_grounded: false,
+            creature_velocity: Vec2::ZERO,
         }
     }
 
@@ -234,6 +259,154 @@ impl TooltipState {
                             .strong(),
                     );
                 }
+            });
+    }
+
+    /// Update creature tooltip with information from world at mouse position
+    pub fn update_creature(&mut self, world: &World, mouse_pos: Option<(i32, i32)>) {
+        self.creature_visible = false;
+
+        let Some((mx, my)) = mouse_pos else {
+            return;
+        };
+        let pos = Vec2::new(mx as f32, my as f32);
+
+        // Find creature within 15 pixel radius of mouse
+        let Some(creature) = world.creature_manager.get_creature_at_position(pos, 15.0) else {
+            return;
+        };
+
+        self.creature_visible = true;
+        self.creature_id = Some(creature.id);
+        self.creature_health = (creature.health.current, creature.health.max);
+        self.creature_hunger = (creature.hunger.current, creature.hunger.max);
+        self.creature_action = creature
+            .current_action
+            .as_ref()
+            .map(|a| a.to_string())
+            .unwrap_or_else(|| "Idle".to_string());
+        self.creature_body_parts = creature.morphology.body_parts.len();
+        self.creature_joints = creature.morphology.joints.len();
+        self.creature_generation = creature.generation;
+        self.creature_grounded = creature.grounded;
+        self.creature_velocity = creature.velocity;
+    }
+
+    /// Render creature tooltip near cursor position
+    pub fn render_creature(&self, ctx: &egui::Context, cursor_pos: Option<egui::Pos2>) {
+        if !self.creature_visible {
+            return;
+        }
+
+        let Some(cursor) = cursor_pos else {
+            return;
+        };
+        let tooltip_pos = egui::pos2(cursor.x + 20.0, cursor.y + 20.0);
+
+        egui::Window::new("##creature_tooltip")
+            .title_bar(false)
+            .resizable(false)
+            .fixed_pos(tooltip_pos)
+            .frame(egui::Frame {
+                fill: egui::Color32::from_rgba_unmultiplied(0, 0, 0, 220),
+                stroke: egui::Stroke::new(1.0, egui::Color32::from_rgb(200, 50, 200)),
+                inner_margin: egui::Margin::same(8),
+                outer_margin: egui::Margin::same(0),
+                corner_radius: egui::CornerRadius::same(4),
+                shadow: egui::epaint::Shadow::NONE,
+            })
+            .show(ctx, |ui| {
+                // Header with ID
+                if let Some(id) = self.creature_id {
+                    ui.label(
+                        egui::RichText::new(format!("Creature #{}", id))
+                            .color(egui::Color32::from_rgb(200, 50, 200))
+                            .strong(),
+                    );
+                }
+                ui.label(
+                    egui::RichText::new(format!("Generation: {}", self.creature_generation))
+                        .color(egui::Color32::LIGHT_GRAY)
+                        .size(11.0),
+                );
+                ui.separator();
+
+                // Current action
+                ui.label(
+                    egui::RichText::new(format!("Status: {}", self.creature_action))
+                        .color(egui::Color32::WHITE),
+                );
+
+                // Health bar with color coding
+                let health_pct = if self.creature_health.1 > 0.0 {
+                    self.creature_health.0 / self.creature_health.1
+                } else {
+                    0.0
+                };
+                let health_color = if health_pct > 0.5 {
+                    egui::Color32::GREEN
+                } else if health_pct > 0.25 {
+                    egui::Color32::YELLOW
+                } else {
+                    egui::Color32::RED
+                };
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Health: {:.0}/{:.0} ({:.0}%)",
+                        self.creature_health.0,
+                        self.creature_health.1,
+                        health_pct * 100.0
+                    ))
+                    .color(health_color)
+                    .size(12.0),
+                );
+
+                // Hunger
+                let hunger_pct = if self.creature_hunger.1 > 0.0 {
+                    self.creature_hunger.0 / self.creature_hunger.1
+                } else {
+                    0.0
+                };
+                let hunger_color = if hunger_pct > 0.3 {
+                    egui::Color32::from_rgb(255, 200, 100)
+                } else {
+                    egui::Color32::from_rgb(255, 100, 100)
+                };
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Hunger: {:.0}/{:.0} ({:.0}%)",
+                        self.creature_hunger.0,
+                        self.creature_hunger.1,
+                        hunger_pct * 100.0
+                    ))
+                    .color(hunger_color)
+                    .size(12.0),
+                );
+
+                ui.separator();
+
+                // Morphology
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Body: {} parts, {} joints",
+                        self.creature_body_parts, self.creature_joints
+                    ))
+                    .color(egui::Color32::LIGHT_GRAY)
+                    .size(11.0),
+                );
+
+                // Movement state
+                let state = if self.creature_grounded {
+                    "Grounded"
+                } else {
+                    "Airborne"
+                };
+                let speed = self.creature_velocity.length();
+                ui.label(
+                    egui::RichText::new(format!("{} | Speed: {:.1}", state, speed))
+                        .color(egui::Color32::DARK_GRAY)
+                        .size(11.0),
+                );
             });
     }
 }

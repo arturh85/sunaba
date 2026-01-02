@@ -101,6 +101,10 @@ impl UiState {
         mouse_world_pos: Option<(i32, i32)>,
         light_overlay_active: bool,
     ) {
+        // Update creature tooltip first (takes priority)
+        self.tooltip.update_creature(world, mouse_world_pos);
+
+        // Update material tooltip
         self.tooltip
             .update(world, materials, mouse_world_pos, light_overlay_active);
     }
@@ -164,7 +168,10 @@ impl UiState {
             }
         }
 
-        // Always render tooltip when it has valid data
+        // Render creature tooltip (takes priority over material tooltip)
+        self.tooltip.render_creature(ctx, Some(cursor_screen_pos));
+
+        // Render material tooltip (only if creature tooltip not visible)
         self.tooltip.render(ctx, cursor_screen_pos);
     }
 

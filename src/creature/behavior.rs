@@ -104,6 +104,20 @@ impl CreatureAction {
     }
 }
 
+impl std::fmt::Display for CreatureAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MoveTo { .. } => write!(f, "Moving"),
+            Self::Wander { .. } => write!(f, "Wandering"),
+            Self::Eat { .. } => write!(f, "Eating"),
+            Self::Mine { .. } => write!(f, "Mining"),
+            Self::Build { .. } => write!(f, "Building"),
+            Self::Flee { .. } => write!(f, "Fleeing"),
+            Self::Rest { .. } => write!(f, "Resting"),
+        }
+    }
+}
+
 /// Action definition (preconditions + effects)
 #[derive(Debug, Clone)]
 pub struct ActionDef {

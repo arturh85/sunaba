@@ -305,6 +305,106 @@ impl World {
         false
     }
 
+    /// Check if a circle collides with solid materials
+    /// Used for creature body part collision detection
+    pub fn check_circle_collision(&self, x: f32, y: f32, radius: f32) -> bool {
+        use crate::simulation::MaterialType;
+
+        // Check center and 8 points around the perimeter
+        let check_points = [
+            (x, y),                                   // Center
+            (x + radius, y),                          // Right
+            (x - radius, y),                          // Left
+            (x, y + radius),                          // Top
+            (x, y - radius),                          // Bottom
+            (x + radius * 0.707, y + radius * 0.707), // Top-right
+            (x - radius * 0.707, y + radius * 0.707), // Top-left
+            (x + radius * 0.707, y - radius * 0.707), // Bottom-right
+            (x - radius * 0.707, y - radius * 0.707), // Bottom-left
+        ];
+
+        for (px, py) in check_points {
+            if let Some(pixel) = self.get_pixel(px as i32, py as i32) {
+                if !pixel.is_empty() {
+                    let material = self.materials.get(pixel.material_id);
+                    if material.material_type == MaterialType::Solid {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if any body part in a list is grounded (touching solid below)
+    /// positions: Vec of (center, radius) for each body part
+    pub fn is_creature_grounded(&self, positions: &[(glam::Vec2, f32)]) -> bool {
+        use crate::simulation::MaterialType;
+
+        for (center, radius) in positions {
+            // Check 3 points just below the body part
+            let check_y = center.y - radius - 1.0;
+            let check_points = [
+                (center.x - radius * 0.5, check_y),
+                (center.x, check_y),
+                (center.x + radius * 0.5, check_y),
+            ];
+
+            for (px, py) in check_points {
+                if let Some(pixel) = self.get_pixel(px as i32, py as i32) {
+                    if !pixel.is_empty() {
+                        let material = self.materials.get(pixel.material_id);
+                        if material.material_type == MaterialType::Solid {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Get the first blocking pixel in a direction from a position
+    /// Returns (x, y, material_id) of the blocking pixel, or None if path is clear
+    pub fn get_blocking_pixel(
+        &self,
+        from: glam::Vec2,
+        direction: glam::Vec2,
+        radius: f32,
+        max_distance: f32,
+    ) -> Option<(i32, i32, u16)> {
+        use crate::simulation::MaterialType;
+
+        // Normalize direction
+        let dir = direction.normalize_or_zero();
+        if dir == glam::Vec2::ZERO {
+            return None;
+        }
+
+        // Step along the direction, checking for solid pixels
+        let step_size = 1.0;
+        let mut distance = radius; // Start from edge of body
+
+        while distance < max_distance {
+            let check_pos = from + dir * distance;
+            let px = check_pos.x as i32;
+            let py = check_pos.y as i32;
+
+            if let Some(pixel) = self.get_pixel(px, py) {
+                if !pixel.is_empty() {
+                    let material = self.materials.get(pixel.material_id);
+                    if material.material_type == MaterialType::Solid {
+                        return Some((px, py, pixel.material_id));
+                    }
+                }
+            }
+
+            distance += step_size;
+        }
+
+        None
+    }
+
     /// Update player position based on input with gravity and jump
     pub fn update_player(&mut self, input: &crate::app::InputState, dt: f32) {
         use crate::entity::player::Player;

@@ -91,33 +91,29 @@ impl CreatureManager {
 
         let mut dead_creatures = Vec::new();
 
+        // Collect creature IDs to iterate over (to avoid borrow issues)
+        let creature_ids: Vec<EntityId> = self.creatures.keys().copied().collect();
+
         // Update each creature
-        for (id, creature) in self.creatures.iter_mut() {
+        for id in creature_ids {
+            let Some(creature) = self.creatures.get_mut(&id) else {
+                continue;
+            };
+
             // Gather sensory input
             let sensory_input =
                 SensoryInput::gather(world, creature.position, &creature.sensor_config);
 
-            // Update creature state
+            // Update creature state (hunger, needs, planning)
             let died = creature.update(delta_time, &sensory_input);
 
             if died {
-                dead_creatures.push(*id);
+                dead_creatures.push(id);
                 continue;
             }
 
-            // Execute current action (eat, mine, build)
-            // We need mutable world access, so this is done separately
-            // For now, just update position from physics if available
-            if let Some(ref physics) = creature.physics {
-                if !physics.link_handles.is_empty() {
-                    // Get position from first body part (root)
-                    if let Some(body) = physics_world.rigid_body_set().get(physics.link_handles[0])
-                    {
-                        let translation = body.translation();
-                        creature.position = Vec2::new(translation.x, translation.y);
-                    }
-                }
-            }
+            // Apply movement physics (gravity, wandering, collision)
+            creature.apply_movement(world, physics_world, delta_time);
         }
 
         // Remove dead creatures
@@ -155,6 +151,18 @@ impl CreatureManager {
             .values()
             .filter_map(|creature| creature.get_render_data(physics_world))
             .collect()
+    }
+
+    /// Find creature at or near world position (within radius)
+    /// Used for mouse hover detection
+    pub fn get_creature_at_position(&self, pos: Vec2, radius: f32) -> Option<&Creature> {
+        for creature in self.creatures.values() {
+            let dist = (creature.position - pos).length();
+            if dist <= radius {
+                return Some(creature);
+            }
+        }
+        None
     }
 
     /// Get creature by ID
