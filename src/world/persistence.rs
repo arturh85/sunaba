@@ -111,14 +111,14 @@ impl ChunkPersistence {
 
         if !path.exists() {
             // Generate new chunk
-            log::info!(
+            log::debug!(
                 "[GEN] Chunk ({}, {}) - file doesn't exist, generating",
                 chunk_x,
                 chunk_y
             );
             let chunk = generator.generate_chunk(chunk_x, chunk_y);
             let non_air = chunk.count_non_air();
-            log::info!(
+            log::debug!(
                 "[GEN] Chunk ({}, {}) generated - {} non-air pixels",
                 chunk_x,
                 chunk_y,
@@ -131,7 +131,7 @@ impl ChunkPersistence {
         match self.load_chunk_file(&path) {
             Ok(chunk) => {
                 let non_air = chunk.count_non_air();
-                log::info!(
+                log::debug!(
                     "[LOAD] Chunk ({}, {}) from disk - {} non-air pixels",
                     chunk_x,
                     chunk_y,

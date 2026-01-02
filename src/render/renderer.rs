@@ -1,6 +1,7 @@
 //! wgpu-based renderer for pixel world
 
 use anyhow::Result;
+use instant::Instant;
 use std::iter;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
@@ -64,6 +65,16 @@ struct CameraUniform {
     aspect: f32,
 }
 
+/// Timing breakdown for render phases (in milliseconds)
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RenderTiming {
+    pub pixel_buffer_ms: f32,
+    pub gpu_upload_ms: f32,
+    pub acquire_ms: f32,
+    pub egui_ms: f32,
+    pub present_ms: f32,
+}
+
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -118,6 +129,12 @@ pub struct Renderer {
     rendered_chunks: std::collections::HashSet<glam::IVec2>,
     /// Flag indicating texture needs full rebuffer
     needs_full_rebuffer: bool,
+
+    // Render dirty tracking for incremental updates
+    /// Chunks that need re-rendering this frame
+    render_dirty_chunks: std::collections::HashSet<glam::IVec2>,
+    /// Previous player position (to clear old sprite location)
+    prev_player_pos: glam::Vec2,
 }
 
 impl Renderer {
@@ -594,7 +611,14 @@ impl Renderer {
             texture_origin_buffer,
             rendered_chunks: std::collections::HashSet::new(),
             needs_full_rebuffer: true, // Start with full rebuffer
+            render_dirty_chunks: std::collections::HashSet::new(),
+            prev_player_pos: glam::Vec2::ZERO,
         })
+    }
+
+    /// Get render stats for debugging (dirty_chunks, rendered_total)
+    pub fn get_render_stats(&self) -> (usize, usize) {
+        (self.render_dirty_chunks.len(), self.rendered_chunks.len())
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -613,11 +637,13 @@ impl Renderer {
 
     pub fn render(
         &mut self,
-        world: &World,
+        world: &mut World,
         egui_ctx: &egui::Context,
         textures_delta: egui::TexturesDelta,
         shapes: Vec<egui::epaint::ClippedShape>,
-    ) -> Result<()> {
+    ) -> Result<RenderTiming> {
+        let mut timing = RenderTiming::default();
+
         log::trace!(
             "Render frame: camera pos=({:.1}, {:.1}), zoom={:.2}",
             self.camera.position[0],
@@ -629,37 +655,53 @@ impl Renderer {
         let camera_pos = glam::Vec2::new(self.camera.position[0], self.camera.position[1]);
         self.update_texture_origin(camera_pos);
 
-        // Update pixel buffer from world chunks
-        self.update_pixel_buffer(world);
+        // Track if we need full upload (before update clears the flag)
+        let needs_full_upload = self.needs_full_rebuffer;
 
-        // Upload to GPU
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.world_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &self.pixel_buffer,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(Self::WORLD_TEXTURE_SIZE * 4),
-                rows_per_image: Some(Self::WORLD_TEXTURE_SIZE),
-            },
-            wgpu::Extent3d {
-                width: Self::WORLD_TEXTURE_SIZE,
-                height: Self::WORLD_TEXTURE_SIZE,
-                depth_or_array_layers: 1,
-            },
-        );
+        // Time: Update pixel buffer from world chunks
+        let t0 = Instant::now();
+        self.update_pixel_buffer(world);
+        timing.pixel_buffer_ms = t0.elapsed().as_secs_f32() * 1000.0;
+
+        // Time: Upload to GPU
+        let t1 = Instant::now();
+        if needs_full_upload {
+            // Full texture upload after rebuffer
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.world_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &self.pixel_buffer,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(Self::WORLD_TEXTURE_SIZE * 4),
+                    rows_per_image: Some(Self::WORLD_TEXTURE_SIZE),
+                },
+                wgpu::Extent3d {
+                    width: Self::WORLD_TEXTURE_SIZE,
+                    height: Self::WORLD_TEXTURE_SIZE,
+                    depth_or_array_layers: 1,
+                },
+            );
+        } else {
+            // Incremental upload: only upload dirty chunks
+            self.upload_dirty_chunks();
+        }
+        timing.gpu_upload_ms = t1.elapsed().as_secs_f32() * 1000.0;
 
         // Update camera position to follow player
         self.camera.position = [world.player.position.x, world.player.position.y];
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera]));
 
-        // Get output texture
+        // Get output texture (this can block waiting for GPU)
+        let t_swap = Instant::now();
         let output = self.surface.get_current_texture()?;
+        timing.acquire_ms = t_swap.elapsed().as_secs_f32() * 1000.0;
+
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -669,6 +711,9 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("render_encoder"),
             });
+
+        // Time: egui preparation and rendering
+        let t2 = Instant::now();
 
         // Update egui textures
         for (id, image_delta) in &textures_delta.set {
@@ -750,14 +795,18 @@ impl Renderer {
         for id in &textures_delta.free {
             self.egui_renderer.free_texture(id);
         }
+        timing.egui_ms = t2.elapsed().as_secs_f32() * 1000.0;
 
+        // Time: submit and present
+        let t3 = Instant::now();
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
+        timing.present_ms = t3.elapsed().as_secs_f32() * 1000.0;
 
-        Ok(())
+        Ok(timing)
     }
 
-    fn update_pixel_buffer(&mut self, world: &World) {
+    fn update_pixel_buffer(&mut self, world: &mut World) {
         // If texture origin changed, need to fully rebuffer
         if self.needs_full_rebuffer {
             // Clear entire buffer to background
@@ -790,25 +839,40 @@ impl Renderer {
             self.needs_full_rebuffer = false;
             self.rendered_chunks.clear();
 
-            // Track newly rendered chunks
+            // Track newly rendered chunks and clear their dirty_rect
             for cy in min_chunk.y..=max_chunk.y {
                 for cx in min_chunk.x..=max_chunk.x {
-                    self.rendered_chunks.insert(glam::IVec2::new(cx, cy));
+                    let chunk_pos = glam::IVec2::new(cx, cy);
+                    self.rendered_chunks.insert(chunk_pos);
+                    // Clear dirty_rect after rendering
+                    if let Some(chunk) = world.chunks.get_mut(&chunk_pos) {
+                        chunk.clear_dirty_rect();
+                    }
                 }
             }
         } else {
-            // Normal update: only update active/dirty chunks
-            // Clear buffer with background color
-            for pixel in self.pixel_buffer.chunks_mut(4) {
-                pixel[0] = 40; // R
-                pixel[1] = 44; // G
-                pixel[2] = 52; // B
-                pixel[3] = 255; // A
+            // Incremental update: only render dirty chunks
+            self.collect_render_dirty_chunks(world);
+
+            // Clear only dirty chunk regions (not entire buffer)
+            self.clear_dirty_regions();
+
+            // Render only dirty chunks
+            let dirty_chunks: Vec<glam::IVec2> = self.render_dirty_chunks.iter().copied().collect();
+            for chunk_pos in &dirty_chunks {
+                if let Some(chunk) = world.chunks.get(chunk_pos) {
+                    self.render_chunk_to_buffer(chunk, world);
+                }
+                // Mark chunk as rendered
+                self.rendered_chunks.insert(*chunk_pos);
             }
 
-            // Render each chunk
-            for chunk in world.active_chunks() {
-                self.render_chunk_to_buffer(chunk, world);
+            // Clear dirty_rect for rendered chunks - this is the key optimization!
+            // Next frame, only chunks that changed AFTER rendering will be dirty
+            for chunk_pos in &dirty_chunks {
+                if let Some(chunk) = world.chunks.get_mut(chunk_pos) {
+                    chunk.clear_dirty_rect();
+                }
             }
         }
 
@@ -873,6 +937,192 @@ impl Renderer {
             glam::IVec2::new(min_chunk_x, min_chunk_y),
             glam::IVec2::new(max_chunk_x, max_chunk_y),
         )
+    }
+
+    /// Collect chunks that need re-rendering this frame
+    fn collect_render_dirty_chunks(&mut self, world: &World) {
+        self.render_dirty_chunks.clear();
+
+        let (min_chunk, max_chunk) = self.get_visible_chunk_range();
+
+        for cy in min_chunk.y..=max_chunk.y {
+            for cx in min_chunk.x..=max_chunk.x {
+                let pos = glam::IVec2::new(cx, cy);
+
+                if let Some(chunk) = world.chunks.get(&pos) {
+                    // Re-render if: newly visible OR dirty from simulation
+                    if !self.rendered_chunks.contains(&pos) || chunk.dirty_rect.is_some() {
+                        self.render_dirty_chunks.insert(pos);
+                    }
+                }
+            }
+        }
+
+        // Add chunks affected by player movement
+        self.add_player_affected_chunks(world);
+    }
+
+    /// Add chunks that need re-rendering due to player movement
+    fn add_player_affected_chunks(&mut self, world: &World) {
+        use crate::entity::player::Player;
+
+        // Current player position - get affected chunks
+        let player_pos = world.player.position;
+        let curr_chunks = self.get_chunks_for_rect(player_pos, Player::WIDTH, Player::HEIGHT);
+
+        // Previous player position - need to clear old sprite
+        let prev_chunks =
+            self.get_chunks_for_rect(self.prev_player_pos, Player::WIDTH, Player::HEIGHT);
+
+        for chunk_pos in curr_chunks.into_iter().chain(prev_chunks.into_iter()) {
+            self.render_dirty_chunks.insert(chunk_pos);
+        }
+
+        // Update prev position for next frame
+        self.prev_player_pos = player_pos;
+    }
+
+    /// Get chunk positions that overlap with a rectangle
+    fn get_chunks_for_rect(&self, center: glam::Vec2, width: f32, height: f32) -> Vec<glam::IVec2> {
+        let half_w = width / 2.0;
+        let half_h = height / 2.0;
+
+        let min_x = ((center.x - half_w) / CHUNK_SIZE as f32).floor() as i32;
+        let max_x = ((center.x + half_w) / CHUNK_SIZE as f32).floor() as i32;
+        let min_y = ((center.y - half_h) / CHUNK_SIZE as f32).floor() as i32;
+        let max_y = ((center.y + half_h) / CHUNK_SIZE as f32).floor() as i32;
+
+        let mut chunks = Vec::new();
+        for cy in min_y..=max_y {
+            for cx in min_x..=max_x {
+                chunks.push(glam::IVec2::new(cx, cy));
+            }
+        }
+        chunks
+    }
+
+    /// Clear only the regions in pixel buffer for dirty chunks
+    fn clear_dirty_regions(&mut self) {
+        const BG: [u8; 4] = [40, 44, 52, 255];
+
+        for &chunk_pos in &self.render_dirty_chunks {
+            // Calculate chunk's texture coordinates
+            let world_x = chunk_pos.x * CHUNK_SIZE as i32;
+            let world_y = chunk_pos.y * CHUNK_SIZE as i32;
+            let tx = world_x - self.texture_origin.x as i32;
+            let ty = world_y - self.texture_origin.y as i32;
+
+            // Skip if outside texture bounds
+            if tx < 0
+                || ty < 0
+                || tx >= Self::WORLD_TEXTURE_SIZE as i32
+                || ty >= Self::WORLD_TEXTURE_SIZE as i32
+            {
+                continue;
+            }
+
+            // Clear this chunk's region
+            for y in 0..CHUNK_SIZE {
+                let py = ty + y as i32;
+                if py < 0 || py >= Self::WORLD_TEXTURE_SIZE as i32 {
+                    continue;
+                }
+
+                for x in 0..CHUNK_SIZE {
+                    let px = tx + x as i32;
+                    if px < 0 || px >= Self::WORLD_TEXTURE_SIZE as i32 {
+                        continue;
+                    }
+
+                    let idx = ((py as u32 * Self::WORLD_TEXTURE_SIZE + px as u32) * 4) as usize;
+                    if idx + 3 < self.pixel_buffer.len() {
+                        self.pixel_buffer[idx..idx + 4].copy_from_slice(&BG);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Convert chunk position to texture pixel coordinates
+    fn chunk_to_texture_pixel(&self, chunk_pos: glam::IVec2) -> (i32, i32) {
+        let world_x = chunk_pos.x * CHUNK_SIZE as i32;
+        let world_y = chunk_pos.y * CHUNK_SIZE as i32;
+        let tx = world_x - self.texture_origin.x as i32;
+        let ty = world_y - self.texture_origin.y as i32;
+        (tx, ty)
+    }
+
+    /// Extract a chunk's pixel data from the main buffer for GPU upload
+    fn extract_chunk_pixels(&self, tx: i32, ty: i32) -> Vec<u8> {
+        let mut chunk_data = vec![0u8; CHUNK_SIZE * CHUNK_SIZE * 4];
+
+        for y in 0..CHUNK_SIZE {
+            let src_y = ty + y as i32;
+            if src_y < 0 || src_y >= Self::WORLD_TEXTURE_SIZE as i32 {
+                continue;
+            }
+
+            for x in 0..CHUNK_SIZE {
+                let src_x = tx + x as i32;
+                if src_x < 0 || src_x >= Self::WORLD_TEXTURE_SIZE as i32 {
+                    continue;
+                }
+
+                let src_idx =
+                    ((src_y as u32 * Self::WORLD_TEXTURE_SIZE + src_x as u32) * 4) as usize;
+                let dst_idx = (y * CHUNK_SIZE + x) * 4;
+
+                if src_idx + 3 < self.pixel_buffer.len() {
+                    chunk_data[dst_idx..dst_idx + 4]
+                        .copy_from_slice(&self.pixel_buffer[src_idx..src_idx + 4]);
+                }
+            }
+        }
+
+        chunk_data
+    }
+
+    /// Upload only dirty chunks to GPU texture
+    fn upload_dirty_chunks(&self) {
+        for &chunk_pos in &self.render_dirty_chunks {
+            let (tx, ty) = self.chunk_to_texture_pixel(chunk_pos);
+
+            // Skip if outside texture bounds
+            if tx < 0
+                || ty < 0
+                || tx + CHUNK_SIZE as i32 > Self::WORLD_TEXTURE_SIZE as i32
+                || ty + CHUNK_SIZE as i32 > Self::WORLD_TEXTURE_SIZE as i32
+            {
+                continue;
+            }
+
+            // Extract chunk pixels and upload to GPU
+            let chunk_data = self.extract_chunk_pixels(tx, ty);
+
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.world_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: tx as u32,
+                        y: ty as u32,
+                        z: 0,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &chunk_data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(CHUNK_SIZE as u32 * 4),
+                    rows_per_image: Some(CHUNK_SIZE as u32),
+                },
+                wgpu::Extent3d {
+                    width: CHUNK_SIZE as u32,
+                    height: CHUNK_SIZE as u32,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
     }
 
     /// Update texture origin to follow camera position

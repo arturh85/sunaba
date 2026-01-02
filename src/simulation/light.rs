@@ -25,49 +25,56 @@ impl LightPropagation {
         }
     }
 
-    /// Propagate light through the world
+    /// Propagate light through the world (active chunks only)
     /// Should be called at lower frequency than CA update (e.g., 15fps vs 60fps)
     pub fn propagate_light(
         &mut self,
         chunks: &mut std::collections::HashMap<glam::IVec2, crate::world::Chunk>,
         materials: &Materials,
         sky_light: u8,
+        active_chunks: &[glam::IVec2],
     ) {
-        // Clear all light levels and mark dirty chunks
-        self.reset_light_levels(chunks);
+        // Clear all light levels in active chunks only
+        self.reset_light_levels(chunks, active_chunks);
 
-        // Add sky light to surface pixels
-        self.add_sky_light(chunks, sky_light);
+        // Add sky light to surface pixels in active chunks
+        self.add_sky_light(chunks, sky_light, active_chunks);
 
-        // Add light sources (fire, lava)
-        self.add_light_sources(chunks);
+        // Add light sources (fire, lava) in active chunks
+        self.add_light_sources(chunks, active_chunks);
 
-        // Flood-fill propagation
+        // Flood-fill propagation (can spill into neighboring chunks)
         self.flood_fill_light(chunks, materials);
 
-        // Mark all chunks as light-clean
-        for chunk in chunks.values_mut() {
-            chunk.light_dirty = false;
-        }
-    }
-
-    /// Reset all light levels to 0
-    fn reset_light_levels(
-        &mut self,
-        chunks: &mut std::collections::HashMap<glam::IVec2, crate::world::Chunk>,
-    ) {
-        for chunk in chunks.values_mut() {
-            if chunk.light_dirty {
-                chunk.light_levels.fill(0);
+        // Mark active chunks as light-clean
+        for &pos in active_chunks {
+            if let Some(chunk) = chunks.get_mut(&pos) {
+                chunk.light_dirty = false;
             }
         }
     }
 
-    /// Add sky light to surface pixels (y > surface level)
+    /// Reset light levels in active chunks only
+    fn reset_light_levels(
+        &mut self,
+        chunks: &mut std::collections::HashMap<glam::IVec2, crate::world::Chunk>,
+        active_chunks: &[glam::IVec2],
+    ) {
+        for &pos in active_chunks {
+            if let Some(chunk) = chunks.get_mut(&pos) {
+                if chunk.light_dirty {
+                    chunk.light_levels.fill(0);
+                }
+            }
+        }
+    }
+
+    /// Add sky light to surface pixels in active chunks
     fn add_sky_light(
         &mut self,
         chunks: &mut std::collections::HashMap<glam::IVec2, crate::world::Chunk>,
         sky_light: u8,
+        active_chunks: &[glam::IVec2],
     ) {
         if sky_light == 0 {
             return; // Night time, no sky light
@@ -76,8 +83,13 @@ impl LightPropagation {
         // Surface level from world generator (y=32)
         const SURFACE_LEVEL: i32 = 32;
 
-        // Add sky light to all air pixels above surface
-        for (&chunk_pos, chunk) in chunks.iter_mut() {
+        // Add sky light to all air pixels above surface in active chunks
+        for &chunk_pos in active_chunks {
+            let chunk = match chunks.get_mut(&chunk_pos) {
+                Some(c) => c,
+                None => continue,
+            };
+
             let chunk_world_y_min = chunk_pos.y * CHUNK_SIZE as i32;
             let chunk_world_y_max = chunk_world_y_min + CHUNK_SIZE as i32;
 
@@ -110,12 +122,18 @@ impl LightPropagation {
         }
     }
 
-    /// Add light sources (fire, lava, etc.)
+    /// Add light sources (fire, lava, etc.) in active chunks
     fn add_light_sources(
         &mut self,
         chunks: &mut std::collections::HashMap<glam::IVec2, crate::world::Chunk>,
+        active_chunks: &[glam::IVec2],
     ) {
-        for (&chunk_pos, chunk) in chunks.iter_mut() {
+        for &chunk_pos in active_chunks {
+            let chunk = match chunks.get_mut(&chunk_pos) {
+                Some(c) => c,
+                None => continue,
+            };
+
             for local_y in 0..CHUNK_SIZE {
                 for local_x in 0..CHUNK_SIZE {
                     let material_id = chunk.get_material(local_x, local_y);

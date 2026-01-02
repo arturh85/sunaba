@@ -804,9 +804,20 @@ impl World {
 
         self.time_accumulator += dt;
 
-        while self.time_accumulator >= FIXED_TIMESTEP {
+        // Cap simulation steps to prevent "spiral of death"
+        // If FPS drops, simulation slows down gracefully instead of trying to catch up
+        const MAX_STEPS_PER_FRAME: u32 = 2;
+        let mut steps = 0;
+
+        while self.time_accumulator >= FIXED_TIMESTEP && steps < MAX_STEPS_PER_FRAME {
             self.step_simulation(stats);
             self.time_accumulator -= FIXED_TIMESTEP;
+            steps += 1;
+        }
+
+        // Clamp accumulator to prevent runaway
+        if self.time_accumulator > FIXED_TIMESTEP * 2.0 {
+            self.time_accumulator = FIXED_TIMESTEP;
         }
     }
 
@@ -834,23 +845,36 @@ impl World {
             }
         }
 
-        // 2. CA updates (movement)
-        // TODO: Implement Noita-style checkerboard update pattern
-        // For now, simple sequential update
-        for i in 0..self.active_chunks.len() {
-            let pos = self.active_chunks[i];
-            self.update_chunk_ca(pos, stats);
+        // 2. CA updates (movement) - only process chunks that need updating
+        // A chunk needs updating if it or any of its 8 neighbors had changes last frame
+        let chunks_to_update: Vec<IVec2> = self
+            .active_chunks
+            .iter()
+            .copied()
+            .filter(|&pos| self.chunk_needs_ca_update(pos))
+            .collect();
+
+        // Note: dirty_rect is cleared by the renderer after rendering
+        // This allows proper dirty tracking for render optimization
+
+        for pos in &chunks_to_update {
+            self.update_chunk_ca(*pos, stats);
         }
 
-        // 3. Temperature diffusion (30fps throttled)
-        self.temperature_sim.update(&mut self.chunks);
+        // 3. Temperature diffusion (30fps throttled) - active chunks only
+        self.temperature_sim
+            .update(&mut self.chunks, &self.active_chunks);
 
-        // 4. Light propagation (15fps throttled)
+        // 4. Light propagation (15fps throttled) - active chunks only
         self.light_time_accumulator += 1.0 / 60.0; // Fixed timestep
         if self.light_time_accumulator >= LIGHT_TIMESTEP {
             let sky_light = self.calculate_sky_light();
-            self.light_propagation
-                .propagate_light(&mut self.chunks, &self.materials, sky_light);
+            self.light_propagation.propagate_light(
+                &mut self.chunks,
+                &self.materials,
+                sky_light,
+                &self.active_chunks,
+            );
             self.light_time_accumulator -= LIGHT_TIMESTEP;
         }
 
@@ -924,14 +948,46 @@ impl World {
     /// This ensures that light_levels are valid before reactions start checking them
     fn initialize_light(&mut self) {
         let sky_light = self.calculate_sky_light();
-        self.light_propagation
-            .propagate_light(&mut self.chunks, &self.materials, sky_light);
+        self.light_propagation.propagate_light(
+            &mut self.chunks,
+            &self.materials,
+            sky_light,
+            &self.active_chunks,
+        );
         log::info!("Initialized light propagation (sky_light={})", sky_light);
     }
 
     /// Get growth progress as percentage (0-100) through the 10-second cycle
     pub fn get_growth_progress_percent(&self) -> f32 {
         (self.growth_timer / 10.0) * 100.0
+    }
+
+    /// Check if a chunk needs CA update based on dirty state of itself and neighbors
+    /// Returns true if this chunk or any of its 8 neighbors have dirty_rect set
+    fn chunk_needs_ca_update(&self, pos: IVec2) -> bool {
+        // Check the chunk itself
+        if let Some(chunk) = self.chunks.get(&pos) {
+            if chunk.dirty_rect.is_some() {
+                return true;
+            }
+        }
+
+        // Check all 8 neighbors - materials can flow in from any direction
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let neighbor_pos = IVec2::new(pos.x + dx, pos.y + dy);
+                if let Some(neighbor) = self.chunks.get(&neighbor_pos) {
+                    if neighbor.dirty_rect.is_some() {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
     }
 
     fn update_chunk_ca(&mut self, chunk_pos: IVec2, stats: &mut crate::ui::StatsCollector) {
@@ -1612,7 +1668,7 @@ impl World {
         };
 
         let non_air = chunk.count_non_air();
-        log::info!(
+        log::debug!(
             "[LOAD] Adding chunk ({}, {}) to world - {} non-air pixels",
             chunk_x,
             chunk_y,

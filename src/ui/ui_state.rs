@@ -5,7 +5,7 @@ use super::crafting_ui::CraftingUI;
 use super::hud::Hud;
 use super::inventory_ui::InventoryPanel;
 use super::level_selector::LevelSelectorState;
-use super::stats::StatsCollector;
+use super::stats::{SimulationStats, StatsCollector};
 use super::tooltip::TooltipState;
 use instant::Instant;
 
@@ -16,6 +16,10 @@ pub struct UiState {
 
     /// Whether stats window is visible
     pub stats_visible: bool,
+
+    /// Cached stats for throttled display (updates 4x/sec)
+    display_stats: SimulationStats,
+    last_stats_update: Instant,
 
     /// Tooltip for mouseover information
     pub tooltip: TooltipState,
@@ -40,10 +44,15 @@ pub struct UiState {
 }
 
 impl UiState {
+    /// Stats display update interval (4 updates per second)
+    const STATS_UPDATE_INTERVAL_MS: u128 = 250;
+
     pub fn new() -> Self {
         Self {
             stats: StatsCollector::new(),
             stats_visible: true, // Start with stats visible
+            display_stats: SimulationStats::default(),
+            last_stats_update: Instant::now(),
             tooltip: TooltipState::new(),
             controls_help: ControlsHelpState::new(),
             level_selector: LevelSelectorState::new(),
@@ -159,18 +168,31 @@ impl UiState {
         self.tooltip.render(ctx, cursor_screen_pos);
     }
 
-    fn render_stats(&self, ctx: &egui::Context) {
+    fn render_stats(&mut self, ctx: &egui::Context) {
+        // Throttle stats display updates to 4 times per second
+        if self.last_stats_update.elapsed().as_millis() >= Self::STATS_UPDATE_INTERVAL_MS {
+            self.display_stats = self.stats.stats().clone();
+            self.last_stats_update = Instant::now();
+        }
+
+        let stats = &self.display_stats;
+
         egui::Window::new("Debug Stats")
             .default_pos(egui::pos2(10.0, 10.0))
             .resizable(false)
             .collapsible(true)
             .show(ctx, |ui| {
-                let stats = self.stats.stats();
-
                 ui.heading("Performance");
                 ui.label(format!("FPS: {:.1}", stats.fps));
                 ui.label(format!("Frame: {:.2}ms", stats.frame_time_ms));
                 ui.label(format!("  Sim: {:.2}ms", stats.sim_time_ms));
+                ui.label(format!("  UI Build: {:.2}ms", stats.egui_build_time_ms));
+                ui.label(format!("  Overlays: {:.2}ms", stats.overlay_time_ms));
+                ui.label(format!("  Pixels: {:.2}ms", stats.pixel_buffer_time_ms));
+                ui.label(format!("  Upload: {:.2}ms", stats.gpu_upload_time_ms));
+                ui.label(format!("  Acquire: {:.2}ms", stats.acquire_time_ms));
+                ui.label(format!("  egui GPU: {:.2}ms", stats.egui_time_ms));
+                ui.label(format!("  Present: {:.2}ms", stats.present_time_ms));
 
                 ui.separator();
                 ui.heading("World");
@@ -191,6 +213,11 @@ impl UiState {
                 ui.label(format!("Moved: {} pixels", stats.pixels_moved));
                 ui.label(format!("Reactions: {}", stats.reactions));
                 ui.label(format!("State Changes: {}", stats.state_changes));
+
+                ui.separator();
+                ui.heading("Render");
+                ui.label(format!("Dirty Chunks: {}", stats.render_dirty_chunks));
+                ui.label(format!("Rendered Total: {}", stats.rendered_chunks_total));
             });
     }
 }

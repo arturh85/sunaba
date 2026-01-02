@@ -321,8 +321,8 @@ impl App {
         use std::sync::atomic::{AtomicU32, Ordering};
         static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
         let frame = FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
-        if frame.is_multiple_of(120) {
-            // Every 2 seconds at 60fps
+        if frame.is_multiple_of(600) {
+            // Every 10 seconds at 60fps
             log::info!(
                 "Frame {}: player_pos={:?}, zoom={:.2}, selected_material={}",
                 frame,
@@ -370,6 +370,7 @@ impl App {
 
         // Prepare egui frame
         let raw_input = self.egui_state.take_egui_input(&self.window);
+        let egui_build_start = Instant::now();
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             // Get cursor position from egui context
             let cursor_pos = ctx.pointer_hover_pos().unwrap_or(egui::pos2(0.0, 0.0));
@@ -436,6 +437,7 @@ impl App {
                 }
             }
         });
+        let egui_build_time = egui_build_start.elapsed().as_secs_f32() * 1000.0;
 
         // Handle level selector actions
         if self.ui_state.level_selector.return_to_world {
@@ -464,18 +466,43 @@ impl App {
             .handle_platform_output(&self.window, full_output.platform_output);
 
         // Update overlay textures
+        let overlay_start = Instant::now();
         self.renderer.update_temperature_overlay(&self.world);
         self.renderer.update_light_overlay(&self.world);
+        let overlay_time = overlay_start.elapsed().as_secs_f32() * 1000.0;
+
+        // Set frame loop timing stats
+        self.ui_state
+            .stats
+            .set_frame_loop_timing(egui_build_time, overlay_time);
 
         // Render world + UI
-        if let Err(e) = self.renderer.render(
-            &self.world,
+        match self.renderer.render(
+            &mut self.world,
             &self.egui_ctx,
             full_output.textures_delta,
             full_output.shapes,
         ) {
-            log::error!("Render error: {e}");
+            Ok(timing) => {
+                // Collect render timing breakdown
+                self.ui_state.stats.set_render_timing(
+                    timing.pixel_buffer_ms,
+                    timing.gpu_upload_ms,
+                    timing.acquire_ms,
+                    timing.egui_ms,
+                    timing.present_ms,
+                );
+            }
+            Err(e) => {
+                log::error!("Render error: {e}");
+            }
         }
+
+        // Collect render stats for debugging
+        let (dirty_chunks, rendered_total) = self.renderer.get_render_stats();
+        self.ui_state
+            .stats
+            .set_render_stats(dirty_chunks, rendered_total);
 
         // Reset per-frame input state
         self.input_state.zoom_delta = 1.0;

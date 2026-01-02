@@ -19,9 +19,9 @@ impl TemperatureSimulator {
         Self { update_counter: 0 }
     }
 
-    /// Update temperature diffusion for all chunks
+    /// Update temperature diffusion for active chunks only
     /// Throttled to 30fps for performance
-    pub fn update(&mut self, chunks: &mut HashMap<IVec2, Chunk>) {
+    pub fn update(&mut self, chunks: &mut HashMap<IVec2, Chunk>, active_chunks: &[IVec2]) {
         // Throttle to 30fps (every 2 frames at 60fps)
         self.update_counter += 1;
         if self.update_counter < 2 {
@@ -29,9 +29,11 @@ impl TemperatureSimulator {
         }
         self.update_counter = 0;
 
-        // For each chunk, diffuse temperature internally
-        for chunk in chunks.values_mut() {
-            self.diffuse_chunk_temperature(chunk);
+        // Only diffuse temperature in active chunks (not all 1000+ loaded chunks)
+        for &pos in active_chunks {
+            if let Some(chunk) = chunks.get_mut(&pos) {
+                self.diffuse_chunk_temperature(chunk);
+            }
         }
     }
 

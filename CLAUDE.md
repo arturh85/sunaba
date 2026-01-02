@@ -171,7 +171,8 @@ src/
 - **Phase 1-4**: Core simulation, materials, structural integrity, persistence
 - **Phase 5**: Extended materials, ore/mining, crafting, inventory, light system
 
-### In Progress (See [DESIGN.md](./DESIGN.md) for details)
+### In Progress (See [DESIGN.md](./DESIGN.md) for design details and [PLAN.md](./PLAN.md) for detailed development plans)
+
 - **Phase 6**: Creature architecture (CPPN-NEAT, neural control, GOAP)
 - **Phase 7**: Offline evolution pipeline (MAP-Elites, training scenarios)
 - **Phase 8**: Survival integration (taming, breeding, creature persistence)
