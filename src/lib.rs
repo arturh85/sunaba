@@ -12,6 +12,10 @@ pub mod simulation;
 pub mod ui;
 pub mod world;
 
+// Headless training module (native only)
+#[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
+pub mod headless;
+
 pub use app::App;
 
 /// Common imports for internal use

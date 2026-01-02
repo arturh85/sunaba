@@ -47,3 +47,13 @@ web: build-web
 [windows]
 web: build-web
     cd web; python -m http.server 8080
+
+# Evolution training commands
+train scenario="locomotion" generations="100" population="50":
+    cargo run --features headless --release -- --train --scenario {{scenario}} --generations {{generations}} --population {{population}}
+
+train-quick:
+    cargo run --features headless --release -- --train --generations 10 --population 20
+
+train-full:
+    cargo run --features headless --release -- --train --generations 500 --population 100

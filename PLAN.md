@@ -99,7 +99,7 @@
 - [x] **Player inventory system** (resource collection and storage)
 - [x] **Basic crafting mechanics** (material transformation)
 
-### Phase 6: Creature Architecture
+### Phase 6: Creature Architecture ✅ COMPLETED
 - [x] Make sure the world is ready for creatures, think of a few example behaviors we want to evolve. Expand the materials, reaction or whatever else as needed.
 - [x] CPPN-NEAT genome representation plus markdown documentation of what that is and how it works in GENOME.md
 - [x] Morphology generation (CPPN → rapier2d bodies/joints)
@@ -109,22 +109,31 @@
 - [x] Creature-world interaction (digging, building, damage)
 - [x] Basic creature spawning system
 - [x] **Creature movement with pixel-based collision** (gravity, wandering, 70% mining when blocked)
-- [ ] **Player-creature interaction foundation** (detection, targeting)
+- [x] **Neural-physics integration** (extract_body_part_features extracts actual rapier2d physics data)
+- [x] **Motor command wiring** (neural output controls joint actuation via target angles)
+- [x] **NEAT mutation operators** (mutate_weights, add_connection, add_node, toggle_connection)
+- [x] **NEAT crossover/reproduction** (crossover_cppn, crossover_controller, crossover_genome)
+- [x] **CPPN graph serialization** (sync_to_serializable, rebuild_graph preserves structure)
+- [ ] **Player-creature interaction foundation** (detection, targeting) - deferred to Phase 8
 
-### Phase 7: Offline Evolution Pipeline
-- [ ] Headless training environment (simplified physics)
-- [ ] MAP-Elites implementation (behavioral diversity grid)
-- [ ] Fitness functions (survival, exploration, combat, building, reproduction)
+### Phase 7: Offline Evolution Pipeline (In Progress)
+- [x] **Headless training environment** (`src/headless/` module with feature flag)
+- [x] **MAP-Elites implementation** (10x10 behavioral diversity grid, locomotion × foraging)
+- [x] **Fitness functions** (DistanceFitness, ForagingFitness, SurvivalFitness, CompositeFitness)
+- [x] **Training scenarios** (Locomotion, Foraging, Survival, Balanced with world setup)
+- [x] **Parallel simulation infrastructure** (rayon parallel creature evaluation)
+- [x] **Checkpoint system** (genome serialization with bincode)
+- [x] **HTML report generator** (fitness charts, MAP-Elites grid visualization)
+- [x] **GIF capture system** (pixel buffer renderer, frame capture, gif encoding)
+- [x] **CLI entry point for training** (`--train`, `--scenario`, `--generations`, `--population`, `--output` flags)
 - [ ] Multi-agent training scenarios (predator-prey, competition, hide-and-seek, tool use)
-- [ ] Parallel simulation infrastructure (rayon + bevy ECS or custom)
-- [ ] Checkpoint system (genome serialization, metrics logging)
 - [ ] Pre-evolved creature library (100+ behavioral archetypes across niches)
 - [ ] **GPU-accelerated CA simulation** (wgpu compute shaders for faster training)
 
 ### Phase 8: Survival Integration & Creature Deployment
 - [ ] Creature spawning from pre-trained library
 - [ ] Regional specialization (biome-appropriate creatures, population limits)
-- [ ] **Tool system** (pickaxe, weapons for mining/combat)
+- [ ] **Tool system** (pickaxe, weapons for mining/combat)c
 - [ ] **Advanced crafting** (recipes, workstations)
 - [ ] **Taming mechanics** (knockout/feeding, taming effectiveness)
 - [ ] **Breeding system** (sexual reproduction, NEAT crossover, mutation, inheritance UI)

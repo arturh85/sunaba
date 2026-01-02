@@ -1414,6 +1414,20 @@ impl World {
             .map(|c| c.get_pixel(local_x, local_y))
     }
 
+    /// Ensure chunks exist for a given pixel area (creates empty chunks if needed)
+    /// Used by headless training to set up scenarios without full world generation
+    pub fn ensure_chunks_for_area(&mut self, min_x: i32, min_y: i32, max_x: i32, max_y: i32) {
+        let (min_chunk, _, _) = Self::world_to_chunk_coords(min_x, min_y);
+        let (max_chunk, _, _) = Self::world_to_chunk_coords(max_x, max_y);
+
+        for cy in min_chunk.y..=max_chunk.y {
+            for cx in min_chunk.x..=max_chunk.x {
+                let pos = IVec2::new(cx, cy);
+                self.chunks.entry(pos).or_insert_with(|| Chunk::new(cx, cy));
+            }
+        }
+    }
+
     /// Set pixel at world coordinates
     pub fn set_pixel(&mut self, world_x: i32, world_y: i32, material_id: u16) {
         self.set_pixel_full(world_x, world_y, Pixel::new(material_id));

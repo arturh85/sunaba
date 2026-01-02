@@ -58,6 +58,35 @@ To run all checks and tests, run before submitting a PR:
 just test
 ```
 
+### Creature Evolution Training
+
+Train ML creatures using headless evolution with MAP-Elites and CPPN-NEAT:
+
+```bash
+# Quick training run (10 generations, 20 population) - good for testing
+just train-quick
+
+# Default training (100 generations, 50 population, locomotion scenario)
+just train
+
+# Full training run (500 generations, 100 population)
+just train-full
+
+# Custom training with specific parameters
+just train scenario=foraging generations=200 population=75
+```
+
+Available training scenarios:
+- `locomotion` - Evolve creatures that move efficiently across flat terrain
+- `foraging` - Evolve creatures that find and consume food sources
+- `survival` - Evolve creatures that avoid hazards (lava pits)
+- `balanced` - Multi-objective: locomotion + foraging combined
+
+Training outputs are saved to `training_output/` by default:
+- `index.html` - Visual report with fitness charts and MAP-Elites grid
+- `summary.json` - Machine-readable training results
+- `checkpoints/` - Saved best genomes at intervals
+
 ### CI/CD
 
 The project includes GitHub Actions workflows for:
@@ -86,8 +115,10 @@ where complex behavior arises naturally from fundamental rules rather than scrip
 🚧 **In Development**
 - ✅ Core physics simulation (falling sand, temperature, chemistry, structural integrity)
 - ✅ Persistent world with procedural generation
-- 🔨 World enhancement for creature interactions (resources, light, advanced materials)
-- 📋 ML creature system (morphology, neural control, evolution pipeline)
+- ✅ World enhancement for creature interactions (resources, light, advanced materials)
+- ✅ ML creature architecture (CPPN-NEAT morphology, neural control, GOAP behavior)
+- ✅ Offline evolution pipeline (MAP-Elites, training scenarios, HTML reports)
+- 🔨 Survival integration (taming, breeding, creature persistence)
 
 ## License
 
