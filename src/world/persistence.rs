@@ -84,8 +84,9 @@ impl ChunkPersistence {
         );
 
         // Serialize with bincode
-        let serialized = bincode::serde::encode_to_vec(chunk, bincode::config::standard())
-            .context("Failed to serialize chunk")?;
+        let serialized =
+            bincode_next::serde::encode_to_vec(chunk, bincode_next::config::standard())
+                .context("Failed to serialize chunk")?;
 
         // Compress with lz4
         let compressed = lz4_flex::compress_prepend_size(&serialized);
@@ -169,12 +170,11 @@ impl ChunkPersistence {
         log::debug!("Decompressed to {} bytes", serialized.len());
 
         let (chunk, _): (Chunk, _) =
-            bincode::serde::decode_from_slice(&serialized, bincode::config::standard()).map_err(
-                |e| {
-                    log::error!("Bincode deserialization error: {:?}", e);
-                    anyhow::anyhow!("Failed to deserialize chunk: {:?}", e)
-                },
-            )?;
+            bincode_next::serde::decode_from_slice(&serialized, bincode_next::config::standard())
+                .map_err(|e| {
+                log::error!("Bincode deserialization error: {:?}", e);
+                anyhow::anyhow!("Failed to deserialize chunk: {:?}", e)
+            })?;
         log::debug!("Successfully deserialized chunk");
         Ok(chunk)
     }

@@ -520,12 +520,13 @@ mod tests {
         let genome = CreatureGenome::test_biped();
 
         // Serialize
-        let serialized = bincode::serde::encode_to_vec(&genome, bincode::config::standard())
-            .expect("Failed to serialize genome");
+        let serialized =
+            bincode_next::serde::encode_to_vec(&genome, bincode_next::config::standard())
+                .expect("Failed to serialize genome");
 
         // Deserialize
         let (mut deserialized, _): (CreatureGenome, _) =
-            bincode::serde::decode_from_slice(&serialized, bincode::config::standard())
+            bincode_next::serde::decode_from_slice(&serialized, bincode_next::config::standard())
                 .expect("Failed to deserialize genome");
 
         // Graph needs to be rebuilt after deserialization

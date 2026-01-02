@@ -4,7 +4,7 @@
 
 use glam::Vec2;
 
-use crate::world::World;
+use crate::world::{pixel_flags, Pixel, World};
 
 /// Consume edible material at position
 /// Returns nutritional value gained
@@ -61,6 +61,7 @@ pub fn mine_world_pixel(
 
 /// Place material in world
 /// Returns true if placement succeeded
+/// Sets PLAYER_PLACED flag so structural integrity applies to creature-built structures
 pub fn place_material(
     world: &mut World,
     position: Vec2,
@@ -73,8 +74,10 @@ pub fn place_material(
     // Check if position is valid and currently air
     if let Some(pixel) = world.get_pixel(pixel_x, pixel_y) {
         if pixel.material_id == 0 {
-            // Only place in air
-            world.set_pixel(pixel_x, pixel_y, material_id);
+            // Only place in air - set PLAYER_PLACED flag for structural integrity
+            let mut new_pixel = Pixel::new(material_id);
+            new_pixel.flags |= pixel_flags::PLAYER_PLACED;
+            world.set_pixel_full(pixel_x, pixel_y, new_pixel);
             return true;
         }
     }

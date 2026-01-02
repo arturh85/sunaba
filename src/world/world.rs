@@ -617,7 +617,7 @@ impl World {
             .inventory
             .remove_item(material_id, pixels_needed);
 
-        // Place the pixels
+        // Place the pixels with PLAYER_PLACED flag
         for dy in -Self::BRUSH_RADIUS..=Self::BRUSH_RADIUS {
             for dx in -Self::BRUSH_RADIUS..=Self::BRUSH_RADIUS {
                 if dx * dx + dy * dy <= Self::BRUSH_RADIUS * Self::BRUSH_RADIUS {
@@ -628,7 +628,9 @@ impl World {
                         .map(|p| p.material_id == MaterialId::AIR)
                         .unwrap_or(false)
                     {
-                        self.set_pixel(x, y, material_id);
+                        let mut pixel = Pixel::new(material_id);
+                        pixel.flags |= pixel_flags::PLAYER_PLACED;
+                        self.set_pixel_full(x, y, pixel);
                         placed += 1;
                     }
                 }
@@ -1299,11 +1301,19 @@ impl World {
 
     /// Set pixel at world coordinates
     pub fn set_pixel(&mut self, world_x: i32, world_y: i32, material_id: u16) {
-        // Check if we're removing a structural material
+        self.set_pixel_full(world_x, world_y, Pixel::new(material_id));
+    }
+
+    /// Set pixel at world coordinates with full Pixel struct (including flags)
+    pub fn set_pixel_full(&mut self, world_x: i32, world_y: i32, pixel: Pixel) {
+        // Check if we're removing a player-placed structural material
         let schedule_check = if let Some(old_pixel) = self.get_pixel(world_x, world_y) {
             if !old_pixel.is_empty() {
                 let old_material = self.materials.get(old_pixel.material_id);
-                old_material.structural && old_material.material_type == MaterialType::Solid
+                // Only schedule structural check for player-placed structural solids
+                old_material.structural
+                    && old_material.material_type == MaterialType::Solid
+                    && (old_pixel.flags & pixel_flags::PLAYER_PLACED) != 0
             } else {
                 false
             }
@@ -1315,11 +1325,11 @@ impl World {
         let (chunk_pos, local_x, local_y) = Self::world_to_chunk_coords(world_x, world_y);
         if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
             let old_material_id = chunk.get_material(local_x, local_y);
-            chunk.set_material(local_x, local_y, material_id);
+            chunk.set_pixel(local_x, local_y, pixel);
 
             // Log only if actually changing something (not just setting same material)
-            if old_material_id != material_id {
-                let material_name = &self.materials.get(material_id).name;
+            if old_material_id != pixel.material_id {
+                let material_name = &self.materials.get(pixel.material_id).name;
                 log::trace!(
                     "[MODIFY] Chunk ({}, {}) at local ({}, {}) world ({}, {}) set to {} (was {})",
                     chunk_pos.x,
@@ -1334,7 +1344,7 @@ impl World {
             }
         } else {
             log::warn!(
-                "set_pixel: chunk {:?} not loaded (world: {}, {})",
+                "set_pixel_full: chunk {:?} not loaded (world: {}, {})",
                 chunk_pos,
                 world_x,
                 world_y
@@ -1342,8 +1352,8 @@ impl World {
             return;
         }
 
-        // Schedule structural check if we removed structural material with AIR
-        if schedule_check && material_id == MaterialId::AIR {
+        // Schedule structural check if we removed player-placed structural material with AIR
+        if schedule_check && pixel.material_id == MaterialId::AIR {
             self.structural_system.schedule_check(world_x, world_y);
         }
     }

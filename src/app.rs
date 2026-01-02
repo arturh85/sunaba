@@ -333,8 +333,8 @@ impl App {
         }
 
         // DEBUG: Right-click instant mining circle (for exploration)
-        // Only trigger on initial click, not hold
-        if self.input_state.right_mouse_pressed && !self.input_state.prev_right_mouse_pressed {
+        // Continuously mines while button is held
+        if self.input_state.right_mouse_pressed {
             let player_pos = self.world.player.position;
             let center_x = player_pos.x as i32;
             let center_y = player_pos.y as i32;

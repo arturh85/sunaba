@@ -1,7 +1,11 @@
 //! Structural integrity checking and falling debris conversion
+//!
+//! Only player-placed structures are subject to structural integrity checks.
+//! Natural terrain is never converted to debris. Player-built structures are
+//! anchored to natural terrain (touching natural stone/dirt = stable).
 
 use crate::simulation::{MaterialId, MaterialType};
-use crate::world::World;
+use crate::world::{pixel_flags, World};
 use glam::IVec2;
 use std::collections::{HashSet, VecDeque};
 
@@ -54,6 +58,7 @@ impl StructuralIntegritySystem {
     }
 
     /// Check structural integrity at a specific position
+    /// Only checks player-placed structural materials (not natural terrain)
     fn check_position(world: &mut World, world_x: i32, world_y: i32) {
         log::debug!("Structural: Checking position ({}, {})", world_x, world_y);
 
@@ -71,22 +76,31 @@ impl StructuralIntegritySystem {
                     continue;
                 }
 
-                // Only check structural solids
+                // Only check player-placed structural solids
                 let material = world.materials().get(pixel.material_id);
                 if !material.structural || material.material_type != MaterialType::Solid {
                     continue;
                 }
 
-                // Perform flood fill to find connected region
+                // Skip natural terrain (non-player-placed)
+                if (pixel.flags & pixel_flags::PLAYER_PLACED) == 0 {
+                    continue;
+                }
+
+                // Perform flood fill to find connected player-placed region
                 let region = Self::flood_fill_structural(world, nx, ny);
                 log::debug!(
-                    "Structural: Flood fill from ({}, {}): found {} pixels",
+                    "Structural: Flood fill from ({}, {}): found {} player-placed pixels",
                     nx,
                     ny,
                     region.len()
                 );
 
-                // Check if region is anchored (connected to bedrock)
+                if region.is_empty() {
+                    continue;
+                }
+
+                // Check if region is anchored (connected to natural terrain or bedrock)
                 let is_anchored = Self::is_region_anchored(world, &region);
                 log::debug!("Structural: Region anchored={}", is_anchored);
 
@@ -111,7 +125,8 @@ impl StructuralIntegritySystem {
         }
     }
 
-    /// Flood fill to find all connected structural solids
+    /// Flood fill to find all connected player-placed structural solids
+    /// Only traverses pixels with PLAYER_PLACED flag set
     /// Returns set of world coordinates
     fn flood_fill_structural(world: &World, start_x: i32, start_y: i32) -> HashSet<IVec2> {
         let mut visited = HashSet::new();
@@ -123,7 +138,11 @@ impl StructuralIntegritySystem {
         };
 
         let start_material = world.materials().get(start_pixel.material_id);
-        if !start_material.structural || start_material.material_type != MaterialType::Solid {
+        // Only process player-placed structural solids
+        if !start_material.structural
+            || start_material.material_type != MaterialType::Solid
+            || (start_pixel.flags & pixel_flags::PLAYER_PLACED) == 0
+        {
             return visited;
         }
 
@@ -158,8 +177,11 @@ impl StructuralIntegritySystem {
 
                     let material = world.materials().get(pixel.material_id);
 
-                    // Only traverse structural solids
-                    if material.structural && material.material_type == MaterialType::Solid {
+                    // Only traverse player-placed structural solids
+                    if material.structural
+                        && material.material_type == MaterialType::Solid
+                        && (pixel.flags & pixel_flags::PLAYER_PLACED) != 0
+                    {
                         visited.insert(neighbor);
                         queue.push_back(neighbor);
                     }
@@ -170,13 +192,47 @@ impl StructuralIntegritySystem {
         visited
     }
 
-    /// Check if any pixel in the region connects to bedrock
+    /// Check if any pixel in the region is anchored
+    /// A region is anchored if it:
+    /// - Contains bedrock, OR
+    /// - Is adjacent to natural terrain (non-player-placed structural solid)
     fn is_region_anchored(world: &World, region: &HashSet<IVec2>) -> bool {
-        // A region is anchored if it contains bedrock
         for pos in region {
+            // Check if this pixel is bedrock
             if let Some(pixel) = world.get_pixel(pos.x, pos.y) {
                 if pixel.material_id == MaterialId::BEDROCK {
                     return true;
+                }
+            }
+
+            // Check 4-connected neighbors for natural terrain anchoring
+            let neighbors = [
+                IVec2::new(pos.x, pos.y + 1),
+                IVec2::new(pos.x + 1, pos.y),
+                IVec2::new(pos.x, pos.y - 1),
+                IVec2::new(pos.x - 1, pos.y),
+            ];
+
+            for neighbor in neighbors {
+                // Skip neighbors that are part of this region (player-placed)
+                if region.contains(&neighbor) {
+                    continue;
+                }
+
+                if let Some(pixel) = world.get_pixel(neighbor.x, neighbor.y) {
+                    if pixel.is_empty() {
+                        continue;
+                    }
+
+                    let material = world.materials().get(pixel.material_id);
+
+                    // Anchored if adjacent to natural (non-player-placed) structural solid
+                    if material.structural
+                        && material.material_type == MaterialType::Solid
+                        && (pixel.flags & pixel_flags::PLAYER_PLACED) == 0
+                    {
+                        return true;
+                    }
                 }
             }
         }

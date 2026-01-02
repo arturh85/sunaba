@@ -45,16 +45,6 @@ just start
 The game can run in browsers that support WebGPU (Chrome 113+, Edge 113+, Firefox/Safari with WebGPU enabled).
 
 ```bash
-# Linux/macOS
-./build-web.sh
-
-# Windows
-build-web.bat
-
-# Test locally
-cd web && python3 -m http.server 8080
-# Then open http://localhost:8080
-
 # Using just command runner
 just web
 ```

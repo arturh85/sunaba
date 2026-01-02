@@ -38,6 +38,7 @@ pub mod pixel_flags {
     pub const UPDATED: u16 = 1 << 0; // Already updated this frame
     pub const BURNING: u16 = 1 << 1; // Currently on fire
     pub const FALLING: u16 = 1 << 2; // In free-fall
+    pub const PLAYER_PLACED: u16 = 1 << 3; // Placed by player/creature, not world-generated
 }
 
 /// A 64x64 region of the world
