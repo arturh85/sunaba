@@ -143,11 +143,13 @@ impl TrainingEnv {
         for gen in 0..self.config.generations {
             self.generation = gen;
 
-            pb.println(format!(
-                "=== Generation {}/{} ===",
-                gen + 1,
-                self.config.generations
-            ));
+            if gen % 5 == 0 {
+                pb.println(format!(
+                    "=== Generation {}/{} ===",
+                    gen + 1,
+                    self.config.generations
+                ));
+            }
 
             // Generate offspring population
             let offspring = self.generate_offspring();
@@ -160,14 +162,16 @@ impl TrainingEnv {
             self.stats_history.push(stats.clone());
 
             // Log progress
-            pb.println(format!(
-                "Gen {}: best={:.2}, avg={:.2}, coverage={:.1}%, new={}",
-                gen,
-                stats.best_fitness,
-                stats.avg_fitness,
-                stats.grid_coverage * 100.0,
-                stats.new_elites
-            ));
+            if gen % 5 == 0 {
+                pb.println(format!(
+                    "Gen {}: best={:.2}, avg={:.2}, coverage={:.1}%, new={}",
+                    gen,
+                    stats.best_fitness,
+                    stats.avg_fitness,
+                    stats.grid_coverage * 100.0,
+                    stats.new_elites
+                ));
+            }
 
             // Checkpoint
             if self.config.checkpoint_interval > 0 && gen % self.config.checkpoint_interval == 0 {
@@ -452,8 +456,8 @@ impl TrainingEnv {
         // Sensory update frequency: every 6 frames (10Hz instead of 60Hz)
         const SENSORY_SKIP: usize = 6;
 
-        // Capture for a shorter duration for GIFs (max 5 seconds)
-        let gif_duration = self.config.eval_duration.min(5.0);
+        // Capture for full evaluation duration (up to 30 seconds)
+        let gif_duration = self.config.eval_duration.min(30.0);
         let total_steps = (gif_duration / dt) as usize;
 
         for step in 0..total_steps {
