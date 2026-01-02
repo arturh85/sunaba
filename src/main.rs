@@ -13,7 +13,7 @@ struct Args {
     #[arg(long)]
     train: bool,
 
-    /// Training scenario: locomotion, foraging, survival, balanced
+    /// Training scenario: locomotion, foraging, survival, balanced, parcour
     #[arg(long, default_value = "locomotion")]
     scenario: String,
 
@@ -85,6 +85,7 @@ fn run_training(args: &Args) -> anyhow::Result<()> {
         "survival" => Scenario::survival(),
         "balanced" => Scenario::balanced(),
         "locomotion" => Scenario::locomotion(),
+        "parcour" => Scenario::parcour(),
         other => {
             log::warn!("Unknown scenario '{}', defaulting to locomotion", other);
             Scenario::locomotion()

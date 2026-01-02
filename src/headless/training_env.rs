@@ -281,23 +281,42 @@ impl TrainingEnv {
 
     /// Evaluate a single creature
     fn evaluate_single(&self, genome: CreatureGenome) -> EvalResult {
-        // Set up world
-        let world = self.scenario.setup_world();
+        // Set up world with cached food positions
+        let (world, food_positions) = self.scenario.setup_world();
         let mut physics_world = PhysicsWorld::new();
         let mut creature_manager = CreatureManager::new(1);
 
-        // Spawn creature
+        // Spawn creature (with partial hunger for Parcour scenario)
         let spawn_pos = self.scenario.config.spawn_position;
-        let creature_id =
-            creature_manager.spawn_creature(genome.clone(), spawn_pos, &mut physics_world);
+        let creature_id = if self.scenario.config.name == "Parcour" {
+            // Start with 50% hunger for parcour - creates survival pressure
+            creature_manager.spawn_creature_with_hunger(
+                genome.clone(),
+                spawn_pos,
+                0.5,
+                &mut physics_world,
+            )
+        } else {
+            creature_manager.spawn_creature(genome.clone(), spawn_pos, &mut physics_world)
+        };
 
         // Run simulation (physics only - skip world.update() for speed)
         let dt = 1.0 / 60.0;
         let steps = (self.config.eval_duration / dt) as usize;
 
-        for _step in 0..steps {
-            // Skip world.update() - terrain is static, only need creature physics
-            creature_manager.update(dt, &world, &mut physics_world);
+        // Sensory update frequency: every 6 frames (10Hz instead of 60Hz)
+        const SENSORY_SKIP: usize = 6;
+
+        for step in 0..steps {
+            // Only update sensory at 10Hz for performance (use cached positions)
+            if step % SENSORY_SKIP == 0 {
+                creature_manager.update_with_cache(
+                    dt * SENSORY_SKIP as f32,
+                    &world,
+                    &mut physics_world,
+                    &food_positions,
+                );
+            }
             physics_world.step();
         }
 
@@ -409,25 +428,44 @@ impl TrainingEnv {
         let mut renderer = PixelRenderer::new(size, size);
         let materials = Materials::new();
 
-        // Set up world and spawn creature
-        let world = self.scenario.setup_world();
+        // Set up world with cached food positions
+        let (world, food_positions) = self.scenario.setup_world();
         let mut physics_world = PhysicsWorld::new();
         let mut creature_manager = CreatureManager::new(1);
         let spawn_pos = self.scenario.config.spawn_position;
-        let creature_id =
-            creature_manager.spawn_creature(genome.clone(), spawn_pos, &mut physics_world);
+        let creature_id = if self.scenario.config.name == "Parcour" {
+            creature_manager.spawn_creature_with_hunger(
+                genome.clone(),
+                spawn_pos,
+                0.5,
+                &mut physics_world,
+            )
+        } else {
+            creature_manager.spawn_creature(genome.clone(), spawn_pos, &mut physics_world)
+        };
 
         // Simulation with frame capture
         let dt = 1.0 / 60.0;
         let fps = self.config.gif_fps as usize;
         let capture_interval = if fps > 0 { 60 / fps } else { 6 }; // frames between captures
 
+        // Sensory update frequency: every 6 frames (10Hz instead of 60Hz)
+        const SENSORY_SKIP: usize = 6;
+
         // Capture for a shorter duration for GIFs (max 5 seconds)
         let gif_duration = self.config.eval_duration.min(5.0);
         let total_steps = (gif_duration / dt) as usize;
 
         for step in 0..total_steps {
-            creature_manager.update(dt, &world, &mut physics_world);
+            // Only update sensory at 10Hz for performance
+            if step % SENSORY_SKIP == 0 {
+                creature_manager.update_with_cache(
+                    dt * SENSORY_SKIP as f32,
+                    &world,
+                    &mut physics_world,
+                    &food_positions,
+                );
+            }
             physics_world.step();
 
             // Capture frame at intervals
@@ -493,6 +531,15 @@ impl TrainingEnv {
                     // Current position
                     let pos_text = format!("X:{:.0}", creature.position.x);
                     renderer.draw_text(4, 20, &pos_text, [255, 255, 255, 255]);
+
+                    // Food counter (white)
+                    let food_text = format!("FOOD:{}", creature.food_eaten);
+                    renderer.draw_text(4, 28, &food_text, [255, 255, 255, 255]);
+
+                    // Timestamp overlay (yellow, top right) - shows where GIF starts/loops
+                    let elapsed_time = step as f32 * dt;
+                    let time_text = format!("T:{:.1}s", elapsed_time);
+                    renderer.draw_text(size as i32 - 42, 4, &time_text, [255, 255, 100, 255]);
 
                     gif.capture_frame(&renderer);
                 }

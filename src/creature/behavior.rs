@@ -277,6 +277,8 @@ mod tests {
             },
             nearest_food: Some(Vec2::new(10.0, 10.0)),
             nearest_threat: Some(Vec2::new(5.0, 5.0)),
+            food_direction: Some(Vec2::new(1.0, 0.0)),
+            food_distance: 0.2,
         };
 
         needs.update(&sensory, 0.6);
@@ -340,6 +342,8 @@ mod tests {
             },
             nearest_food: Some(Vec2::new(10.0, 10.0)),
             nearest_threat: None,
+            food_direction: Some(Vec2::new(1.0, 0.0)),
+            food_distance: 0.2,
         };
 
         planner.evaluate_world_state(&sensory, 0.2);
@@ -364,6 +368,8 @@ mod tests {
             },
             nearest_food: None,
             nearest_threat: Some(Vec2::new(5.0, 5.0)),
+            food_direction: None,
+            food_distance: 1.0,
         };
 
         planner.plan(&sensory, Vec2::ZERO);
@@ -387,6 +393,8 @@ mod tests {
             },
             nearest_food: Some(Vec2::new(10.0, 10.0)),
             nearest_threat: None,
+            food_direction: Some(Vec2::new(1.0, 0.0)),
+            food_distance: 0.2,
         };
 
         planner.plan(&sensory, Vec2::ZERO);
@@ -414,6 +422,8 @@ mod tests {
             },
             nearest_food: None,
             nearest_threat: None,
+            food_direction: None,
+            food_distance: 1.0,
         };
 
         planner.plan(&sensory, Vec2::ZERO);
@@ -440,6 +450,8 @@ mod tests {
             },
             nearest_food: None,
             nearest_threat: None,
+            food_direction: None,
+            food_distance: 1.0,
         };
         assert!(planner.is_plan_valid(&sensory_safe));
 
@@ -454,6 +466,8 @@ mod tests {
             },
             nearest_food: None,
             nearest_threat: Some(Vec2::new(5.0, 5.0)),
+            food_direction: None,
+            food_distance: 1.0,
         };
         assert!(!planner.is_plan_valid(&sensory_danger));
     }

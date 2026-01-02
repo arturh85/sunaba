@@ -30,6 +30,10 @@ pub struct SensoryInput {
     pub gradients: ChemicalGradient,
     pub nearest_food: Option<Vec2>,
     pub nearest_threat: Option<Vec2>,
+    /// Normalized direction vector pointing toward nearest food (long-range compass)
+    pub food_direction: Option<Vec2>,
+    /// Distance to nearest food (normalized 0-1 based on compass_radius)
+    pub food_distance: f32,
 }
 
 impl SensoryInput {
@@ -46,6 +50,10 @@ impl SensoryInput {
         // Detect nearby food and threats
         let nearest_food = detect_nearby_food(world, position, config.food_detection_radius);
         let nearest_threat = detect_nearby_threats(world, position, config.threat_detection_radius);
+
+        // Long-range food compass (directional sensing)
+        let (food_direction, food_distance) =
+            detect_food_direction(world, position, config.food_compass_radius);
 
         // Calculate chemical gradients
         let gradients = calculate_gradients(
@@ -65,6 +73,62 @@ impl SensoryInput {
             gradients,
             nearest_food,
             nearest_threat,
+            food_direction,
+            food_distance,
+        }
+    }
+
+    /// Gather sensory input with cached food positions (optimized for training)
+    ///
+    /// Uses pre-computed food positions instead of scanning all pixels,
+    /// reducing food detection from O(r²) to O(n_food).
+    pub fn gather_with_cache(
+        world: &crate::world::World,
+        position: Vec2,
+        config: &SensorConfig,
+        food_positions: &[Vec2],
+    ) -> Self {
+        // Raycast vision in multiple directions
+        let raycasts = raycast_vision(
+            world,
+            position,
+            config.num_raycasts,
+            config.raycast_distance,
+        );
+
+        // Detect nearby threats (still need to scan, but small radius)
+        let nearest_threat = detect_nearby_threats(world, position, config.threat_detection_radius);
+
+        // Use cached food positions for food direction (O(n) instead of O(r²))
+        let (food_direction, food_distance) =
+            detect_food_direction_cached(position, food_positions, config.food_compass_radius);
+
+        // Find nearest food from cached positions
+        let nearest_food =
+            find_nearest_food_from_cache(position, food_positions, config.food_detection_radius);
+
+        // Simple gradients based on food distance
+        let food_gradient = if food_distance < 1.0 {
+            1.0 - food_distance
+        } else {
+            0.0
+        };
+        let gradients = ChemicalGradient {
+            food: food_gradient,
+            danger: 0.0, // Would need threat scan
+            mate: 0.0,
+        };
+
+        let contact_materials = Vec::new();
+
+        Self {
+            raycasts,
+            contact_materials,
+            gradients,
+            nearest_food,
+            nearest_threat,
+            food_direction,
+            food_distance,
         }
     }
 }
@@ -76,6 +140,8 @@ pub struct SensorConfig {
     pub raycast_distance: f32,
     pub food_detection_radius: f32,
     pub threat_detection_radius: f32,
+    /// Long-range food compass radius (for directional sensing)
+    pub food_compass_radius: f32,
 }
 
 impl Default for SensorConfig {
@@ -85,6 +151,7 @@ impl Default for SensorConfig {
             raycast_distance: 50.0,
             food_detection_radius: 30.0,
             threat_detection_radius: 40.0,
+            food_compass_radius: 150.0, // Reduced from 500 for performance (used as fallback)
         }
     }
 }
@@ -260,6 +327,127 @@ pub fn detect_nearby_threats(
     nearest_threat.map(|(pos, _)| pos)
 }
 
+/// Detect direction to nearest food (long-range compass)
+/// Returns (normalized_direction, normalized_distance)
+pub fn detect_food_direction(
+    world: &crate::world::World,
+    position: Vec2,
+    radius: f32,
+) -> (Option<Vec2>, f32) {
+    use crate::simulation::MaterialTag;
+
+    let mut nearest_food: Option<(Vec2, f32)> = None;
+    let radius_sq = radius * radius;
+
+    // Search in a square around the position
+    let min_x = (position.x - radius).floor() as i32;
+    let max_x = (position.x + radius).ceil() as i32;
+    let min_y = (position.y - radius).floor() as i32;
+    let max_y = (position.y + radius).ceil() as i32;
+
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            if let Some(pixel) = world.get_pixel(x, y) {
+                let material_id = pixel.material_id;
+                let material = world.materials().get(material_id);
+
+                // Check if material is edible
+                if material.tags.contains(&MaterialTag::Edible) {
+                    let pixel_pos = Vec2::new(x as f32, y as f32);
+                    let dist_sq = position.distance_squared(pixel_pos);
+
+                    if dist_sq <= radius_sq {
+                        match nearest_food {
+                            None => nearest_food = Some((pixel_pos, dist_sq)),
+                            Some((_, current_dist_sq)) => {
+                                if dist_sq < current_dist_sq {
+                                    nearest_food = Some((pixel_pos, dist_sq));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    match nearest_food {
+        Some((food_pos, dist_sq)) => {
+            let direction = food_pos - position;
+            let distance = dist_sq.sqrt();
+            let normalized_dir = if distance > 0.001 {
+                direction / distance
+            } else {
+                Vec2::ZERO
+            };
+            let normalized_dist = (distance / radius).min(1.0);
+            (Some(normalized_dir), normalized_dist)
+        }
+        None => (None, 1.0), // No food found, max distance
+    }
+}
+
+/// Detect direction to nearest food using cached positions (O(n) instead of O(r²))
+/// Returns (normalized_direction, normalized_distance)
+pub fn detect_food_direction_cached(
+    position: Vec2,
+    food_positions: &[Vec2],
+    max_distance: f32,
+) -> (Option<Vec2>, f32) {
+    let mut nearest: Option<(Vec2, f32)> = None;
+
+    for &food_pos in food_positions {
+        let dist_sq = position.distance_squared(food_pos);
+        match nearest {
+            None => nearest = Some((food_pos, dist_sq)),
+            Some((_, curr_dist_sq)) if dist_sq < curr_dist_sq => {
+                nearest = Some((food_pos, dist_sq));
+            }
+            _ => {}
+        }
+    }
+
+    match nearest {
+        Some((food_pos, dist_sq)) => {
+            let distance = dist_sq.sqrt();
+            let direction = food_pos - position;
+            let normalized_dir = if distance > 0.001 {
+                direction / distance
+            } else {
+                Vec2::ZERO
+            };
+            let normalized_dist = (distance / max_distance).min(1.0);
+            (Some(normalized_dir), normalized_dist)
+        }
+        None => (None, 1.0),
+    }
+}
+
+/// Find nearest food from cached positions within radius
+pub fn find_nearest_food_from_cache(
+    position: Vec2,
+    food_positions: &[Vec2],
+    radius: f32,
+) -> Option<Vec2> {
+    let radius_sq = radius * radius;
+    let mut nearest: Option<(Vec2, f32)> = None;
+
+    for &food_pos in food_positions {
+        let dist_sq = position.distance_squared(food_pos);
+        if dist_sq <= radius_sq {
+            match nearest {
+                None => nearest = Some((food_pos, dist_sq)),
+                Some((_, curr_dist_sq)) if dist_sq < curr_dist_sq => {
+                    nearest = Some((food_pos, dist_sq));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    nearest.map(|(pos, _)| pos)
+}
+
 /// Calculate chemical gradients (scent following)
 pub fn calculate_gradients(
     world: &crate::world::World,
@@ -328,6 +516,7 @@ mod tests {
         assert_eq!(config.raycast_distance, 50.0);
         assert_eq!(config.food_detection_radius, 30.0);
         assert_eq!(config.threat_detection_radius, 40.0);
+        assert_eq!(config.food_compass_radius, 150.0);
     }
 
     #[test]

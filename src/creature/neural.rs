@@ -17,6 +17,10 @@ pub struct BodyPartFeatures {
     pub ground_contact: f32,
     pub raycast_distances: Vec<f32>,
     pub contact_materials: Vec<f32>,
+    // Global food direction (same for all body parts - provides navigation context)
+    pub food_direction_x: f32, // -1.0 to 1.0, direction to nearest food
+    pub food_direction_y: f32, // -1.0 to 1.0
+    pub food_distance: f32,    // 0.0 to 1.0, normalized distance to food
 }
 
 impl BodyPartFeatures {
@@ -29,6 +33,9 @@ impl BodyPartFeatures {
             self.velocity.x,
             self.velocity.y,
             self.ground_contact,
+            self.food_direction_x,
+            self.food_direction_y,
+            self.food_distance,
         ];
         features.extend(&self.raycast_distances);
         features.extend(&self.contact_materials);
@@ -37,7 +44,7 @@ impl BodyPartFeatures {
 
     /// Get feature dimension
     pub fn feature_dim(num_raycasts: usize, num_materials: usize) -> usize {
-        6 + num_raycasts + num_materials
+        9 + num_raycasts + num_materials // 6 base + 3 food direction + raycasts + materials
     }
 }
 
@@ -186,6 +193,12 @@ pub fn extract_body_part_features(
     let num_parts = morphology.body_parts.len();
     let mut features = Vec::with_capacity(num_parts);
 
+    // Extract global food direction from sensory input
+    let (food_direction_x, food_direction_y, food_distance) = match sensory_input.food_direction {
+        Some(dir) => (dir.x, dir.y, sensory_input.food_distance),
+        None => (0.0, 0.0, 1.0), // No food detected - zero direction, max distance
+    };
+
     // Get body part positions and orientations from physics
     let body_data: Vec<(Vec2, f32, Vec2)> = if let Some(handles) = physics_handles {
         handles
@@ -278,6 +291,9 @@ pub fn extract_body_part_features(
             ground_contact,
             raycast_distances,
             contact_materials,
+            food_direction_x,
+            food_direction_y,
+            food_distance,
         });
     }
 
@@ -346,21 +362,27 @@ mod tests {
             ground_contact: 1.0,
             raycast_distances: vec![0.5, 0.8],
             contact_materials: vec![1.0, 0.0],
+            food_direction_x: 0.7,
+            food_direction_y: 0.3,
+            food_distance: 0.5,
         };
 
         let vec = features.to_vec();
-        assert_eq!(vec.len(), 10); // 6 base + 2 raycasts + 2 materials
+        assert_eq!(vec.len(), 13); // 9 base + 2 raycasts + 2 materials
 
         // Check values are in correct order
         assert_eq!(vec[0], 0.5); // joint_angle
         assert_eq!(vec[3], 1.0); // velocity.x
-        assert_eq!(vec[6], 0.5); // first raycast
+        assert_eq!(vec[6], 0.7); // food_direction_x
+        assert_eq!(vec[7], 0.3); // food_direction_y
+        assert_eq!(vec[8], 0.5); // food_distance
+        assert_eq!(vec[9], 0.5); // first raycast
     }
 
     #[test]
     fn test_feature_dim_calculation() {
         let dim = BodyPartFeatures::feature_dim(8, 5);
-        assert_eq!(dim, 19); // 6 base + 8 raycasts + 5 materials
+        assert_eq!(dim, 22); // 9 base + 8 raycasts + 5 materials
     }
 
     #[test]

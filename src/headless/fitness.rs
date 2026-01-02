@@ -97,6 +97,57 @@ impl FitnessFunction for SurvivalFitness {
     }
 }
 
+/// Measures food collected with distance bonus
+pub struct FoodCollectionFitness {
+    /// Points per food item collected
+    pub food_points: f32,
+    /// Weight for distance bonus
+    pub distance_bonus_weight: f32,
+}
+
+impl FoodCollectionFitness {
+    /// Create with default values
+    pub fn new() -> Self {
+        Self {
+            food_points: 10.0,
+            distance_bonus_weight: 0.5,
+        }
+    }
+}
+
+impl Default for FoodCollectionFitness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FitnessFunction for FoodCollectionFitness {
+    fn evaluate(
+        &self,
+        creature: &Creature,
+        _world: &World,
+        spawn_pos: Vec2,
+        _duration: f32,
+    ) -> f32 {
+        // Main fitness: food collected
+        let food_score = creature.food_eaten as f32 * self.food_points;
+
+        // Bonus for distance traveled (encourages exploration)
+        let distance = (creature.position - spawn_pos).length();
+        let distance_bonus = (distance / 100.0) * self.distance_bonus_weight;
+
+        food_score + distance_bonus
+    }
+
+    fn name(&self) -> &str {
+        "FoodCollection"
+    }
+
+    fn description(&self) -> &str {
+        "Measures food items collected with small distance bonus"
+    }
+}
+
 /// Combines multiple fitness functions with weights
 pub struct CompositeFitness {
     /// Component fitness functions with their weights
@@ -208,6 +259,14 @@ mod tests {
         creature
     }
 
+    fn make_test_creature_with_food(position: Vec2, food_eaten: u32) -> Creature {
+        use crate::creature::genome::CreatureGenome;
+        let mut creature = Creature::from_genome(CreatureGenome::test_biped(), Vec2::ZERO);
+        creature.position = position;
+        creature.food_eaten = food_eaten;
+        creature
+    }
+
     #[test]
     fn test_distance_fitness() {
         let fitness = DistanceFitness;
@@ -253,5 +312,27 @@ mod tests {
 
         let score = fitness.evaluate(&creature, &world, Vec2::ZERO, 30.0);
         assert!(score > 0.0);
+    }
+
+    #[test]
+    fn test_food_collection_fitness() {
+        let fitness = FoodCollectionFitness::new();
+        let world = World::new();
+
+        // Creature with no food at spawn
+        let creature_no_food = make_test_creature_with_food(Vec2::ZERO, 0);
+        let score_no_food = fitness.evaluate(&creature_no_food, &world, Vec2::ZERO, 30.0);
+        assert!(score_no_food < 0.01);
+
+        // Creature with 3 food items
+        let creature_with_food = make_test_creature_with_food(Vec2::ZERO, 3);
+        let score_with_food = fitness.evaluate(&creature_with_food, &world, Vec2::ZERO, 30.0);
+        assert!((score_with_food - 30.0).abs() < 0.01); // 3 * 10 = 30
+
+        // Creature with food and distance bonus
+        let creature_far = make_test_creature_with_food(Vec2::new(100.0, 0.0), 2);
+        let score_far = fitness.evaluate(&creature_far, &world, Vec2::ZERO, 30.0);
+        // 2 * 10 + (100/100) * 0.5 = 20.5
+        assert!((score_far - 20.5).abs() < 0.01);
     }
 }

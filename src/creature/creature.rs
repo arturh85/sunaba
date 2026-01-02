@@ -41,6 +41,9 @@ pub struct Creature {
     pub position: Vec2,
     pub generation: u64,
 
+    /// Counter for food items eaten (for fitness evaluation)
+    pub food_eaten: u32,
+
     // Movement state (not serialized - runtime only)
     #[serde(skip)]
     pub velocity: Vec2,
@@ -92,6 +95,7 @@ impl Creature {
             sensor_config: SensorConfig::default(),
             position,
             generation: 0,
+            food_eaten: 0,
             velocity: Vec2::ZERO,
             wander_target: None,
             wander_timer: 0.0,
@@ -274,6 +278,7 @@ impl Creature {
                         world, *position, &self.id,
                     ) {
                         self.hunger.eat(nutrition);
+                        self.food_eaten += 1;
                         return true;
                     }
                 }
@@ -537,6 +542,8 @@ mod tests {
             },
             nearest_food: None,
             nearest_threat: None,
+            food_direction: None,
+            food_distance: 1.0,
         };
 
         // Update for 1 second
@@ -574,6 +581,8 @@ mod tests {
             },
             nearest_food: None,
             nearest_threat: None,
+            food_direction: None,
+            food_distance: 1.0,
         };
 
         // Update for 1 second while starving
@@ -603,6 +612,8 @@ mod tests {
             },
             nearest_food: Some(Vec2::new(10.0, 10.0)),
             nearest_threat: None,
+            food_direction: Some(Vec2::new(1.0, 0.0)),
+            food_distance: 0.1,
         };
 
         // Update to trigger planning

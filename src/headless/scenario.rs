@@ -8,7 +8,8 @@ use crate::simulation::MaterialId;
 use crate::world::World;
 
 use super::fitness::{
-    CompositeFitness, DistanceFitness, FitnessFunction, ForagingFitness, SurvivalFitness,
+    CompositeFitness, DistanceFitness, FitnessFunction, FoodCollectionFitness, ForagingFitness,
+    SurvivalFitness,
 };
 
 /// Configuration for a training scenario
@@ -117,8 +118,28 @@ impl Scenario {
         }
     }
 
+    /// Create a food parcour scenario with obstacles
+    ///
+    /// Layout: 3 food items before a wall, 5 after
+    /// Creatures start with 50% hunger and must collect food to survive
+    pub fn parcour() -> Self {
+        Self {
+            config: ScenarioConfig {
+                name: "Parcour".to_string(),
+                description: "Food parcour with wall obstacle requiring mining".to_string(),
+                expected_behavior: "Navigate to food, mine through wall".to_string(),
+                spawn_position: Vec2::new(50.0, 50.0),
+                eval_duration: 30.0,
+                world_width: 400,
+                world_height: 128,
+            },
+            fitness: Box::new(FoodCollectionFitness::new()),
+        }
+    }
+
     /// Set up the world for this scenario
-    pub fn setup_world(&self) -> World {
+    /// Returns the world and a list of food positions for optimized sensing
+    pub fn setup_world(&self) -> (World, Vec<Vec2>) {
         let mut world = World::new();
 
         // Ensure chunks exist for the entire scenario area
@@ -132,17 +153,19 @@ impl Scenario {
         // Create flat ground
         self.create_flat_ground(&mut world);
 
-        // Add scenario-specific features
-        match self.config.name.as_str() {
+        // Add scenario-specific features and collect food positions
+        let food_positions = match self.config.name.as_str() {
             "Foraging" => self.add_food_sources(&mut world),
-            "Survival" => self.add_hazards(&mut world),
-            "Balanced" => {
-                self.add_food_sources(&mut world);
+            "Survival" => {
+                self.add_hazards(&mut world);
+                Vec::new()
             }
-            _ => {}
-        }
+            "Balanced" => self.add_food_sources(&mut world),
+            "Parcour" => self.add_parcour_course(&mut world),
+            _ => Vec::new(),
+        };
 
-        world
+        (world, food_positions)
     }
 
     /// Create flat ground terrain
@@ -158,7 +181,8 @@ impl Scenario {
     }
 
     /// Add food sources for foraging scenario
-    fn add_food_sources(&self, world: &mut World) {
+    /// Returns food positions for optimized sensing
+    fn add_food_sources(&self, world: &mut World) -> Vec<Vec2> {
         // Scatter food patches
         let food_positions = [
             (150, 25),
@@ -180,6 +204,12 @@ impl Scenario {
                 }
             }
         }
+
+        // Return center positions as Vec2
+        food_positions
+            .iter()
+            .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
+            .collect()
     }
 
     /// Add hazards for survival scenario
@@ -198,6 +228,70 @@ impl Scenario {
                 }
             }
         }
+    }
+
+    /// Add food parcour course with wall obstacle
+    ///
+    /// Layout (ground at y=20):
+    /// ```text
+    /// Spawn(50)  Food1(100) Food2(150) Food3(200)  WALL(250-260)  Food4(280) Food5(310) Food6(340) Food7(360) Food8(380)
+    ///    *          o          o          o        ████████████      o         o          o          o          o
+    /// ___________________________________________________________________________________________________
+    /// ```
+    /// Returns food positions for optimized sensing
+    fn add_parcour_course(&self, world: &mut World) -> Vec<Vec2> {
+        let ground_y = 20;
+        let food_y = 25; // Slightly above ground
+
+        // 3 food items before the wall (reachable by walking)
+        let food_positions_before_wall: [(i32, i32); 3] =
+            [(100, food_y), (150, food_y), (200, food_y)];
+
+        // Stone wall at x=250-260, from ground up to y=50
+        let wall_x_start = 250;
+        let wall_width = 10;
+        let wall_height = 30;
+
+        // 5 food items after the wall
+        let food_positions_after_wall: [(i32, i32); 5] = [
+            (280, food_y),
+            (310, food_y),
+            (340, food_y),
+            (360, food_y),
+            (380, food_y),
+        ];
+
+        // Place food before wall (3x3 patches of FRUIT)
+        for (x, y) in food_positions_before_wall {
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    world.set_pixel(x + dx, y + dy, MaterialId::FRUIT);
+                }
+            }
+        }
+
+        // Create stone wall
+        for dx in 0..wall_width {
+            for dy in 0..wall_height {
+                world.set_pixel(wall_x_start + dx, ground_y + dy, MaterialId::STONE);
+            }
+        }
+
+        // Place food after wall (3x3 patches of FRUIT)
+        for (x, y) in food_positions_after_wall {
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    world.set_pixel(x + dx, y + dy, MaterialId::FRUIT);
+                }
+            }
+        }
+
+        // Return all food positions as Vec2
+        food_positions_before_wall
+            .iter()
+            .chain(food_positions_after_wall.iter())
+            .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
+            .collect()
     }
 }
 
@@ -231,5 +325,42 @@ mod tests {
         let scenario = Scenario::balanced();
         assert_eq!(scenario.config.name, "Balanced");
         assert_eq!(scenario.fitness.name(), "Composite");
+    }
+
+    #[test]
+    fn test_parcour_scenario() {
+        let scenario = Scenario::parcour();
+        assert_eq!(scenario.config.name, "Parcour");
+        assert_eq!(scenario.fitness.name(), "FoodCollection");
+        assert_eq!(scenario.config.spawn_position, Vec2::new(50.0, 50.0));
+    }
+
+    #[test]
+    fn test_parcour_world_setup() {
+        let scenario = Scenario::parcour();
+        let (world, food_positions) = scenario.setup_world();
+
+        // Check that ground exists
+        let ground_pixel = world.get_pixel(100, 10);
+        assert!(ground_pixel.is_some());
+        assert_eq!(ground_pixel.unwrap().material_id, MaterialId::STONE);
+
+        // Check that food exists before wall
+        let food_pixel = world.get_pixel(100, 25);
+        assert!(food_pixel.is_some());
+        assert_eq!(food_pixel.unwrap().material_id, MaterialId::FRUIT);
+
+        // Check that wall exists
+        let wall_pixel = world.get_pixel(255, 30);
+        assert!(wall_pixel.is_some());
+        assert_eq!(wall_pixel.unwrap().material_id, MaterialId::STONE);
+
+        // Check that food exists after wall
+        let food_after = world.get_pixel(280, 25);
+        assert!(food_after.is_some());
+        assert_eq!(food_after.unwrap().material_id, MaterialId::FRUIT);
+
+        // Check food positions were returned
+        assert_eq!(food_positions.len(), 8); // 3 before + 5 after wall
     }
 }

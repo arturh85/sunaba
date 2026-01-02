@@ -66,6 +66,55 @@ impl CreatureManager {
         id
     }
 
+    /// Spawn creature from genome with specified initial hunger level
+    ///
+    /// # Arguments
+    /// * `initial_hunger_percent` - 0.0 to 1.0, where 1.0 is full and 0.0 is starving
+    pub fn spawn_creature_with_hunger(
+        &mut self,
+        genome: CreatureGenome,
+        position: Vec2,
+        initial_hunger_percent: f32,
+        physics_world: &mut PhysicsWorld,
+    ) -> EntityId {
+        // Check if we can spawn
+        if !self.can_spawn() {
+            log::warn!(
+                "Cannot spawn creature: max population reached ({})",
+                self.max_creatures
+            );
+            return EntityId::new(); // Return dummy ID
+        }
+
+        // Create creature from genome
+        let mut creature = Creature::from_genome(genome, position);
+        let id = creature.id;
+
+        // Set initial hunger level
+        let max_hunger = creature.hunger.max;
+        creature
+            .hunger
+            .set(max_hunger * initial_hunger_percent.clamp(0.0, 1.0));
+
+        // Build physics body
+        creature.rebuild_physics(physics_world);
+
+        // Add to manager
+        self.creatures.insert(id, creature);
+
+        log::info!(
+            "Spawned creature {} at ({:.1}, {:.1}) with {:.0}% hunger. Population: {}/{}",
+            id,
+            position.x,
+            position.y,
+            initial_hunger_percent * 100.0,
+            self.count(),
+            self.max_creatures
+        );
+
+        id
+    }
+
     /// Remove creature
     pub fn remove_creature(&mut self, id: EntityId, physics_world: &mut PhysicsWorld) {
         if let Some(creature) = self.creatures.remove(&id) {
@@ -103,6 +152,57 @@ impl CreatureManager {
             // Gather sensory input
             let sensory_input =
                 SensoryInput::gather(world, creature.position, &creature.sensor_config);
+
+            // Update creature state (hunger, needs, planning, neural control)
+            let died = creature.update(delta_time, &sensory_input, physics_world, world);
+
+            if died {
+                dead_creatures.push(id);
+                continue;
+            }
+
+            // Apply movement physics (gravity, wandering, collision)
+            creature.apply_movement(world, physics_world, delta_time);
+        }
+
+        // Remove dead creatures
+        for id in dead_creatures {
+            self.remove_creature(id, physics_world);
+            log::info!("Creature {} died", id);
+        }
+    }
+
+    /// Update all creatures with cached food positions (optimized for training)
+    ///
+    /// Uses pre-computed food positions instead of scanning all pixels,
+    /// reducing food detection from O(r²) to O(n_food).
+    pub fn update_with_cache(
+        &mut self,
+        delta_time: f32,
+        world: &World,
+        physics_world: &mut PhysicsWorld,
+        food_positions: &[glam::Vec2],
+    ) {
+        use super::sensors::SensoryInput;
+
+        let mut dead_creatures = Vec::new();
+
+        // Collect creature IDs to iterate over (to avoid borrow issues)
+        let creature_ids: Vec<EntityId> = self.creatures.keys().copied().collect();
+
+        // Update each creature
+        for id in creature_ids {
+            let Some(creature) = self.creatures.get_mut(&id) else {
+                continue;
+            };
+
+            // Gather sensory input using cached food positions
+            let sensory_input = SensoryInput::gather_with_cache(
+                world,
+                creature.position,
+                &creature.sensor_config,
+                food_positions,
+            );
 
             // Update creature state (hunger, needs, planning, neural control)
             let died = creature.update(delta_time, &sensory_input, physics_world, world);
@@ -321,5 +421,23 @@ mod tests {
         manager.update(0.1, &world, &mut physics_world);
 
         assert_eq!(manager.count(), 0);
+    }
+
+    #[test]
+    fn test_spawn_creature_with_hunger() {
+        let mut manager = CreatureManager::new(10);
+        let mut physics_world = PhysicsWorld::new();
+
+        let genome = CreatureGenome::test_biped();
+        let position = Vec2::new(100.0, 100.0);
+
+        // Spawn with 50% hunger
+        let id = manager.spawn_creature_with_hunger(genome, position, 0.5, &mut physics_world);
+
+        let creature = manager.get(id).unwrap();
+
+        // Hunger should be at 50%
+        let hunger_percent = creature.hunger.percentage();
+        assert!((hunger_percent - 0.5).abs() < 0.01);
     }
 }
