@@ -106,6 +106,10 @@ pub struct App {
     particle_system: ParticleSystem,
     #[cfg(not(target_arch = "wasm32"))]
     config: GameConfig,
+    /// Hot reload manager for config and materials.
+    /// On WASM, this is a no-op but we keep it for API consistency.
+    #[allow(dead_code)]
+    hot_reload: crate::hot_reload::HotReloadManager,
 }
 
 impl App {
@@ -217,6 +221,7 @@ impl App {
             particle_system: ParticleSystem::new(),
             #[cfg(not(target_arch = "wasm32"))]
             config,
+            hot_reload: crate::hot_reload::HotReloadManager::new(),
         };
 
         Ok((app, event_loop))
@@ -335,6 +340,24 @@ impl App {
 
         // Begin frame timing
         self.ui_state.stats.begin_frame();
+
+        // Check for hot-reloadable file changes
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let flags = self.hot_reload.check_for_changes();
+            if flags.config_changed {
+                match GameConfig::load() {
+                    Ok(new_config) => {
+                        log::info!("Hot-reloaded config.ron");
+                        self.config = new_config;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to hot-reload config: {}", e);
+                    }
+                }
+            }
+            // materials.ron hot reload would go here when implemented
+        }
 
         // Periodic auto-save in persistent world mode
         #[cfg(not(target_arch = "wasm32"))]
@@ -588,6 +611,10 @@ impl App {
             self.world.player.mining_progress.is_mining(),
             1.0 / 60.0,
         );
+
+        // Update camera to smoothly follow player
+        self.renderer
+            .update_camera_follow(self.world.player.position, 1.0 / 60.0);
 
         // Render world + UI
         match self.renderer.render(

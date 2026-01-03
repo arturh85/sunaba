@@ -40,6 +40,9 @@ glam = { version = "0.25", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 ron = "0.12"
 
+# Animation
+keyframe = "1.1"
+
 # Other
 anyhow = "1.0"
 bitflags = "2.4"

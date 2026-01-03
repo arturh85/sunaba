@@ -2,10 +2,12 @@
 //!
 //! A survival game where every pixel is simulated with material properties.
 
+pub mod animation;
 pub mod app;
 pub mod assets;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod config;
+pub mod hot_reload;
 pub mod render;
 pub mod ui;
 

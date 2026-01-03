@@ -6,6 +6,7 @@ use std::iter;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
+use crate::animation::AnimatedCamera;
 use crate::render::particles::ParticleSystem;
 use crate::render::sprite::PlayerSprite;
 use crate::simulation::MaterialId;
@@ -111,6 +112,8 @@ pub struct Renderer {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     camera: CameraUniform,
+    /// Animated camera for smooth follow and zoom
+    animated_camera: AnimatedCamera,
 
     // Pixel buffer for CPU-side rendering
     pixel_buffer: Vec<u8>,
@@ -651,6 +654,10 @@ impl Renderer {
             world_bind_group,
             camera_buffer,
             camera_bind_group,
+            animated_camera: AnimatedCamera::new(
+                glam::Vec2::new(camera.position[0], camera.position[1]),
+                camera.zoom,
+            ),
             camera,
             pixel_buffer,
             egui_renderer,
@@ -782,8 +789,10 @@ impl Renderer {
         }
         timing.gpu_upload_ms = t1.elapsed().as_secs_f32() * 1000.0;
 
-        // Update camera position to follow player
-        self.camera.position = [world.player.position.x, world.player.position.y];
+        // Update camera from animated values (follow_target and zoom animations
+        // are updated by update_camera_follow before render is called)
+        self.camera.position = self.animated_camera.position_array();
+        self.camera.zoom = self.animated_camera.zoom();
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera]));
 
@@ -1427,10 +1436,48 @@ impl Renderer {
         glam::Vec2::new(self.camera.position[0], self.camera.position[1])
     }
 
-    /// Update camera zoom level with delta and clamp to min/max
+    /// Update camera zoom level with delta and clamp to min/max.
+    /// Uses animated zoom with easing for smooth transitions.
+    ///
+    /// # Arguments
+    /// * `zoom_delta` - Multiplier for zoom (e.g., 1.1 for zoom in, 0.9 for zoom out)
+    /// * `min_zoom` - Minimum allowed zoom level
+    /// * `max_zoom` - Maximum allowed zoom level
+    /// * `duration` - Animation duration in seconds (0.0 for instant)
     pub fn update_zoom(&mut self, zoom_delta: f32, min_zoom: f32, max_zoom: f32) {
-        self.camera.zoom *= zoom_delta;
-        self.camera.zoom = self.camera.zoom.clamp(min_zoom, max_zoom);
+        // Use animated zoom with short duration for smooth scrolling
+        self.animated_camera
+            .zoom_by(zoom_delta, min_zoom, max_zoom, 0.15);
+    }
+
+    /// Update camera to smoothly follow a target position.
+    ///
+    /// Call this every frame before render() with the player position.
+    ///
+    /// # Arguments
+    /// * `target` - Target position to follow (usually player position)
+    /// * `dt` - Delta time in seconds since last frame
+    pub fn update_camera_follow(&mut self, target: glam::Vec2, dt: f32) {
+        self.animated_camera.follow_target(target, dt);
+        self.animated_camera.update(dt);
+    }
+
+    /// Set camera follow smoothness.
+    ///
+    /// Lower values = faster camera response (more responsive)
+    /// Higher values = slower camera response (more smooth)
+    ///
+    /// # Arguments
+    /// * `smoothness` - Time constant in seconds (reasonable range: 0.05 to 0.3)
+    pub fn set_camera_smoothness(&mut self, smoothness: f32) {
+        self.animated_camera.set_follow_smoothness(smoothness);
+    }
+
+    /// Set camera position and zoom immediately without animation.
+    /// Useful for level transitions or teleportation.
+    pub fn set_camera_immediate(&mut self, position: glam::Vec2, zoom: f32) {
+        self.animated_camera.set_position_immediate(position);
+        self.animated_camera.set_zoom_immediate(zoom);
     }
 
     /// Get window size
