@@ -1,12 +1,11 @@
 //! Movement viability testing for creature morphologies
 //!
 //! Tests whether a creature's morphology can produce effective movement
-//! by simulating motor activity and measuring displacement potential.
+//! by analyzing morphological structure.
 
 use glam::Vec2;
 
-use crate::morphology::{CreatureMorphology, JointType, MorphologyPhysics};
-use crate::physics::PhysicsWorld;
+use crate::morphology::{CreatureMorphology, JointType};
 
 /// Viability score for a creature morphology
 #[derive(Debug, Clone)]
@@ -191,82 +190,6 @@ fn calculate_asymmetry(morphology: &CreatureMorphology) -> f32 {
     (left_mass - right_mass).abs() / total_mass
 }
 
-/// Test movement by simulating motor commands and measuring displacement
-pub fn test_movement_capability(
-    morphology: &CreatureMorphology,
-    physics_world: &mut PhysicsWorld,
-    test_duration: f32,
-    delta_time: f32,
-) -> MovementTestResult {
-    // Create physics representation
-    let start_pos = Vec2::new(500.0, 500.0);
-    let mut physics = MorphologyPhysics::from_morphology(morphology, start_pos, physics_world);
-
-    let num_steps = (test_duration / delta_time) as usize;
-    let mut total_displacement = 0.0f32;
-    let mut max_displacement = 0.0f32;
-    let mut motor_activity_sum = 0.0f32;
-
-    // Simulate oscillating motor commands (like walking)
-    for step in 0..num_steps {
-        let time = step as f32 * delta_time;
-
-        // Generate oscillating motor commands for each motor
-        let motor_commands: Vec<f32> = (0..physics.motor_link_indices.len())
-            .map(|i| {
-                // Phase-shifted sine waves for walking gait
-                let phase = i as f32 * std::f32::consts::PI / 2.0;
-                (time * 5.0 + phase).sin()
-            })
-            .collect();
-
-        // Apply motor commands
-        physics.apply_all_motor_commands(&motor_commands, morphology, delta_time);
-        physics.apply_motor_rotations(morphology, start_pos, physics_world);
-
-        // Track motor activity
-        motor_activity_sum += motor_commands.iter().map(|c| c.abs()).sum::<f32>();
-
-        // Measure displacement from start position
-        if let Some(current_pos) = physics.get_position(physics_world) {
-            let displacement = (current_pos - start_pos).length();
-            total_displacement += displacement;
-            max_displacement = max_displacement.max(displacement);
-        }
-    }
-
-    // Calculate average motor activity before cleanup (since cleanup takes ownership)
-    let motor_count = physics.motor_link_indices.len();
-    let avg_motor_activity = if num_steps > 0 && motor_count > 0 {
-        motor_activity_sum / (num_steps as f32 * motor_count as f32)
-    } else {
-        0.0
-    };
-
-    // Cleanup physics bodies
-    physics.cleanup(physics_world);
-
-    MovementTestResult {
-        total_displacement,
-        max_displacement,
-        avg_motor_activity,
-        can_produce_movement: max_displacement > 1.0 && avg_motor_activity > 0.1,
-    }
-}
-
-/// Results of movement capability testing
-#[derive(Debug, Clone)]
-pub struct MovementTestResult {
-    /// Total accumulated displacement during test
-    pub total_displacement: f32,
-    /// Maximum displacement achieved from starting position
-    pub max_displacement: f32,
-    /// Average motor activity level (0.0-1.0)
-    pub avg_motor_activity: f32,
-    /// Whether the morphology can produce meaningful movement
-    pub can_produce_movement: bool,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,20 +253,6 @@ mod tests {
             score.asymmetry < 0.5,
             "Biped should be roughly symmetric, got {}",
             score.asymmetry
-        );
-    }
-
-    #[test]
-    fn test_movement_simulation() {
-        let morphology = CreatureMorphology::test_biped();
-        let mut physics_world = PhysicsWorld::new();
-
-        let result = test_movement_capability(&morphology, &mut physics_world, 1.0, 1.0 / 60.0);
-
-        // Motors should produce activity
-        assert!(
-            result.avg_motor_activity > 0.0,
-            "Motors should produce activity"
         );
     }
 }

@@ -17,7 +17,6 @@ noise = "0.9"
 petgraph = "0.6"
 rand = "0.9"
 rand_xoshiro = "0.7"
-rapier2d = "0.18"
 ron = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 serde-big-array = "0.5"

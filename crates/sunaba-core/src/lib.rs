@@ -7,7 +7,3 @@ pub mod world;
 pub mod creature {
     pub use sunaba_creature::*;
 }
-
-pub mod physics {
-    pub use sunaba_creature::physics::*;
-}

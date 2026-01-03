@@ -7,8 +7,6 @@ use std::collections::HashMap;
 use glam::Vec2;
 
 use crate::EntityId;
-use crate::PhysicsWorld;
-// Tests need concrete World implementation
 
 use super::creature::Creature;
 use super::genome::CreatureGenome;
@@ -30,16 +28,10 @@ impl CreatureManager {
     }
 
     /// Spawn creature from genome (uses default morphology config)
-    pub fn spawn_creature(
-        &mut self,
-        genome: CreatureGenome,
-        position: Vec2,
-        physics_world: &mut PhysicsWorld,
-    ) -> EntityId {
+    pub fn spawn_creature(&mut self, genome: CreatureGenome, position: Vec2) -> EntityId {
         self.spawn_creature_with_config(
             genome,
             position,
-            physics_world,
             &super::morphology::MorphologyConfig::default(),
         )
     }
@@ -49,7 +41,6 @@ impl CreatureManager {
         &mut self,
         genome: CreatureGenome,
         position: Vec2,
-        physics_world: &mut PhysicsWorld,
         morph_config: &super::morphology::MorphologyConfig,
     ) -> EntityId {
         // Check if we can spawn
@@ -62,13 +53,10 @@ impl CreatureManager {
         }
 
         // Create creature from genome with the specified morphology config
-        let mut creature = Creature::from_genome_with_config(genome, position, morph_config);
+        let creature = Creature::from_genome_with_config(genome, position, morph_config);
         let id = creature.id;
 
-        // Build physics body
-        creature.rebuild_physics(physics_world);
-
-        // Add to manager
+        // Add to manager (physics_state is already initialized in constructor)
         self.creatures.insert(id, creature);
 
         log::info!(
@@ -92,13 +80,11 @@ impl CreatureManager {
         genome: CreatureGenome,
         position: Vec2,
         initial_hunger_percent: f32,
-        physics_world: &mut PhysicsWorld,
     ) -> EntityId {
         self.spawn_creature_with_hunger_and_config(
             genome,
             position,
             initial_hunger_percent,
-            physics_world,
             &super::morphology::MorphologyConfig::default(),
         )
     }
@@ -109,14 +95,12 @@ impl CreatureManager {
         genome: CreatureGenome,
         position: Vec2,
         initial_hunger_percent: f32,
-        physics_world: &mut PhysicsWorld,
         morph_config: &super::morphology::MorphologyConfig,
     ) -> EntityId {
         self.spawn_creature_with_archetype_and_hunger(
             genome,
             position,
             initial_hunger_percent,
-            physics_world,
             morph_config,
             CreatureArchetype::Evolved, // Default: use CPPN-generated morphology
         )
@@ -131,7 +115,6 @@ impl CreatureManager {
         genome: CreatureGenome,
         position: Vec2,
         initial_hunger_percent: f32,
-        physics_world: &mut PhysicsWorld,
         morph_config: &super::morphology::MorphologyConfig,
         archetype: CreatureArchetype,
     ) -> EntityId {
@@ -155,10 +138,7 @@ impl CreatureManager {
             .hunger
             .set(max_hunger * initial_hunger_percent.clamp(0.0, 1.0));
 
-        // Build physics body
-        creature.rebuild_physics(physics_world);
-
-        // Add to manager
+        // Add to manager (physics_state is already initialized in constructor)
         self.creatures.insert(id, creature);
 
         log::info!(
@@ -176,15 +156,8 @@ impl CreatureManager {
     }
 
     /// Remove creature
-    pub fn remove_creature(&mut self, id: EntityId, physics_world: &mut PhysicsWorld) {
-        if let Some(creature) = self.creatures.remove(&id) {
-            // Clean up physics
-            if let Some(physics) = creature.physics {
-                for body_handle in &physics.link_handles {
-                    physics_world.remove_rigid_body(*body_handle);
-                }
-            }
-
+    pub fn remove_creature(&mut self, id: EntityId) {
+        if self.creatures.remove(&id).is_some() {
             log::info!(
                 "Removed creature {}. Population: {}/{}",
                 id,
@@ -195,12 +168,7 @@ impl CreatureManager {
     }
 
     /// Update all creatures
-    pub fn update(
-        &mut self,
-        delta_time: f32,
-        world: &mut impl crate::WorldMutAccess,
-        physics_world: &mut PhysicsWorld,
-    ) {
+    pub fn update(&mut self, delta_time: f32, world: &mut impl crate::WorldMutAccess) {
         use super::sensors::SensoryInput;
 
         let mut dead_creatures = Vec::new();
@@ -219,7 +187,7 @@ impl CreatureManager {
                 SensoryInput::gather(world, creature.position, &creature.sensor_config);
 
             // Update creature state (hunger, needs, planning, neural control)
-            let died = creature.update(delta_time, &sensory_input, physics_world, world);
+            let died = creature.update(delta_time, &sensory_input, world);
 
             if died {
                 dead_creatures.push(id);
@@ -227,7 +195,7 @@ impl CreatureManager {
             }
 
             // Apply movement physics (gravity, wandering, collision)
-            creature.apply_movement(world, physics_world, delta_time);
+            creature.apply_movement(world, delta_time);
 
             // Try to mine blocks if neural output requested it
             creature.try_mine(world);
@@ -235,7 +203,7 @@ impl CreatureManager {
 
         // Remove dead creatures
         for id in dead_creatures {
-            self.remove_creature(id, physics_world);
+            self.remove_creature(id);
             log::info!("Creature {} died", id);
         }
     }
@@ -248,7 +216,6 @@ impl CreatureManager {
         &mut self,
         delta_time: f32,
         world: &mut impl crate::WorldMutAccess,
-        physics_world: &mut PhysicsWorld,
         food_positions: &[glam::Vec2],
     ) {
         use super::sensors::SensoryInput;
@@ -273,7 +240,7 @@ impl CreatureManager {
             );
 
             // Update creature state (hunger, needs, planning, neural control)
-            let died = creature.update(delta_time, &sensory_input, physics_world, world);
+            let died = creature.update(delta_time, &sensory_input, world);
 
             if died {
                 dead_creatures.push(id);
@@ -281,7 +248,7 @@ impl CreatureManager {
             }
 
             // Apply movement physics (gravity, wandering, collision)
-            creature.apply_movement(world, physics_world, delta_time);
+            creature.apply_movement(world, delta_time);
 
             // Try to mine blocks if neural output requested it
             creature.try_mine(world);
@@ -289,7 +256,7 @@ impl CreatureManager {
 
         // Remove dead creatures
         for id in dead_creatures {
-            self.remove_creature(id, physics_world);
+            self.remove_creature(id);
             log::info!("Creature {} died", id);
         }
     }
@@ -317,10 +284,10 @@ impl CreatureManager {
     }
 
     /// Get render data for all creatures (for rendering)
-    pub fn get_render_data(&self, physics_world: &PhysicsWorld) -> Vec<super::CreatureRenderData> {
+    pub fn get_render_data(&self) -> Vec<super::CreatureRenderData> {
         self.creatures
             .values()
-            .filter_map(|creature| creature.get_render_data(physics_world))
+            .filter_map(|creature| creature.get_render_data())
             .collect()
     }
 
@@ -362,30 +329,28 @@ mod tests {
     #[test]
     fn test_spawn_creature() {
         let mut manager = CreatureManager::new(10);
-        let mut physics_world = PhysicsWorld::new();
 
         let genome = CreatureGenome::test_biped();
         let position = Vec2::new(100.0, 100.0);
 
-        let id = manager.spawn_creature(genome, position, &mut physics_world);
+        let id = manager.spawn_creature(genome, position);
 
         assert_eq!(manager.count(), 1);
         assert!(manager.get(id).is_some());
 
-        // Creature should have physics built
+        // Creature should have physics_state
         let creature = manager.get(id).unwrap();
-        assert!(creature.physics.is_some());
+        assert!(!creature.physics_state.part_positions.is_empty());
     }
 
     #[test]
     fn test_spawn_multiple_creatures() {
         let mut manager = CreatureManager::new(10);
-        let mut physics_world = PhysicsWorld::new();
 
         for i in 0..5 {
             let genome = CreatureGenome::test_biped();
             let position = Vec2::new(100.0 + i as f32 * 10.0, 100.0);
-            manager.spawn_creature(genome, position, &mut physics_world);
+            manager.spawn_creature(genome, position);
         }
 
         assert_eq!(manager.count(), 5);
@@ -395,13 +360,12 @@ mod tests {
     #[test]
     fn test_max_population_limit() {
         let mut manager = CreatureManager::new(3);
-        let mut physics_world = PhysicsWorld::new();
 
         // Spawn up to max
         for i in 0..3 {
             let genome = CreatureGenome::test_biped();
             let position = Vec2::new(100.0 + i as f32 * 10.0, 100.0);
-            manager.spawn_creature(genome, position, &mut physics_world);
+            manager.spawn_creature(genome, position);
         }
 
         assert_eq!(manager.count(), 3);
@@ -409,7 +373,7 @@ mod tests {
 
         // Try to spawn one more (should fail gracefully)
         let genome = CreatureGenome::test_biped();
-        manager.spawn_creature(genome, Vec2::ZERO, &mut physics_world);
+        manager.spawn_creature(genome, Vec2::ZERO);
 
         // Count should still be 3
         assert_eq!(manager.count(), 3);
@@ -418,14 +382,13 @@ mod tests {
     #[test]
     fn test_remove_creature() {
         let mut manager = CreatureManager::new(10);
-        let mut physics_world = PhysicsWorld::new();
 
         let genome = CreatureGenome::test_biped();
-        let id = manager.spawn_creature(genome, Vec2::ZERO, &mut physics_world);
+        let id = manager.spawn_creature(genome, Vec2::ZERO);
 
         assert_eq!(manager.count(), 1);
 
-        manager.remove_creature(id, &mut physics_world);
+        manager.remove_creature(id);
 
         assert_eq!(manager.count(), 0);
         assert!(manager.get(id).is_none());
@@ -434,7 +397,6 @@ mod tests {
     #[test]
     fn test_get_positions() {
         let mut manager = CreatureManager::new(10);
-        let mut physics_world = PhysicsWorld::new();
 
         let positions = vec![
             Vec2::new(100.0, 100.0),
@@ -444,7 +406,7 @@ mod tests {
 
         for pos in &positions {
             let genome = CreatureGenome::test_biped();
-            manager.spawn_creature(genome, *pos, &mut physics_world);
+            manager.spawn_creature(genome, *pos);
         }
 
         let creature_positions = manager.get_positions();
@@ -471,13 +433,12 @@ mod tests {
     #[test]
     fn test_spawn_creature_with_hunger() {
         let mut manager = CreatureManager::new(10);
-        let mut physics_world = PhysicsWorld::new();
 
         let genome = CreatureGenome::test_biped();
         let position = Vec2::new(100.0, 100.0);
 
         // Spawn with 50% hunger
-        let id = manager.spawn_creature_with_hunger(genome, position, 0.5, &mut physics_world);
+        let id = manager.spawn_creature_with_hunger(genome, position, 0.5);
 
         let creature = manager.get(id).unwrap();
 

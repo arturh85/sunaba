@@ -369,13 +369,12 @@ impl DeepNeuralController {
     }
 }
 
-/// Extract features from physics state
-/// Extracts actual physics data from rapier2d bodies for neural control
-pub fn extract_body_part_features(
+/// Extract features from simple physics state
+/// Uses CreaturePhysicsState for position-based physics without rapier2d
+pub fn extract_body_part_features_simple(
     morphology: &CreatureMorphology,
-    physics_world: &crate::physics::PhysicsWorld,
+    physics_state: &super::simple_physics::CreaturePhysicsState,
     sensory_input: &super::sensors::SensoryInput,
-    physics_handles: Option<&[rapier2d::prelude::RigidBodyHandle]>,
     world: &impl crate::WorldAccess,
 ) -> Vec<BodyPartFeatures> {
     let num_parts = morphology.body_parts.len();
@@ -387,73 +386,41 @@ pub fn extract_body_part_features(
         None => (0.0, 0.0, 1.0), // No food detected - zero direction, max distance
     };
 
-    // Get body part positions and orientations from physics
-    let body_data: Vec<(Vec2, f32, Vec2)> = if let Some(handles) = physics_handles {
-        handles
-            .iter()
-            .filter_map(|&handle| {
-                physics_world.rigid_body_set().get(handle).map(|rb| {
-                    let pos = rb.translation();
-                    let rotation = rb.rotation().angle();
-                    let linvel = rb.linvel();
-                    (
-                        Vec2::new(pos.x, pos.y),
-                        rotation,
-                        Vec2::new(linvel.x, linvel.y),
-                    )
-                })
-            })
-            .collect()
-    } else {
-        // No physics handles - return placeholder data
-        morphology
-            .body_parts
-            .iter()
-            .map(|part| (part.local_position, 0.0, Vec2::ZERO))
-            .collect()
-    };
-
     // Get root orientation for relative calculations
-    let _root_pos = body_data.first().map(|(p, _, _)| *p).unwrap_or(Vec2::ZERO);
-    let root_orientation = body_data.first().map(|(_, r, _)| *r).unwrap_or(0.0);
-
-    // Build joint angle map (parent_index -> child angles relative to parent)
-    let mut joint_angles: std::collections::HashMap<usize, f32> = std::collections::HashMap::new();
-    let mut prev_angles: std::collections::HashMap<usize, f32> = std::collections::HashMap::new();
-
-    for joint in &morphology.joints {
-        if let (Some((_, parent_rot, _)), Some((_, child_rot, _))) = (
-            body_data.get(joint.parent_index),
-            body_data.get(joint.child_index),
-        ) {
-            // Joint angle is the relative rotation between parent and child
-            let angle = child_rot - parent_rot;
-            // Normalize to [-PI, PI]
-            let normalized = (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
-                - std::f32::consts::PI;
-            joint_angles.insert(joint.child_index, normalized);
-        }
-    }
+    let root_orientation = physics_state
+        .part_rotations
+        .first()
+        .copied()
+        .unwrap_or(0.0);
 
     for (i, _part) in morphology.body_parts.iter().enumerate() {
-        // Get this body part's data
-        let (position, orientation, velocity) =
-            body_data
-                .get(i)
-                .copied()
-                .unwrap_or((Vec2::ZERO, 0.0, Vec2::ZERO));
-
-        // Joint angle (relative to parent, or 0 if root)
-        let joint_angle = joint_angles.get(&i).copied().unwrap_or(0.0);
-
-        // Joint angular velocity (approximate from angle change)
-        // For now, use 0 since we need previous frame data
-        // This will be improved when we track previous angles
-        let joint_angular_velocity = prev_angles
-            .get(&i)
-            .map(|prev| (joint_angle - prev) * 60.0) // Assuming 60fps
+        // Get this body part's data from physics_state
+        let position = physics_state
+            .part_positions
+            .get(i)
+            .copied()
+            .unwrap_or(Vec2::ZERO);
+        let orientation = physics_state
+            .part_rotations
+            .get(i)
+            .copied()
             .unwrap_or(0.0);
-        prev_angles.insert(i, joint_angle);
+
+        // Joint angle (from motor angles if this is a motorized part)
+        let joint_angle = physics_state
+            .motor_part_indices
+            .iter()
+            .position(|&idx| idx == i)
+            .and_then(|motor_idx| physics_state.motor_angles.get(motor_idx).copied())
+            .unwrap_or(0.0);
+
+        // Joint angular velocity
+        let joint_angular_velocity = physics_state
+            .motor_part_indices
+            .iter()
+            .position(|&idx| idx == i)
+            .and_then(|motor_idx| physics_state.motor_angular_velocities.get(motor_idx).copied())
+            .unwrap_or(0.0);
 
         // Ground contact: raycast downward from body part
         let ground_contact = check_ground_contact(world, position, &morphology.body_parts[i]);
@@ -470,6 +437,9 @@ pub fn extract_body_part_features(
 
         // Normalize orientation relative to root
         let relative_orientation = orientation - root_orientation;
+
+        // Velocity is not tracked in simple physics - use zero
+        let velocity = Vec2::ZERO;
 
         features.push(BodyPartFeatures {
             joint_angle,
@@ -631,19 +601,18 @@ mod tests {
     #[ignore] // Requires concrete World implementation from sunaba-core
     fn test_extract_body_part_features() {
         use crate::morphology::CreatureMorphology;
-        use crate::physics::PhysicsWorld;
         use crate::sensors::SensorConfig;
         // Tests need concrete World implementation - World::new() is in sunaba-core
 
         let morphology = CreatureMorphology::test_biped();
-        let physics_world = PhysicsWorld::new();
         // Note: World::new() is in sunaba-core, not available here
         let config = SensorConfig::default();
 
         // This test requires a concrete World implementation
         // let world = World::new();
         // let sensory_input = SensoryInput::gather(&world, Vec2::new(100.0, 100.0), &config);
-        // let features = extract_body_part_features(&morphology, &physics_world, &sensory_input, None, &world);
+        // let physics_state = CreaturePhysicsState::new(&morphology, Vec2::ZERO);
+        // let features = extract_body_part_features_simple(&morphology, &physics_state, &sensory_input, &world);
 
         // Should have features for each body part
         // assert_eq!(features.len(), morphology.body_parts.len());
@@ -653,7 +622,7 @@ mod tests {
         //     assert_eq!(feature.raycast_distances.len(), config.num_raycasts);
         //     assert_eq!(feature.contact_materials.len(), 5);
         // }
-        let _ = (morphology, physics_world, config);
+        let _ = (morphology, config);
     }
 
     #[test]

@@ -9,7 +9,6 @@ use super::{CHUNK_SIZE, Chunk, Pixel, pixel_flags};
 use crate::entity::crafting::RecipeRegistry;
 use crate::entity::player::Player;
 use crate::entity::tools::ToolRegistry;
-use crate::physics::PhysicsWorld;
 use crate::simulation::{
     ChunkRenderData, FallingChunk, FallingChunkSystem, LightPropagation, MaterialId, MaterialType,
     Materials, ReactionRegistry, RegenerationSystem, StateChangeSystem, StructuralIntegritySystem,
@@ -45,9 +44,6 @@ pub struct World {
 
     /// Resource regeneration system
     regeneration_system: RegenerationSystem,
-
-    /// Physics world for rigid bodies (used by creatures)
-    physics_world: PhysicsWorld,
 
     /// Kinematic falling chunks (simple debris physics, WASM-compatible)
     falling_chunks: FallingChunkSystem,
@@ -101,7 +97,6 @@ impl World {
             structural_system: StructuralIntegritySystem::new(),
             light_propagation: LightPropagation::new(),
             regeneration_system: RegenerationSystem::new(),
-            physics_world: PhysicsWorld::new(),
             falling_chunks: FallingChunkSystem::new(),
             creature_manager: crate::creature::spawning::CreatureManager::new(200), // Max 200 creatures
             player: Player::new(glam::Vec2::new(0.0, 100.0)),
@@ -129,19 +124,16 @@ impl World {
         world.creature_manager.spawn_creature(
             CreatureGenome::test_biped(),
             glam::Vec2::new(-20.0, 100.0),
-            &mut world.physics_world,
         );
 
         world.creature_manager.spawn_creature(
             CreatureGenome::test_quadruped(),
             glam::Vec2::new(0.0, 100.0),
-            &mut world.physics_world,
         );
 
         world.creature_manager.spawn_creature(
             CreatureGenome::test_worm(),
             glam::Vec2::new(20.0, 100.0),
-            &mut world.physics_world,
         );
 
         log::info!("Spawned 3 test creatures at startup");
@@ -640,7 +632,7 @@ impl World {
         genome: crate::creature::genome::CreatureGenome,
     ) -> sunaba_creature::EntityId {
         self.creature_manager
-            .spawn_creature(genome, self.player.position, &mut self.physics_world)
+            .spawn_creature(genome, self.player.position)
     }
 
     /// Mine a single pixel and add it to player's inventory
@@ -1060,14 +1052,7 @@ impl World {
             log::debug!("Processed {} structural integrity checks", checks_processed);
         }
 
-        // 7. Update rigid body physics (still needed for creatures until Phase 3)
-        {
-            #[cfg(feature = "profiling")]
-            puffin::profile_scope!("physics");
-            self.physics_world.step();
-        }
-
-        // 7.5 Update falling chunks (kinematic debris physics)
+        // 7. Update falling chunks (kinematic debris physics)
         // Temporarily take falling_chunks to avoid borrow checker issues with self as WorldCollisionQuery
         let mut falling_chunks = std::mem::take(&mut self.falling_chunks);
         {
@@ -1085,28 +1070,23 @@ impl World {
             .update(&mut self.chunks, &self.active_chunks, 1.0 / 60.0);
 
         // 10. Update creatures (sensing, planning, neural control)
-        // Temporarily take creature_manager and physics_world to avoid borrow checker issues
+        // Temporarily take creature_manager to avoid borrow checker issues
         let mut creature_manager = std::mem::replace(
             &mut self.creature_manager,
             crate::creature::spawning::CreatureManager::new(0), // Dummy placeholder
-        );
-        let mut physics_world = std::mem::replace(
-            &mut self.physics_world,
-            crate::physics::PhysicsWorld::empty(), // Lightweight placeholder
         );
 
         {
             #[cfg(feature = "profiling")]
             puffin::profile_scope!("creatures");
-            creature_manager.update(1.0 / 60.0, self, &mut physics_world);
+            creature_manager.update(1.0 / 60.0, self);
 
             // 11. Execute creature actions (eat, mine, build)
             creature_manager.execute_actions(self, 1.0 / 60.0);
         }
 
-        // Put them back
+        // Put it back
         self.creature_manager = creature_manager;
-        self.physics_world = physics_world;
     }
 
     /// Calculate sky light level based on day/night cycle (0-15)
@@ -1615,12 +1595,7 @@ impl World {
         &self.materials
     }
 
-    /// Get active debris for rendering (legacy - uses rapier2d physics)
-    pub fn get_active_debris(&self) -> Vec<crate::physics::DebrisRenderData> {
-        self.physics_world.get_debris_render_data()
-    }
-
-    /// Get falling chunks for rendering (new kinematic system)
+    /// Get falling chunks for rendering (kinematic debris system)
     pub fn get_falling_chunks(&self) -> Vec<ChunkRenderData> {
         self.falling_chunks.get_render_data()
     }
@@ -1632,12 +1607,7 @@ impl World {
 
     /// Get creature render data for rendering
     pub fn get_creature_render_data(&self) -> Vec<crate::creature::CreatureRenderData> {
-        self.creature_manager.get_render_data(&self.physics_world)
-    }
-
-    /// Add bedrock collider for a chunk (called when chunk is loaded)
-    pub fn add_bedrock_collider(&mut self, chunk_x: i32, chunk_y: i32) {
-        self.physics_world.add_bedrock_collider(chunk_x, chunk_y);
+        self.creature_manager.get_render_data()
     }
 
     /// Create falling debris from a pixel region
@@ -1696,71 +1666,6 @@ impl World {
         }
     }
 
-    /// Reconstruct debris that has settled as static pixels
-    fn reconstruct_debris(&mut self, handle: rapier2d::dynamics::RigidBodyHandle) {
-        log::info!("Reconstructing debris: handle={:?}", handle);
-
-        // Get final position BEFORE removing debris
-        let (final_center, rotation) = match self.physics_world.get_debris_transform(handle) {
-            Some(transform) => transform,
-            None => {
-                log::warn!("Failed to get debris transform {:?}", handle);
-                return;
-            }
-        };
-
-        // Get debris from physics world (removes it)
-        let debris = match self.physics_world.remove_debris(handle) {
-            Some(d) => d,
-            None => {
-                log::warn!("Failed to remove debris {:?}", handle);
-                return;
-            }
-        };
-
-        log::debug!(
-            "Reconstructing {} pixels at ({:.1}, {:.1}), rotation={:.2}°",
-            debris.pixels.len(),
-            final_center.x,
-            final_center.y,
-            rotation.to_degrees()
-        );
-
-        // Place pixels relative to new center position
-        let mut placed_count = 0;
-        let mut failed_count = 0;
-
-        for (relative_pos, material_id) in debris.pixels.iter() {
-            // Apply rotation (currently ignored - can be added later)
-            let rotated_x = relative_pos.x as f32;
-            let rotated_y = relative_pos.y as f32;
-
-            // Translate to world position
-            let world_x = (final_center.x + rotated_x).round() as i32;
-            let world_y = (final_center.y + rotated_y).round() as i32;
-
-            // Place pixel
-            if self.set_pixel_direct_checked(world_x, world_y, *material_id) {
-                placed_count += 1;
-            } else {
-                failed_count += 1;
-            }
-        }
-
-        if failed_count > 0 {
-            log::warn!(
-                "Reconstruction: {} pixels placed, {} failed (chunk not loaded?)",
-                placed_count,
-                failed_count
-            );
-        } else {
-            log::info!(
-                "Reconstruction: {} pixels placed successfully",
-                placed_count
-            );
-        }
-    }
-
     /// Reconstruct a settled falling chunk back into static pixels
     fn reconstruct_falling_chunk(&mut self, chunk: FallingChunk) {
         let center_i = glam::IVec2::new(
@@ -1815,13 +1720,6 @@ impl World {
     /// Add a chunk to the world
     pub fn add_chunk(&mut self, chunk: Chunk) {
         let pos = IVec2::new(chunk.x, chunk.y);
-
-        // Check if this chunk contains bedrock
-        let has_bedrock = chunk
-            .pixels()
-            .iter()
-            .any(|p| p.material_id == MaterialId::BEDROCK);
-
         self.chunks.insert(pos, chunk);
 
         // Add to active chunks if within range of player
@@ -1832,11 +1730,6 @@ impl World {
             && !self.active_chunks.contains(&pos)
         {
             self.active_chunks.push(pos);
-        }
-
-        // Add physics collider for bedrock chunks
-        if has_bedrock {
-            self.add_bedrock_collider(pos.x, pos.y);
         }
     }
 
