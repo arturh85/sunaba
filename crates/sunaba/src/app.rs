@@ -11,6 +11,8 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::config::GameConfig;
 use crate::entity::InputState;
 use crate::levels::LevelManager;
 use crate::render::{ParticleSystem, Renderer};
@@ -25,12 +27,12 @@ pub enum GameMode {
     DemoLevel(usize),
 }
 
-// Zoom constants - adjusted for Noita-like scale
-const ZOOM_SPEED: f32 = 1.1; // Multiplicative zoom factor per keypress
-const MIN_ZOOM: f32 = 0.002; // Max zoom out (~1000px visible, was 0.001)
-const MAX_ZOOM: f32 = 0.01; // Max zoom in (~40px visible, was 0.5)
-
-// Debug mode: Allow placing materials without consuming from inventory
+// Zoom constants - fallback for WASM (native uses GameConfig)
+#[cfg(target_arch = "wasm32")]
+const MIN_ZOOM: f32 = 0.002;
+#[cfg(target_arch = "wasm32")]
+const MAX_ZOOM: f32 = 0.01;
+#[cfg(target_arch = "wasm32")]
 const DEBUG_PLACEMENT: bool = true;
 
 /// Convert screen coordinates to world coordinates
@@ -102,9 +104,37 @@ pub struct App {
     game_mode: GameMode,
     last_autosave: Instant,
     particle_system: ParticleSystem,
+    #[cfg(not(target_arch = "wasm32"))]
+    config: GameConfig,
 }
 
 impl App {
+    /// Check if debug placement is enabled (allows placing materials without consuming inventory)
+    #[inline]
+    fn debug_placement(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.config.debug.debug_placement
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            DEBUG_PLACEMENT
+        }
+    }
+
+    /// Get the zoom speed multiplier
+    #[inline]
+    fn zoom_speed(&self) -> f32 {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.config.camera.zoom_speed
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            1.1 // Default zoom speed for WASM
+        }
+    }
+
     pub async fn new() -> Result<(Self, EventLoop<()>)> {
         let event_loop = EventLoop::new()?;
 
@@ -134,10 +164,16 @@ impl App {
         };
 
         #[cfg(not(target_arch = "wasm32"))]
+        let config = GameConfig::load()?;
+
+        #[cfg(not(target_arch = "wasm32"))]
         let window_attrs = {
             WindowAttributes::default()
                 .with_title("Sunaba - 2D Physics Sandbox")
-                .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
+                .with_inner_size(winit::dpi::LogicalSize::new(
+                    config.ui.window_width,
+                    config.ui.window_height,
+                ))
         };
 
         // Use deprecated create_window to avoid async complexity for now
@@ -179,6 +215,8 @@ impl App {
             game_mode,
             last_autosave: Instant::now(),
             particle_system: ParticleSystem::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            config,
         };
 
         Ok((app, event_loop))
@@ -298,10 +336,14 @@ impl App {
         // Begin frame timing
         self.ui_state.stats.begin_frame();
 
-        // Periodic auto-save (every 60 seconds in persistent world mode)
-        const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(60);
+        // Periodic auto-save in persistent world mode
+        #[cfg(not(target_arch = "wasm32"))]
+        let autosave_interval = Duration::from_secs(self.config.world.autosave_interval_secs);
+        #[cfg(target_arch = "wasm32")]
+        let autosave_interval = Duration::from_secs(60);
+
         if matches!(self.game_mode, GameMode::PersistentWorld)
-            && self.last_autosave.elapsed() >= AUTOSAVE_INTERVAL
+            && self.last_autosave.elapsed() >= autosave_interval
         {
             self.world.save_all_dirty_chunks(); // Save chunks AND player data
             self.last_autosave = Instant::now();
@@ -323,8 +365,12 @@ impl App {
         self.particle_system.update(1.0 / 60.0);
 
         // Update camera zoom
+        #[cfg(not(target_arch = "wasm32"))]
+        let (min_zoom, max_zoom) = (self.config.camera.min_zoom, self.config.camera.max_zoom);
+        #[cfg(target_arch = "wasm32")]
+        let (min_zoom, max_zoom) = (MIN_ZOOM, MAX_ZOOM);
         self.renderer
-            .update_zoom(self.input_state.zoom_delta, MIN_ZOOM, MAX_ZOOM);
+            .update_zoom(self.input_state.zoom_delta, min_zoom, max_zoom);
 
         // Log camera state periodically
         use std::sync::atomic::{AtomicU32, Ordering};
@@ -365,7 +411,7 @@ impl App {
             let color = material_def.color;
             let is_liquid = material_def.material_type == MaterialType::Liquid;
 
-            if DEBUG_PLACEMENT {
+            if self.debug_placement() {
                 self.world.place_material_debug(wx, wy, material_id);
             } else {
                 self.world
@@ -742,7 +788,7 @@ impl ApplicationHandler for App {
                         // In normal mode: select inventory slots
                         KeyCode::Digit0 => {
                             if pressed {
-                                if DEBUG_PLACEMENT {
+                                if self.debug_placement() {
                                     self.select_debug_material(0);
                                 } else {
                                     self.select_hotbar_slot(9); // 0 key = slot 9
@@ -751,7 +797,7 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::Digit1 => {
                             if pressed {
-                                if DEBUG_PLACEMENT {
+                                if self.debug_placement() {
                                     self.select_debug_material(1);
                                 } else {
                                     self.select_hotbar_slot(0);
@@ -760,7 +806,7 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::Digit2 => {
                             if pressed {
-                                if DEBUG_PLACEMENT {
+                                if self.debug_placement() {
                                     self.select_debug_material(2);
                                 } else {
                                     self.select_hotbar_slot(1);
@@ -769,7 +815,7 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::Digit3 => {
                             if pressed {
-                                if DEBUG_PLACEMENT {
+                                if self.debug_placement() {
                                     self.select_debug_material(3);
                                 } else {
                                     self.select_hotbar_slot(2);
@@ -778,7 +824,7 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::Digit4 => {
                             if pressed {
-                                if DEBUG_PLACEMENT {
+                                if self.debug_placement() {
                                     self.select_debug_material(4);
                                 } else {
                                     self.select_hotbar_slot(3);
@@ -787,7 +833,7 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::Digit5 => {
                             if pressed {
-                                if DEBUG_PLACEMENT {
+                                if self.debug_placement() {
                                     self.select_debug_material(5);
                                 } else {
                                     self.select_hotbar_slot(4);
@@ -796,7 +842,7 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::Digit6 => {
                             if pressed {
-                                if DEBUG_PLACEMENT {
+                                if self.debug_placement() {
                                     self.select_debug_material(6);
                                 } else {
                                     self.select_hotbar_slot(5);
@@ -805,7 +851,7 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::Digit7 => {
                             if pressed {
-                                if DEBUG_PLACEMENT {
+                                if self.debug_placement() {
                                     self.select_debug_material(7);
                                 } else {
                                     self.select_hotbar_slot(6);
@@ -814,7 +860,7 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::Digit8 => {
                             if pressed {
-                                if DEBUG_PLACEMENT {
+                                if self.debug_placement() {
                                     self.select_debug_material(8);
                                 } else {
                                     self.select_hotbar_slot(7);
@@ -823,7 +869,7 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::Digit9 => {
                             if pressed {
-                                if DEBUG_PLACEMENT {
+                                if self.debug_placement() {
                                     self.select_debug_material(9);
                                 } else {
                                     self.select_hotbar_slot(8);
@@ -912,13 +958,13 @@ impl ApplicationHandler for App {
                         // Zoom controls
                         KeyCode::Equal | KeyCode::NumpadAdd => {
                             if pressed {
-                                self.input_state.zoom_delta *= ZOOM_SPEED;
+                                self.input_state.zoom_delta *= self.zoom_speed();
                                 log::debug!("Zoom in: delta={:.2}", self.input_state.zoom_delta);
                             }
                         }
                         KeyCode::Minus | KeyCode::NumpadSubtract => {
                             if pressed {
-                                self.input_state.zoom_delta /= ZOOM_SPEED;
+                                self.input_state.zoom_delta /= self.zoom_speed();
                                 log::debug!("Zoom out: delta={:.2}", self.input_state.zoom_delta);
                             }
                         }

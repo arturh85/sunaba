@@ -1,0 +1,54 @@
+// Sunaba Game Configuration
+// Copy to config.ron and modify as needed.
+// Values shown are defaults - you only need to include what you want to change.
+//
+// Environment variables can override any setting:
+//   SUNABA_CAMERA__ZOOM_SPEED=1.5
+//   SUNABA_DEBUG__DEBUG_PLACEMENT=false
+
+(
+    camera: (
+        // Multiplicative zoom factor per scroll/keypress
+        zoom_speed: 1.1,
+        // Minimum zoom level (max zoom out, ~1000px visible)
+        min_zoom: 0.002,
+        // Maximum zoom level (max zoom in, ~40px visible)
+        max_zoom: 0.01,
+    ),
+
+    player: (
+        // Horizontal movement speed in pixels/sec
+        move_speed: 200.0,
+        // Gravity acceleration in pixels/sec^2
+        gravity: 800.0,
+        // Jump velocity in pixels/sec
+        jump_velocity: 300.0,
+        // Flight thrust in pixels/sec^2 (Noita-style levitation)
+        flight_thrust: 1200.0,
+        // Terminal velocity in pixels/sec
+        max_fall_speed: 500.0,
+    ),
+
+    world: (
+        // Autosave interval in seconds
+        autosave_interval_secs: 60,
+        // Active chunk simulation radius (3 = 7x7 grid = 49 chunks)
+        active_chunk_radius: 3,
+    ),
+
+    ui: (
+        // Initial window width
+        window_width: 1280,
+        // Initial window height
+        window_height: 720,
+        // Show debug stats on startup (F1)
+        show_stats_on_start: false,
+    ),
+
+    debug: (
+        // Allow placing materials without consuming from inventory
+        debug_placement: true,
+        // Enable verbose logging
+        verbose_logging: false,
+    ),
+)

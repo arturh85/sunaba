@@ -4,6 +4,8 @@
 
 pub mod app;
 pub mod assets;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod config;
 pub mod render;
 pub mod ui;
 
