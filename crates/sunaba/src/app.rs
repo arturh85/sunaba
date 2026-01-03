@@ -14,6 +14,7 @@ use winit::{
 use crate::entity::InputState;
 use crate::levels::LevelManager;
 use crate::render::{ParticleSystem, Renderer};
+use crate::simulation::MaterialType;
 use crate::ui::UiState;
 use crate::world::World;
 
@@ -28,6 +29,9 @@ pub enum GameMode {
 const ZOOM_SPEED: f32 = 1.1; // Multiplicative zoom factor per keypress
 const MIN_ZOOM: f32 = 0.002; // Max zoom out (~1000px visible, was 0.001)
 const MAX_ZOOM: f32 = 0.01; // Max zoom in (~40px visible, was 0.5)
+
+// Debug mode: Allow placing materials without consuming from inventory
+const DEBUG_PLACEMENT: bool = true;
 
 /// Convert screen coordinates to world coordinates
 fn screen_to_world(
@@ -260,6 +264,27 @@ impl App {
         }
     }
 
+    /// Select a material directly by key (debug mode)
+    /// Maps keys 0-9 to materials: AIR, STONE, SAND, WATER, WOOD, FIRE, SMOKE, STEAM, LAVA, OIL
+    fn select_debug_material(&mut self, key: u8) {
+        use crate::simulation::MaterialId;
+        let material_id = match key {
+            0 => MaterialId::AIR,
+            1 => MaterialId::STONE,
+            2 => MaterialId::SAND,
+            3 => MaterialId::WATER,
+            4 => MaterialId::WOOD,
+            5 => MaterialId::FIRE,
+            6 => MaterialId::SMOKE,
+            7 => MaterialId::STEAM,
+            8 => MaterialId::LAVA,
+            9 => MaterialId::OIL,
+            _ => MaterialId::SAND, // fallback
+        };
+        self.input_state.selected_material = material_id;
+        log::debug!("Selected debug material: {} (id={})", key, material_id);
+    }
+
     pub fn run(event_loop: EventLoop<()>, mut app: Self) -> Result<()> {
         event_loop.run_app(&mut app)?;
         Ok(())
@@ -323,14 +348,37 @@ impl App {
             let center_x = player_pos.x as i32;
             let center_y = player_pos.y as i32;
             self.world.debug_mine_circle(center_x, center_y, 16);
+
+            // Spawn dust particles at mining location
+            self.particle_system.spawn_dust_cloud(
+                player_pos,
+                [140, 130, 120, 255], // Generic dusty color
+            );
         }
 
         // Placing material from inventory with left mouse button
         if self.input_state.left_mouse_pressed
             && let Some((wx, wy)) = self.input_state.mouse_world_pos
         {
-            self.world
-                .place_material_from_inventory(wx, wy, self.input_state.selected_material);
+            let material_id = self.input_state.selected_material;
+            let material_def = self.world.materials.get(material_id);
+            let color = material_def.color;
+            let is_liquid = material_def.material_type == MaterialType::Liquid;
+
+            if DEBUG_PLACEMENT {
+                self.world.place_material_debug(wx, wy, material_id);
+            } else {
+                self.world
+                    .place_material_from_inventory(wx, wy, material_id);
+            }
+
+            // Spawn particles at placement location
+            let pos = Vec2::new(wx as f32, wy as f32);
+            if is_liquid {
+                self.particle_system.spawn_liquid_splash(pos, color);
+            } else {
+                self.particle_system.spawn_impact_burst(pos, color);
+            }
         }
 
         // Update simulation with timing
@@ -689,55 +737,97 @@ impl ApplicationHandler for App {
                         KeyCode::KeyD => self.input_state.d_pressed = pressed,
                         KeyCode::Space => self.input_state.jump_pressed = pressed,
 
-                        // Hotbar selection (0-9) - select inventory slot and equip/unequip tools
+                        // Material/hotbar selection (0-9)
+                        // In debug mode: select materials directly (AIR, STONE, SAND, etc.)
+                        // In normal mode: select inventory slots
                         KeyCode::Digit0 => {
                             if pressed {
-                                self.select_hotbar_slot(9); // 0 key = slot 9
+                                if DEBUG_PLACEMENT {
+                                    self.select_debug_material(0);
+                                } else {
+                                    self.select_hotbar_slot(9); // 0 key = slot 9
+                                }
                             }
                         }
                         KeyCode::Digit1 => {
                             if pressed {
-                                self.select_hotbar_slot(0);
+                                if DEBUG_PLACEMENT {
+                                    self.select_debug_material(1);
+                                } else {
+                                    self.select_hotbar_slot(0);
+                                }
                             }
                         }
                         KeyCode::Digit2 => {
                             if pressed {
-                                self.select_hotbar_slot(1);
+                                if DEBUG_PLACEMENT {
+                                    self.select_debug_material(2);
+                                } else {
+                                    self.select_hotbar_slot(1);
+                                }
                             }
                         }
                         KeyCode::Digit3 => {
                             if pressed {
-                                self.select_hotbar_slot(2);
+                                if DEBUG_PLACEMENT {
+                                    self.select_debug_material(3);
+                                } else {
+                                    self.select_hotbar_slot(2);
+                                }
                             }
                         }
                         KeyCode::Digit4 => {
                             if pressed {
-                                self.select_hotbar_slot(3);
+                                if DEBUG_PLACEMENT {
+                                    self.select_debug_material(4);
+                                } else {
+                                    self.select_hotbar_slot(3);
+                                }
                             }
                         }
                         KeyCode::Digit5 => {
                             if pressed {
-                                self.select_hotbar_slot(4);
+                                if DEBUG_PLACEMENT {
+                                    self.select_debug_material(5);
+                                } else {
+                                    self.select_hotbar_slot(4);
+                                }
                             }
                         }
                         KeyCode::Digit6 => {
                             if pressed {
-                                self.select_hotbar_slot(5);
+                                if DEBUG_PLACEMENT {
+                                    self.select_debug_material(6);
+                                } else {
+                                    self.select_hotbar_slot(5);
+                                }
                             }
                         }
                         KeyCode::Digit7 => {
                             if pressed {
-                                self.select_hotbar_slot(6);
+                                if DEBUG_PLACEMENT {
+                                    self.select_debug_material(7);
+                                } else {
+                                    self.select_hotbar_slot(6);
+                                }
                             }
                         }
                         KeyCode::Digit8 => {
                             if pressed {
-                                self.select_hotbar_slot(7);
+                                if DEBUG_PLACEMENT {
+                                    self.select_debug_material(8);
+                                } else {
+                                    self.select_hotbar_slot(7);
+                                }
                             }
                         }
                         KeyCode::Digit9 => {
                             if pressed {
-                                self.select_hotbar_slot(8);
+                                if DEBUG_PLACEMENT {
+                                    self.select_debug_material(9);
+                                } else {
+                                    self.select_hotbar_slot(8);
+                                }
                             }
                         }
 

@@ -762,6 +762,32 @@ impl World {
         placed
     }
 
+    /// Place material at world coordinates without consuming from inventory (debug mode)
+    pub fn place_material_debug(&mut self, world_x: i32, world_y: i32, material_id: u16) -> u32 {
+        let mut placed = 0;
+
+        for dy in -Self::BRUSH_RADIUS..=Self::BRUSH_RADIUS {
+            for dx in -Self::BRUSH_RADIUS..=Self::BRUSH_RADIUS {
+                if dx * dx + dy * dy <= Self::BRUSH_RADIUS * Self::BRUSH_RADIUS {
+                    let x = world_x + dx;
+                    let y = world_y + dy;
+                    if self
+                        .get_pixel(x, y)
+                        .map(|p| p.material_id == MaterialId::AIR)
+                        .unwrap_or(false)
+                    {
+                        let mut pixel = Pixel::new(material_id);
+                        pixel.flags |= pixel_flags::PLAYER_PLACED;
+                        self.set_pixel_full(x, y, pixel);
+                        placed += 1;
+                    }
+                }
+            }
+        }
+
+        placed
+    }
+
     /// Start mining a pixel (calculates required time based on material hardness and tool)
     pub fn start_mining(&mut self, world_x: i32, world_y: i32) {
         // Get the pixel

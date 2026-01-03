@@ -3,6 +3,7 @@
 //! A survival game where every pixel is simulated with material properties.
 
 pub mod app;
+pub mod assets;
 pub mod render;
 pub mod ui;
 

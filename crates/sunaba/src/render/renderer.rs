@@ -8,6 +8,7 @@ use winit::window::Window;
 
 use crate::render::particles::ParticleSystem;
 use crate::render::sprite::PlayerSprite;
+use crate::simulation::MaterialId;
 use crate::world::{CHUNK_SIZE, Chunk, World};
 
 /// Vertex for fullscreen quad
@@ -67,6 +68,16 @@ struct CameraUniform {
     aspect: f32,
 }
 
+/// Post-processing uniform data
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct PostProcessUniform {
+    time: f32,
+    scanline_intensity: f32,
+    vignette_intensity: f32,
+    bloom_intensity: f32,
+}
+
 /// Timing breakdown for render phases (in milliseconds)
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RenderTiming {
@@ -121,6 +132,10 @@ pub struct Renderer {
     overlay_uniform_buffer: wgpu::Buffer,
     overlay_bind_group: wgpu::BindGroup,
     overlay_type: u32, // 0=none, 1=temperature, 2=light
+
+    // Post-processing
+    post_process_buffer: wgpu::Buffer,
+    post_process: PostProcessUniform,
 
     // Active chunks debug overlay
     show_active_chunks: bool,
@@ -420,6 +435,19 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
+        // Post-processing uniform buffer
+        let post_process = PostProcessUniform {
+            time: 0.0,
+            scanline_intensity: 0.15, // Subtle scanlines
+            vignette_intensity: 0.25, // Subtle vignette
+            bloom_intensity: 0.3,     // Moderate bloom for fire/lava
+        };
+        let post_process_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("post_process_buffer"),
+            contents: bytemuck::cast_slice(&[post_process]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
         // Debug overlay bind group layout (temperature and light)
         let overlay_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -472,6 +500,17 @@ impl Renderer {
                         },
                         count: None,
                     },
+                    // Binding 5: Post-process uniform
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -499,13 +538,19 @@ impl Renderer {
                     binding: 4,
                     resource: overlay_uniform_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: post_process_buffer.as_entire_binding(),
+                },
             ],
         });
 
         // Shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("../../assets/shaders/shader.wgsl").into(),
+            ),
         });
 
         // Pipeline layout
@@ -618,6 +663,8 @@ impl Renderer {
             overlay_uniform_buffer,
             overlay_bind_group,
             overlay_type: 0, // 0 = no overlay
+            post_process_buffer,
+            post_process,
             show_active_chunks: false,
             texture_origin,
             texture_origin_buffer,
@@ -625,8 +672,10 @@ impl Renderer {
             needs_full_rebuffer: true, // Start with full rebuffer
             render_dirty_chunks: std::collections::HashSet::new(),
             prev_player_pos: glam::Vec2::ZERO,
-            player_sprite: PlayerSprite::new(include_bytes!("player_sprite.png"))
-                .expect("Failed to load player sprite"),
+            player_sprite: PlayerSprite::new(include_bytes!(
+                "../../assets/sprites/player_sprite.png"
+            ))
+            .expect("Failed to load player sprite"),
         })
     }
 
@@ -668,6 +717,14 @@ impl Renderer {
         puffin::profile_function!();
 
         let mut timing = RenderTiming::default();
+
+        // Update post-processing time (for animated effects)
+        self.post_process.time += 1.0 / 60.0;
+        self.queue.write_buffer(
+            &self.post_process_buffer,
+            0,
+            bytemuck::cast_slice(&[self.post_process]),
+        );
 
         log::trace!(
             "Render frame: camera pos=({:.1}, {:.1}), zoom={:.2}",
@@ -1246,6 +1303,35 @@ impl Renderer {
         }
     }
 
+    /// Animate water color with a subtle flowing effect
+    fn animate_water_color(&self, base: [u8; 4], world_x: i32, world_y: i32) -> [u8; 4] {
+        let time = self.post_process.time;
+        // Create a wave pattern that flows diagonally
+        let wave =
+            ((world_x as f32 * 0.15 + world_y as f32 * 0.1 + time * 2.5).sin() * 12.0) as i16;
+        [
+            (base[0] as i16 + wave).clamp(0, 255) as u8,
+            (base[1] as i16 + wave / 2).clamp(0, 255) as u8,
+            base[2], // Keep blue channel stable
+            base[3],
+        ]
+    }
+
+    /// Animate lava color with a pulsing glow effect
+    fn animate_lava_color(&self, base: [u8; 4], world_x: i32, world_y: i32) -> [u8; 4] {
+        let time = self.post_process.time;
+        // Pulsing glow with some spatial variation
+        let pulse =
+            ((time * 3.0 + world_x as f32 * 0.05 + world_y as f32 * 0.05).sin() * 0.5 + 0.5) * 25.0;
+        let secondary_pulse = ((time * 1.5 + world_x as f32 * 0.08).cos() * 0.5 + 0.5) * 15.0;
+        [
+            (base[0] as f32 + pulse).min(255.0) as u8,
+            (base[1] as f32 + secondary_pulse).min(255.0) as u8,
+            base[2],
+            base[3],
+        ]
+    }
+
     fn render_chunk_to_buffer(&mut self, chunk: &Chunk, world: &World) {
         // Calculate chunk position in texture using dynamic texture origin
         let world_x = chunk.x * CHUNK_SIZE as i32;
@@ -1300,7 +1386,17 @@ impl Renderer {
                     continue;
                 }
 
-                let color = world.materials.get_color(pixel.material_id);
+                let base_color = world.materials.get_color(pixel.material_id);
+
+                // Apply animation for liquid materials
+                let color = if pixel.material_id == MaterialId::WATER {
+                    self.animate_water_color(base_color, world_x + x as i32, world_y + y as i32)
+                } else if pixel.material_id == MaterialId::LAVA {
+                    self.animate_lava_color(base_color, world_x + x as i32, world_y + y as i32)
+                } else {
+                    base_color
+                };
+
                 self.pixel_buffer[idx] = color[0];
                 self.pixel_buffer[idx + 1] = color[1];
                 self.pixel_buffer[idx + 2] = color[2];

@@ -56,6 +56,17 @@ struct OverlayUniform {
 @group(2) @binding(4)
 var<uniform> overlay: OverlayUniform;
 
+// Post-processing uniform
+struct PostProcessUniform {
+    time: f32,
+    scanline_intensity: f32,   // 0.0 = off, 0.1-0.3 = subtle
+    vignette_intensity: f32,   // 0.0 = off, 0.3-0.5 = noticeable
+    bloom_intensity: f32,      // 0.0 = off, 0.2-0.5 = noticeable
+};
+
+@group(2) @binding(5)
+var<uniform> post_process: PostProcessUniform;
+
 // Map temperature (in Celsius) to color gradient
 fn temperature_to_color(temp: f32) -> vec3<f32> {
     // Temperature ranges and colors:
@@ -87,6 +98,43 @@ fn temperature_to_color(temp: f32) -> vec3<f32> {
     } else {
         return vec3<f32>(1.0, 0.0, 0.0); // Bright red
     }
+}
+
+// Apply scanline effect (retro CRT look)
+fn apply_scanlines(color: vec3<f32>, screen_y: f32, intensity: f32) -> vec3<f32> {
+    if intensity <= 0.0 {
+        return color;
+    }
+    // Create horizontal scanline pattern - every 2-3 pixels for visibility
+    let scanline = sin(screen_y * 0.5 * 3.14159) * 0.5 + 0.5;
+    let darkening = 1.0 - intensity * (1.0 - scanline);
+    return color * darkening;
+}
+
+// Apply vignette effect (darkened edges)
+fn apply_vignette(color: vec3<f32>, uv: vec2<f32>, intensity: f32) -> vec3<f32> {
+    if intensity <= 0.0 {
+        return color;
+    }
+    // Calculate distance from center
+    let center = vec2<f32>(0.5, 0.5);
+    let dist = distance(uv, center);
+    // Smooth falloff from center to edges
+    let vignette = 1.0 - smoothstep(0.3, 0.9, dist) * intensity;
+    return color * vignette;
+}
+
+// Apply fake bloom/glow effect for bright pixels
+fn apply_bloom(color: vec3<f32>, intensity: f32) -> vec3<f32> {
+    if intensity <= 0.0 {
+        return color;
+    }
+    // Calculate luminance
+    let luminance = dot(color, vec3<f32>(0.299, 0.587, 0.114));
+    // Boost bright pixels
+    let bloom_factor = smoothstep(0.6, 1.0, luminance);
+    let boosted = color * (1.0 + bloom_factor * intensity);
+    return min(boosted, vec3<f32>(1.0, 1.0, 1.0)); // Clamp to prevent overflow
 }
 
 // Map light level (0-15) to color gradient
@@ -139,10 +187,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Bounds check - clamp to valid texture coordinates
     if tex_coords.x < 0.0 || tex_coords.x > 1.0 ||
        tex_coords.y < 0.0 || tex_coords.y > 1.0 {
-        return vec4<f32>(0.1, 0.1, 0.15, 1.0); // Background color
+        // Apply post-processing even to background
+        var bg_color = vec3<f32>(0.1, 0.1, 0.15);
+        bg_color = apply_vignette(bg_color, in.tex_coords, post_process.vignette_intensity);
+        bg_color = apply_scanlines(bg_color, in.clip_position.y, post_process.scanline_intensity);
+        return vec4<f32>(bg_color, 1.0);
     }
 
     let color = textureSample(world_texture, world_sampler, tex_coords);
+    var final_color = color.rgb;
 
     // Apply debug overlays
     if overlay.overlay_type == 1u {
@@ -154,10 +207,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         );
         let temp_value = textureSample(temp_texture, temp_sampler, temp_tex_coords).r;
         let temp_color = temperature_to_color(temp_value);
-
-        // Blend with 40% overlay opacity
-        let blended = mix(color.rgb, temp_color, 0.4);
-        return vec4<f32>(blended * color.a, color.a);
+        final_color = mix(final_color, temp_color, 0.4);
     } else if overlay.overlay_type == 2u {
         // Light overlay - use player-relative coordinates
         let light_texture_size = 320.0;  // 5 chunks × 64 pixels
@@ -167,11 +217,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         );
         let light_value = textureSample(light_texture, light_sampler, light_tex_coords).r;
         let light_color = light_to_color(light_value);
-
-        // Blend with 50% overlay opacity (slightly more visible than temperature)
-        let blended = mix(color.rgb, light_color, 0.5);
-        return vec4<f32>(blended * color.a, color.a);
+        final_color = mix(final_color, light_color, 0.5);
     }
 
-    return vec4<f32>(color.rgb * color.a, color.a);
+    // Apply post-processing effects
+    final_color = apply_bloom(final_color, post_process.bloom_intensity);
+    final_color = apply_vignette(final_color, in.tex_coords, post_process.vignette_intensity);
+    final_color = apply_scanlines(final_color, in.clip_position.y, post_process.scanline_intensity);
+
+    return vec4<f32>(final_color * color.a, color.a);
 }

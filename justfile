@@ -14,6 +14,13 @@ load:
 profile:
     cargo run -p sunaba --bin sunaba --release --features profiling
 
+[unix]
+test: fmt clippy
+    @cargo test --workspace --quiet 2>&1 | grep -v "running 0 tests" | grep -v "ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s" | awk 'NF{print; blank=1} !NF && blank{print ""; blank=0}'
+    cargo build --workspace --release
+    just build-web
+
+[windows]
 test: fmt clippy
     cargo test --workspace --quiet
     cargo build --workspace --release
