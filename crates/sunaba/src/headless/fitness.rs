@@ -207,6 +207,99 @@ impl FitnessFunction for FoodCollectionFitness {
     }
 }
 
+/// Measures food collected with DIRECTIONAL bonus toward target
+///
+/// Unlike FoodCollectionFitness which rewards any movement, this fitness
+/// specifically rewards movement toward a target direction (e.g., toward food).
+/// Uses dot product to calculate directional progress.
+pub struct DirectionalFoodFitness {
+    /// Points per food item collected
+    pub food_points: f32,
+    /// Weight for directional movement bonus
+    pub direction_bonus_weight: f32,
+    /// Target direction for movement (normalized)
+    /// Default: positive X direction (right)
+    pub target_direction: Vec2,
+    /// Points per pixel moved in correct direction
+    pub movement_points: f32,
+    /// Penalty for moving in wrong direction
+    pub wrong_direction_penalty: f32,
+}
+
+impl DirectionalFoodFitness {
+    /// Create with default values (food to the right)
+    pub fn new() -> Self {
+        Self {
+            food_points: 50.0,            // High reward for eating food
+            direction_bonus_weight: 1.0,  // Full weight for directional bonus
+            target_direction: Vec2::X,    // Food is to the RIGHT (positive X)
+            movement_points: 1.0,         // 1 point per pixel in correct direction
+            wrong_direction_penalty: 0.5, // 50% penalty for wrong direction
+        }
+    }
+
+    /// Create for parcour scenario (food is to the right)
+    pub fn parcour() -> Self {
+        Self::new() // Default is already correct for parcour
+    }
+}
+
+impl Default for DirectionalFoodFitness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FitnessFunction for DirectionalFoodFitness {
+    fn evaluate(
+        &self,
+        creature: &Creature,
+        _world: &World,
+        spawn_pos: Vec2,
+        _duration: f32,
+    ) -> f32 {
+        // Primary fitness: food collected (heavily weighted)
+        let food_score = creature.food_eaten as f32 * self.food_points;
+
+        // Calculate movement vector
+        let movement = creature.position - spawn_pos;
+        let displacement = movement.length();
+
+        // Calculate directional progress using dot product
+        // Positive when moving toward target, negative when moving away
+        let directional_progress = if displacement > 0.1 {
+            movement.dot(self.target_direction)
+        } else {
+            0.0
+        };
+
+        // Reward or penalize based on direction
+        let direction_score = if directional_progress > 0.0 {
+            // Moving in correct direction: full reward
+            directional_progress * self.movement_points * self.direction_bonus_weight
+        } else {
+            // Moving in wrong direction: reduced reward (or penalty)
+            directional_progress * self.movement_points * self.wrong_direction_penalty
+        };
+
+        // Combined fitness
+        // - Food is king (high points)
+        // - Directional movement provides gradient signal
+        let total = food_score + direction_score;
+
+        // Ensure non-negative fitness
+        total.max(0.0)
+    }
+
+    fn name(&self) -> &str {
+        "DirectionalFood"
+    }
+
+    fn description(&self) -> &str {
+        "Rewards food collection and directional movement toward target (positive X)"
+    }
+}
+
 /// Combines multiple fitness functions with weights
 pub struct CompositeFitness {
     /// Component fitness functions with their weights
@@ -393,5 +486,97 @@ mod tests {
         let score_far = fitness.evaluate(&creature_far, &world, Vec2::ZERO, 30.0);
         // 2 * 10 + (100/100) * 0.5 = 20.5
         assert!((score_far - 20.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_directional_food_fitness_right_direction() {
+        let fitness = DirectionalFoodFitness::new();
+        let world = World::new();
+        let spawn = Vec2::ZERO;
+
+        // Creature moved right (correct direction) with no food
+        let creature_right = make_test_creature_with_food(Vec2::new(100.0, 0.0), 0);
+        let score_right = fitness.evaluate(&creature_right, &world, spawn, 30.0);
+
+        // Creature moved left (wrong direction) with no food
+        let creature_left = make_test_creature_with_food(Vec2::new(-100.0, 0.0), 0);
+        let score_left = fitness.evaluate(&creature_left, &world, spawn, 30.0);
+
+        // Right should have HIGHER fitness than left
+        assert!(
+            score_right > score_left,
+            "Right ({}) should be > Left ({})",
+            score_right,
+            score_left
+        );
+
+        // Right direction should give positive score
+        // 100 pixels * 1.0 movement_points * 1.0 direction_weight = 100
+        assert!(
+            (score_right - 100.0).abs() < 0.01,
+            "Expected 100, got {}",
+            score_right
+        );
+
+        // Left direction should give reduced/negative score (but clamped to 0)
+        // -100 * 1.0 * 0.5 = -50, clamped to 0
+        assert!(score_left < 0.01, "Expected near 0, got {}", score_left);
+    }
+
+    #[test]
+    fn test_directional_food_fitness_with_food() {
+        let fitness = DirectionalFoodFitness::new();
+        let world = World::new();
+        let spawn = Vec2::ZERO;
+
+        // Creature moved right and ate food
+        let creature_right_food = make_test_creature_with_food(Vec2::new(50.0, 0.0), 2);
+        let score = fitness.evaluate(&creature_right_food, &world, spawn, 30.0);
+
+        // 2 food * 50 points + 50 pixels * 1.0 = 100 + 50 = 150
+        assert!((score - 150.0).abs() < 0.01, "Expected 150, got {}", score);
+    }
+
+    #[test]
+    fn test_directional_vs_nondirectional_fitness() {
+        let dir_fitness = DirectionalFoodFitness::new();
+        let old_fitness = FoodCollectionFitness::new();
+        let world = World::new();
+        let spawn = Vec2::new(50.0, 50.0); // Parcour spawn position
+
+        // Champion that moved 2400px LEFT (the observed behavior)
+        let creature_left = make_test_creature_with_food(Vec2::new(-2350.0, 29.0), 0);
+        let dir_score_left = dir_fitness.evaluate(&creature_left, &world, spawn, 30.0);
+        let old_score_left = old_fitness.evaluate(&creature_left, &world, spawn, 30.0);
+
+        // Creature that moved 100px RIGHT (correct direction)
+        let creature_right = make_test_creature_with_food(Vec2::new(150.0, 50.0), 0);
+        let dir_score_right = dir_fitness.evaluate(&creature_right, &world, spawn, 30.0);
+        let old_score_right = old_fitness.evaluate(&creature_right, &world, spawn, 30.0);
+
+        // With OLD fitness: LEFT has higher score due to larger displacement
+        assert!(
+            old_score_left > old_score_right,
+            "OLD: Left ({}) should be > Right ({}) due to pure distance",
+            old_score_left,
+            old_score_right
+        );
+
+        // With NEW directional fitness: RIGHT should have higher score
+        assert!(
+            dir_score_right > dir_score_left,
+            "NEW: Right ({}) should be > Left ({}) due to direction",
+            dir_score_right,
+            dir_score_left
+        );
+
+        println!(
+            "OLD fitness: left={:.1}, right={:.1}",
+            old_score_left, old_score_right
+        );
+        println!(
+            "NEW fitness: left={:.1}, right={:.1}",
+            dir_score_left, dir_score_right
+        );
     }
 }

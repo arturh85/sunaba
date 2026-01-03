@@ -134,7 +134,7 @@ Goal: Creatures that reliably move across flat terrain.
 - [ ] Body physics calibration (mass distribution, ground contact)
 - [ ] Simple morphology experiments (biped, quadruped, worm)
 - [ ] Fitness function refinement (distance vs energy efficiency)
-- [ ] Baseline: creature moves >100px in 30 seconds consistently
+- [ ] Baseline: creature moves >100px in 30 seconds consistently in a chosen direction.
 
 #### 7b: Self-Sustaining Creatures 🔬
 Goal: Creatures that find food and survive without intervention.

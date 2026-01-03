@@ -164,8 +164,8 @@ impl ReportGenerator {
             text-align: center;
         }}
         .gif-card img {{
-            width: 128px;
-            height: 128px;
+            width: 368px;
+            height: 386px;
             border-radius: 5px;
             image-rendering: pixelated;
             background: #000;

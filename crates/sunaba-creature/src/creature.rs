@@ -119,7 +119,7 @@ impl Creature {
         delta_time: f32,
         sensory_input: &SensoryInput,
         physics_world: &crate::PhysicsWorld,
-        world: &impl crate::WorldAccess,
+        world: &mut impl crate::WorldMutAccess,
     ) -> bool {
         // 1. Update hunger (depletes over time)
         self.hunger.update(delta_time);
@@ -158,7 +158,43 @@ impl Creature {
         // 4. Neural control - run brain and get motor commands
         self.run_neural_control(delta_time, sensory_input, physics_world, world);
 
-        // 5. Check if dead
+        // 5. Auto-eating - proximity-based food consumption
+        const AUTO_EAT_RADIUS: f32 = 8.0;
+
+        // Optimization: Only scan pixels if sensors detected food nearby
+        if let Some(food_pos) = sensory_input.nearest_food {
+            let dist_to_food = (food_pos - self.position).length();
+
+            if dist_to_food <= AUTO_EAT_RADIUS {
+                // Scan 8-pixel radius around creature position
+                let scan_radius = AUTO_EAT_RADIUS as i32;
+                'eat_search: for dx in -scan_radius..=scan_radius {
+                    for dy in -scan_radius..=scan_radius {
+                        // Check if within circular radius
+                        let dist_sq = (dx * dx + dy * dy) as f32;
+                        if dist_sq <= AUTO_EAT_RADIUS * AUTO_EAT_RADIUS {
+                            let check_x = (self.position.x + dx as f32).round() as i32;
+                            let check_y = (self.position.y + dy as f32).round() as i32;
+
+                            // Try to consume food at this position
+                            let pos = Vec2::new(check_x as f32, check_y as f32);
+                            if let Some(nutrition) =
+                                super::world_interaction::consume_edible_material(
+                                    world, pos, &self.id,
+                                )
+                            {
+                                self.hunger.eat(nutrition);
+                                self.food_eaten += 1;
+                                // Only eat one item per update to avoid instant consumption
+                                break 'eat_search;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. Check if dead
         self.health.is_dead()
     }
 
@@ -168,7 +204,7 @@ impl Creature {
         _delta_time: f32,
         sensory_input: &SensoryInput,
         physics_world: &crate::PhysicsWorld,
-        world: &impl crate::WorldAccess,
+        world: &mut impl crate::WorldMutAccess,
     ) {
         // Get physics handles for feature extraction
         let physics_handles: Option<&[rapier2d::prelude::RigidBodyHandle]> =

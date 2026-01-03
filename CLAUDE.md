@@ -262,6 +262,8 @@ F1             : Debug stats
 T              : Temperature overlay
 ```
 
+When adding new controls, update the above list in addition to the controls help in web/index.html
+
 ## Key Algorithms
 
 ### CA Update Order (Noita-style)

@@ -172,7 +172,7 @@ impl CreatureManager {
     pub fn update(
         &mut self,
         delta_time: f32,
-        world: &impl crate::WorldAccess,
+        world: &mut impl crate::WorldMutAccess,
         physics_world: &mut PhysicsWorld,
     ) {
         use super::sensors::SensoryInput;
@@ -218,7 +218,7 @@ impl CreatureManager {
     pub fn update_with_cache(
         &mut self,
         delta_time: f32,
-        world: &impl crate::WorldAccess,
+        world: &mut impl crate::WorldMutAccess,
         physics_world: &mut PhysicsWorld,
         food_positions: &[glam::Vec2],
     ) {

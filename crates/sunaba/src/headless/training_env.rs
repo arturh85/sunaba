@@ -59,7 +59,7 @@ impl Default for TrainingConfig {
             controller_mutation_rate: 0.5,
             checkpoint_interval: 10,
             gif_capture_interval: 10,
-            gif_size: 128,
+            gif_size: 368,
             gif_fps: 10,
             output_dir: "training_output".to_string(),
             use_simple_morphology: false,
@@ -235,7 +235,7 @@ impl TrainingEnv {
         // Evaluate champion displacement for verification with detailed logging
         let champion_displacement = if let Some(best) = self.grid.best_elite() {
             // Set up world and evaluate champion with position tracking
-            let (world, food_positions) = self.scenario.setup_world();
+            let (mut world, food_positions) = self.scenario.setup_world();
             let mut physics_world = PhysicsWorld::new();
             let mut creature_manager = CreatureManager::new(1);
             let spawn_pos = self.scenario.config.spawn_position;
@@ -267,7 +267,7 @@ impl TrainingEnv {
                 if step % SENSORY_SKIP == 0 {
                     creature_manager.update_with_cache(
                         dt * SENSORY_SKIP as f32,
-                        &world,
+                        &mut world,
                         &mut physics_world,
                         &food_positions,
                     );
@@ -484,7 +484,7 @@ impl TrainingEnv {
     /// Evaluate a single creature
     fn evaluate_single(&self, genome: CreatureGenome) -> EvalResult {
         // Set up world with cached food positions
-        let (world, food_positions) = self.scenario.setup_world();
+        let (mut world, food_positions) = self.scenario.setup_world();
         let mut physics_world = PhysicsWorld::new();
         let mut creature_manager = CreatureManager::new(1);
 
@@ -520,7 +520,7 @@ impl TrainingEnv {
             if step % SENSORY_SKIP == 0 {
                 creature_manager.update_with_cache(
                     dt * SENSORY_SKIP as f32,
-                    &world,
+                    &mut world,
                     &mut physics_world,
                     &food_positions,
                 );
@@ -651,7 +651,7 @@ impl TrainingEnv {
         let materials = Materials::new();
 
         // Set up world with cached food positions
-        let (world, food_positions) = self.scenario.setup_world();
+        let (mut world, food_positions) = self.scenario.setup_world();
         let mut physics_world = PhysicsWorld::new();
         let mut creature_manager = CreatureManager::new(1);
         let spawn_pos = self.scenario.config.spawn_position;
@@ -689,7 +689,7 @@ impl TrainingEnv {
             if step % SENSORY_SKIP == 0 {
                 creature_manager.update_with_cache(
                     dt * SENSORY_SKIP as f32,
-                    &world,
+                    &mut world,
                     &mut physics_world,
                     &food_positions,
                 );

@@ -450,7 +450,7 @@ impl Materials {
             id: MaterialId::FRUIT,
             name: "fruit".to_string(),
             material_type: MaterialType::Powder,
-            color: [255, 69, 0, 255], // Red-orange
+            color: [255, 200, 0, 255], // Bright yellow for visibility
             density: 0.6,
             hardness: Some(1),
             friction: 0.2,

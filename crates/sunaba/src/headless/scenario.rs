@@ -8,7 +8,7 @@ use crate::simulation::MaterialId;
 use crate::world::World;
 
 use super::fitness::{
-    CompositeFitness, DistanceFitness, FitnessFunction, FoodCollectionFitness, ForagingFitness,
+    CompositeFitness, DirectionalFoodFitness, DistanceFitness, FitnessFunction, ForagingFitness,
     MovementFitness, SurvivalFitness,
 };
 
@@ -139,18 +139,21 @@ impl Scenario {
     ///
     /// Layout: 3 food items before a wall, 5 after
     /// Creatures start with 50% hunger and must collect food to survive
+    ///
+    /// Uses DirectionalFoodFitness to reward movement toward food (positive X direction).
+    /// This fixes the issue where creatures evolved to move fast but in the wrong direction.
     pub fn parcour() -> Self {
         Self {
             config: ScenarioConfig {
                 name: "Parcour".to_string(),
                 description: "Food parcour with wall obstacle requiring mining".to_string(),
-                expected_behavior: "Navigate to food, mine through wall".to_string(),
+                expected_behavior: "Navigate to food (rightward), mine through wall".to_string(),
                 spawn_position: Vec2::new(50.0, 50.0),
                 eval_duration: 30.0,
-                world_width: 400,
-                world_height: 128,
+                world_width: 500,
+                world_height: 400,
             },
-            fitness: Box::new(FoodCollectionFitness::new()),
+            fitness: Box::new(DirectionalFoodFitness::parcour()),
         }
     }
 
@@ -258,24 +261,26 @@ impl Scenario {
     /// Returns food positions for optimized sensing
     fn add_parcour_course(&self, world: &mut World) -> Vec<Vec2> {
         let ground_y = 20;
-        let food_y = 25; // Slightly above ground
 
-        // 3 food items before the wall (reachable by walking)
-        let food_positions_before_wall: [(i32, i32); 3] =
-            [(100, food_y), (150, food_y), (200, food_y)];
+        // 3 food items before the wall (progressive heights to encourage jumping)
+        let food_positions_before_wall: [(i32, i32); 3] = [
+            (100, 25), // Ground level
+            (150, 40), // Mid-height (requires small jump)
+            (200, 60), // High (requires good jump)
+        ];
 
-        // Stone wall at x=250-260, from ground up to y=50
+        // Stone wall - taller for 400-height world
         let wall_x_start = 250;
         let wall_width = 10;
-        let wall_height = 30;
+        let wall_height = 50; // Increased from 30
 
-        // 5 food items after the wall
+        // 5 food items after the wall (mixed heights)
         let food_positions_after_wall: [(i32, i32); 5] = [
-            (280, food_y),
-            (310, food_y),
-            (340, food_y),
-            (360, food_y),
-            (380, food_y),
+            (280, 25), // Ground
+            (310, 40), // Mid
+            (340, 60), // High
+            (360, 25), // Ground
+            (380, 40), // Mid
         ];
 
         // Place food before wall (3x3 patches of FRUIT)
@@ -348,7 +353,7 @@ mod tests {
     fn test_parcour_scenario() {
         let scenario = Scenario::parcour();
         assert_eq!(scenario.config.name, "Parcour");
-        assert_eq!(scenario.fitness.name(), "FoodCollection");
+        assert_eq!(scenario.fitness.name(), "DirectionalFood");
         assert_eq!(scenario.config.spawn_position, Vec2::new(50.0, 50.0));
     }
 

@@ -6,3 +6,4 @@
 .DS_Store
 training_output/
 /papers/
+/experiments/20*.md

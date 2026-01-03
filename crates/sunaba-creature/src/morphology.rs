@@ -699,4 +699,102 @@ mod tests {
         assert_eq!(config.min_radius, 2.0);
         assert_eq!(config.max_radius, 10.0);
     }
+
+    /// Generate sample creatures and print statistics for analysis
+    /// Run with: cargo test -p sunaba-creature analyze_morphology_statistics -- --nocapture
+    #[test]
+    fn analyze_morphology_statistics() {
+        use crate::genome::MutationConfig;
+
+        let configs = [
+            ("default", MorphologyConfig::default()),
+            ("simple", MorphologyConfig::simple()),
+        ];
+
+        for (config_name, config) in configs {
+            println!("\n=== {} Morphology Config ===", config_name);
+            println!(
+                "Grid: {}x{}, Max parts: {}, Radius: {}-{}",
+                config.grid_resolution,
+                config.grid_resolution,
+                config.max_body_parts,
+                config.min_radius,
+                config.max_radius
+            );
+
+            let mut total_parts = 0;
+            let mut total_joints = 0;
+            let mut total_motors = 0;
+            let mut total_mass = 0.0;
+            let num_samples = 20;
+
+            let mutation_config = MutationConfig::default();
+
+            for i in 0..num_samples {
+                let mut genome = CreatureGenome::test_biped();
+                // Apply multiple mutations to create variety
+                for _ in 0..i {
+                    genome.mutate(&mutation_config, 0.5);
+                }
+
+                let morph = CreatureMorphology::from_genome(&genome, &config);
+
+                let motor_count = morph
+                    .joints
+                    .iter()
+                    .filter(|j| matches!(j.joint_type, JointType::Revolute { .. }))
+                    .count();
+
+                total_parts += morph.body_parts.len();
+                total_joints += morph.joints.len();
+                total_motors += motor_count;
+                total_mass += morph.total_mass;
+
+                if i < 5 {
+                    // Print details for first 5
+                    println!(
+                        "  Sample {}: {} parts, {} joints ({} motors), mass={:.1}",
+                        i,
+                        morph.body_parts.len(),
+                        morph.joints.len(),
+                        motor_count,
+                        morph.total_mass
+                    );
+
+                    // Print part positions
+                    for (idx, part) in morph.body_parts.iter().enumerate() {
+                        let marker = if idx == morph.root_part_index {
+                            "[ROOT]"
+                        } else {
+                            ""
+                        };
+                        println!(
+                            "    Part {}: pos=({:.1},{:.1}), r={:.1}, d={:.2} {}",
+                            idx,
+                            part.local_position.x,
+                            part.local_position.y,
+                            part.radius,
+                            part.density,
+                            marker
+                        );
+                    }
+                }
+            }
+
+            println!("\n--- Statistics over {} samples ---", num_samples);
+            println!(
+                "Avg body parts: {:.1}",
+                total_parts as f32 / num_samples as f32
+            );
+            println!(
+                "Avg joints: {:.1}",
+                total_joints as f32 / num_samples as f32
+            );
+            println!(
+                "Avg motors: {:.1}",
+                total_motors as f32 / num_samples as f32
+            );
+            println!("Avg mass: {:.1}", total_mass / num_samples as f32);
+        }
+    }
 }
