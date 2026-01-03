@@ -303,6 +303,9 @@ impl DeepNeuralController {
     /// Forward pass with two hidden layers and optional recurrence
     /// input -> hidden1 (tanh) -> hidden2 (tanh) -> output (tanh)
     pub fn forward(&mut self, input: &[f32]) -> Vec<f32> {
+        #[cfg(feature = "profiling")]
+        puffin::profile_function!();
+
         assert_eq!(input.len(), self.input_dim, "Input dimension mismatch");
 
         let mut offset = 0;

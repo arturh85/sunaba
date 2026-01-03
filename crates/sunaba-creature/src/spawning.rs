@@ -228,6 +228,9 @@ impl CreatureManager {
 
             // Apply movement physics (gravity, wandering, collision)
             creature.apply_movement(world, physics_world, delta_time);
+
+            // Try to mine blocks if neural output requested it
+            creature.try_mine(world);
         }
 
         // Remove dead creatures
@@ -279,6 +282,9 @@ impl CreatureManager {
 
             // Apply movement physics (gravity, wandering, collision)
             creature.apply_movement(world, physics_world, delta_time);
+
+            // Try to mine blocks if neural output requested it
+            creature.try_mine(world);
         }
 
         // Remove dead creatures

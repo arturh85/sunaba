@@ -146,12 +146,13 @@ impl Scenario {
         Self {
             config: ScenarioConfig {
                 name: "Parcour".to_string(),
-                description: "Food parcour with wall obstacle requiring mining".to_string(),
-                expected_behavior: "Navigate to food (rightward), mine through wall".to_string(),
-                spawn_position: Vec2::new(50.0, 50.0),
+                description: "Contained tunnel with minable wall - must mine to reach food"
+                    .to_string(),
+                expected_behavior: "Mine through stone wall to reach food behind it".to_string(),
+                spawn_position: Vec2::new(50.0, 40.0),
                 eval_duration: 30.0,
-                world_width: 500,
-                world_height: 400,
+                world_width: 420,
+                world_height: 100,
             },
             fitness: Box::new(DirectionalFoodFitness::parcour()),
         }
@@ -250,57 +251,78 @@ impl Scenario {
         }
     }
 
-    /// Add food parcour course with wall obstacle
+    /// Add contained tunnel arena with minable wall
     ///
-    /// Layout (ground at y=20):
+    /// Layout (420x100 world):
     /// ```text
-    /// Spawn(50)  Food1(100) Food2(150) Food3(200)  WALL(250-260)  Food4(280) Food5(310) Food6(340) Food7(360) Food8(380)
-    ///    *          o          o          o        ████████████      o         o          o          o          o
-    /// ___________________________________________________________________________________________________
+    /// BEDROCK CEILING ████████████████████████████████████████████
+    ///                 █                                          █
+    /// BEDROCK LEFT    █   SPAWN    ████████  FOOD                █ BEDROCK RIGHT
+    ///                 █     *      ████████   🍎🍎🍎🍎           █
+    ///                 █            ████████                      █
+    /// BEDROCK FLOOR   ████████████████████████████████████████████
+    ///                             STONE (minable)
     /// ```
     /// Returns food positions for optimized sensing
     fn add_parcour_course(&self, world: &mut World) -> Vec<Vec2> {
         let ground_y = 20;
+        let ceiling_y = 80;
+        let arena_width = 420;
 
-        // 3 food items before the wall (progressive heights to encourage jumping)
-        let food_positions_before_wall: [(i32, i32); 3] = [
-            (100, 25), // Ground level
-            (150, 40), // Mid-height (requires small jump)
-            (200, 60), // High (requires good jump)
-        ];
+        // === BEDROCK CONTAINMENT (unminable) ===
 
-        // Stone wall - taller for 400-height world
-        let wall_x_start = 250;
-        let wall_width = 10;
-        let wall_height = 50; // Increased from 30
-
-        // 5 food items after the wall (mixed heights)
-        let food_positions_after_wall: [(i32, i32); 5] = [
-            (280, 25), // Ground
-            (310, 40), // Mid
-            (340, 60), // High
-            (360, 25), // Ground
-            (380, 40), // Mid
-        ];
-
-        // Place food before wall (3x3 patches of FRUIT)
-        for (x, y) in food_positions_before_wall {
-            for dx in -1..=1 {
-                for dy in -1..=1 {
-                    world.set_pixel(x + dx, y + dy, MaterialId::FRUIT);
-                }
+        // Bedrock floor (solid ground)
+        for x in 0..arena_width {
+            for y in 0..ground_y {
+                world.set_pixel(x, y, MaterialId::BEDROCK);
             }
         }
 
-        // Create stone wall
+        // Bedrock ceiling (prevents flying over)
+        for x in 0..arena_width {
+            for y in ceiling_y..100 {
+                world.set_pixel(x, y, MaterialId::BEDROCK);
+            }
+        }
+
+        // Bedrock left wall
+        for y in ground_y..ceiling_y {
+            for x in 0..15 {
+                world.set_pixel(x, y, MaterialId::BEDROCK);
+            }
+        }
+
+        // Bedrock right wall
+        for y in ground_y..ceiling_y {
+            for x in 390..arena_width {
+                world.set_pixel(x, y, MaterialId::BEDROCK);
+            }
+        }
+
+        // === TUNNEL WALL (minable stone) ===
+        // Positioned to require mining - floor to ceiling
+        let wall_x_start = 180;
+        let wall_width = 15;
+
         for dx in 0..wall_width {
-            for dy in 0..wall_height {
-                world.set_pixel(wall_x_start + dx, ground_y + dy, MaterialId::STONE);
+            for y in ground_y..ceiling_y {
+                world.set_pixel(wall_x_start + dx, y, MaterialId::STONE);
             }
         }
 
-        // Place food after wall (3x3 patches of FRUIT)
-        for (x, y) in food_positions_after_wall {
+        // === FOOD (only behind wall) ===
+        // No food before wall - creature MUST mine to reach food
+        let food_positions: [(i32, i32); 6] = [
+            (220, 30), // Just past wall, ground level
+            (250, 30),
+            (280, 30),
+            (310, 30),
+            (340, 30),
+            (370, 30),
+        ];
+
+        // Place food (3x3 patches of FRUIT)
+        for (x, y) in food_positions {
             for dx in -1..=1 {
                 for dy in -1..=1 {
                     world.set_pixel(x + dx, y + dy, MaterialId::FRUIT);
@@ -308,10 +330,9 @@ impl Scenario {
             }
         }
 
-        // Return all food positions as Vec2
-        food_positions_before_wall
+        // Return food positions as Vec2
+        food_positions
             .iter()
-            .chain(food_positions_after_wall.iter())
             .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
             .collect()
     }

@@ -16,6 +16,7 @@ required-features = ["native"]
 default = ["native"]
 native = []
 headless = []
+profiling = ["puffin", "puffin_egui", "sunaba-core/profiling"]
 
 [dependencies]
 sunaba-core = { path = "../sunaba-core" }
@@ -58,6 +59,8 @@ chrono = "0.4"
 egui-winit = { version = "0.33", features = ["clipboard"] }
 gif = "0.13"
 indicatif = "0.17"
+puffin = { git = "https://github.com/blip-radar/puffin.git", branch = "egui-0.33", optional = true }
+puffin_egui = { git = "https://github.com/blip-radar/puffin.git", branch = "egui-0.33", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

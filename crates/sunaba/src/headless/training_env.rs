@@ -181,7 +181,10 @@ impl TrainingEnv {
     }
 
     /// Helper to get best elite for a specific archetype
-    pub fn best_elite_for(&self, archetype: &CreatureArchetype) -> Option<&super::map_elites::Elite> {
+    pub fn best_elite_for(
+        &self,
+        archetype: &CreatureArchetype,
+    ) -> Option<&super::map_elites::Elite> {
         self.grids.get(archetype).and_then(|g| g.best_elite())
     }
 
@@ -248,8 +251,10 @@ impl TrainingEnv {
         let archetype_names: Vec<_> = self.archetypes.iter().map(|a| a.name()).collect();
         pb.println(format!(
             "Starting training: {} generations, {} population, {} archetypes: {:?}",
-            self.config.generations, self.config.population_size,
-            self.archetypes.len(), archetype_names
+            self.config.generations,
+            self.config.population_size,
+            self.archetypes.len(),
+            archetype_names
         ));
 
         // Initialize with random population
@@ -318,7 +323,10 @@ impl TrainingEnv {
             );
 
             // Log initial state
-            pb.println(format!("=== Champion Debug ({}) ===", champion_archetype.name()));
+            pb.println(format!(
+                "=== Champion Debug ({}) ===",
+                champion_archetype.name()
+            ));
             pb.println(format!(
                 "  Spawn position: ({:.1}, {:.1})",
                 spawn_pos.x, spawn_pos.y
@@ -439,7 +447,9 @@ impl TrainingEnv {
         };
         pb.println(format!(
             "Initializing population with {} creatures ({}) across {} archetypes",
-            self.config.population_size, mode, self.archetypes.len()
+            self.config.population_size,
+            mode,
+            self.archetypes.len()
         ));
 
         // Distribute population evenly across archetypes
@@ -473,7 +483,13 @@ impl TrainingEnv {
 
         for result in results {
             if let Some(grid) = self.grids.get_mut(&result.archetype) {
-                grid.try_insert(result.genome, result.fitness, &result.behavior, 0, result.archetype);
+                grid.try_insert(
+                    result.genome,
+                    result.fitness,
+                    &result.behavior,
+                    0,
+                    result.archetype,
+                );
             }
         }
 
@@ -483,7 +499,8 @@ impl TrainingEnv {
 
         pb.println(format!(
             "Initial grid coverage: {:.1}% average across {} archetypes",
-            avg_coverage * 100.0, self.grids.len()
+            avg_coverage * 100.0,
+            self.grids.len()
         ));
         Ok(())
     }
@@ -742,7 +759,12 @@ impl TrainingEnv {
 
         // Save best genome (overall champion)
         if let Some((archetype, best)) = self.best_elite() {
-            let path = format!("{}/gen_{:04}_best_{}.genome", checkpoint_dir, self.generation, archetype.name().to_lowercase());
+            let path = format!(
+                "{}/gen_{:04}_best_{}.genome",
+                checkpoint_dir,
+                self.generation,
+                archetype.name().to_lowercase()
+            );
             let data =
                 bincode_next::serde::encode_to_vec(&best.genome, bincode_next::config::standard())
                     .context("Failed to serialize genome")?;
@@ -920,7 +942,10 @@ impl TrainingEnv {
             if let Some(grid) = self.grids.get(&archetype) {
                 if let Some(best) = grid.best_elite() {
                     let label = format!("Best {}", archetype.name());
-                    pb.println(format!("  Capturing: {} (fitness: {:.2})", label, best.fitness));
+                    pb.println(format!(
+                        "  Capturing: {} (fitness: {:.2})",
+                        label, best.fitness
+                    ));
                     match self.capture_elite_gif(
                         &best.genome,
                         archetype,
@@ -940,10 +965,16 @@ impl TrainingEnv {
             if let Some((champion_archetype, best)) = self.best_elite() {
                 // Only add if not already captured (i.e., if it's different from individual archetype bests)
                 let overall_label = format!("Champion ({})", champion_archetype.name());
-                let already_have_champion = gifs.iter().any(|g| g.label == format!("Best {}", champion_archetype.name()) && (g.fitness - best.fitness).abs() < 0.01);
+                let already_have_champion = gifs.iter().any(|g| {
+                    g.label == format!("Best {}", champion_archetype.name())
+                        && (g.fitness - best.fitness).abs() < 0.01
+                });
 
                 if !already_have_champion {
-                    pb.println(format!("  Capturing: {} (fitness: {:.2})", overall_label, best.fitness));
+                    pb.println(format!(
+                        "  Capturing: {} (fitness: {:.2})",
+                        overall_label, best.fitness
+                    ));
                     match self.capture_elite_gif(
                         &best.genome,
                         *champion_archetype,

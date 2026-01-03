@@ -41,6 +41,13 @@ struct Args {
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
+    // Initialize puffin profiler (native only, when feature enabled)
+    #[cfg(feature = "profiling")]
+    {
+        puffin::set_scopes_on(true);
+        log::info!("Puffin profiler initialized - press F3 in-game to view");
+    }
+
     // Parse command-line arguments
     let args = Args::parse();
 
@@ -96,7 +103,10 @@ fn run_training(args: &Args) -> anyhow::Result<()> {
 
     log::info!("Starting headless evolution training");
     log::info!("  Scenario: {}", args.scenario);
-    log::info!("  Archetypes: {:?}", archetypes.iter().map(|a| a.name()).collect::<Vec<_>>());
+    log::info!(
+        "  Archetypes: {:?}",
+        archetypes.iter().map(|a| a.name()).collect::<Vec<_>>()
+    );
     log::info!("  Generations: {}", args.generations);
     log::info!("  Population: {}", args.population);
     log::info!("  Output: {}", args.output);

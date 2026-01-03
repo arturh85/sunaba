@@ -266,6 +266,10 @@ impl App {
     }
 
     fn handle_redraw(&mut self) {
+        // Signal new frame to puffin profiler
+        #[cfg(feature = "profiling")]
+        puffin::GlobalProfiler::lock().new_frame();
+
         // Begin frame timing
         self.ui_state.stats.begin_frame();
 
@@ -330,6 +334,8 @@ impl App {
         }
 
         // Update simulation with timing
+        #[cfg(feature = "profiling")]
+        puffin::profile_scope!("simulation");
         self.ui_state.stats.begin_sim();
         self.world.update(1.0 / 60.0, &mut self.ui_state.stats);
         self.ui_state.stats.end_sim();
@@ -744,6 +750,13 @@ impl ApplicationHandler for App {
                         KeyCode::F2 => {
                             if pressed {
                                 self.renderer.toggle_active_chunks_overlay();
+                            }
+                        }
+                        KeyCode::F3 =>
+                        {
+                            #[cfg(feature = "profiling")]
+                            if pressed {
+                                self.ui_state.toggle_puffin();
                             }
                         }
                         KeyCode::KeyH => {

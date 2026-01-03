@@ -482,14 +482,32 @@ mod tests {
         let behavior = make_behavior(5.0, 2.5);
 
         // Insert first elite
-        grid.try_insert(make_test_genome(), 10.0, &behavior, 0, CreatureArchetype::default());
+        grid.try_insert(
+            make_test_genome(),
+            10.0,
+            &behavior,
+            0,
+            CreatureArchetype::default(),
+        );
 
         // Try to insert worse elite - should fail
-        let replaced = grid.try_insert(make_test_genome(), 5.0, &behavior, 1, CreatureArchetype::default());
+        let replaced = grid.try_insert(
+            make_test_genome(),
+            5.0,
+            &behavior,
+            1,
+            CreatureArchetype::default(),
+        );
         assert!(!replaced);
 
         // Try to insert better elite - should succeed
-        let replaced = grid.try_insert(make_test_genome(), 15.0, &behavior, 2, CreatureArchetype::default());
+        let replaced = grid.try_insert(
+            make_test_genome(),
+            15.0,
+            &behavior,
+            2,
+            CreatureArchetype::default(),
+        );
         assert!(replaced);
         assert_eq!(grid.cell_count(), 1);
         assert!((grid.best_elite().unwrap().fitness - 15.0).abs() < 0.01);
@@ -500,8 +518,20 @@ mod tests {
         let mut grid = MapElitesGrid::default_grid();
 
         // Insert elites with different behaviors
-        grid.try_insert(make_test_genome(), 10.0, &make_behavior(1.0, 1.0), 0, CreatureArchetype::default());
-        grid.try_insert(make_test_genome(), 15.0, &make_behavior(8.0, 4.0), 0, CreatureArchetype::default());
+        grid.try_insert(
+            make_test_genome(),
+            10.0,
+            &make_behavior(1.0, 1.0),
+            0,
+            CreatureArchetype::default(),
+        );
+        grid.try_insert(
+            make_test_genome(),
+            15.0,
+            &make_behavior(8.0, 4.0),
+            0,
+            CreatureArchetype::default(),
+        );
 
         assert_eq!(grid.cell_count(), 2);
     }
@@ -511,18 +541,42 @@ mod tests {
         let mut grid = MapElitesGrid::default_grid();
 
         // Need at least 2 elites
-        grid.try_insert(make_test_genome(), 10.0, &make_behavior(1.0, 1.0), 0, CreatureArchetype::default());
+        grid.try_insert(
+            make_test_genome(),
+            10.0,
+            &make_behavior(1.0, 1.0),
+            0,
+            CreatureArchetype::default(),
+        );
         assert!(grid.sample_parents().is_none());
 
-        grid.try_insert(make_test_genome(), 15.0, &make_behavior(8.0, 4.0), 0, CreatureArchetype::default());
+        grid.try_insert(
+            make_test_genome(),
+            15.0,
+            &make_behavior(8.0, 4.0),
+            0,
+            CreatureArchetype::default(),
+        );
         assert!(grid.sample_parents().is_some());
     }
 
     #[test]
     fn test_grid_stats() {
         let mut grid = MapElitesGrid::default_grid();
-        grid.try_insert(make_test_genome(), 10.0, &make_behavior(1.0, 1.0), 0, CreatureArchetype::default());
-        grid.try_insert(make_test_genome(), 20.0, &make_behavior(8.0, 4.0), 0, CreatureArchetype::default());
+        grid.try_insert(
+            make_test_genome(),
+            10.0,
+            &make_behavior(1.0, 1.0),
+            0,
+            CreatureArchetype::default(),
+        );
+        grid.try_insert(
+            make_test_genome(),
+            20.0,
+            &make_behavior(8.0, 4.0),
+            0,
+            CreatureArchetype::default(),
+        );
 
         let stats = grid.stats();
         assert_eq!(stats.cell_count, 2);

@@ -664,6 +664,9 @@ impl Renderer {
         textures_delta: egui::TexturesDelta,
         shapes: Vec<egui::epaint::ClippedShape>,
     ) -> Result<RenderTiming> {
+        #[cfg(feature = "profiling")]
+        puffin::profile_function!();
+
         let mut timing = RenderTiming::default();
 
         log::trace!(
@@ -682,35 +685,43 @@ impl Renderer {
 
         // Time: Update pixel buffer from world chunks
         let t0 = Instant::now();
-        self.update_pixel_buffer(world, particles);
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("pixel_buffer");
+            self.update_pixel_buffer(world, particles);
+        }
         timing.pixel_buffer_ms = t0.elapsed().as_secs_f32() * 1000.0;
 
         // Time: Upload to GPU
         let t1 = Instant::now();
-        if needs_full_upload {
-            // Full texture upload after rebuffer
-            self.queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.world_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &self.pixel_buffer,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(Self::WORLD_TEXTURE_SIZE * 4),
-                    rows_per_image: Some(Self::WORLD_TEXTURE_SIZE),
-                },
-                wgpu::Extent3d {
-                    width: Self::WORLD_TEXTURE_SIZE,
-                    height: Self::WORLD_TEXTURE_SIZE,
-                    depth_or_array_layers: 1,
-                },
-            );
-        } else {
-            // Incremental upload: only upload dirty chunks
-            self.upload_dirty_chunks();
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("gpu_upload");
+            if needs_full_upload {
+                // Full texture upload after rebuffer
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self.world_texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &self.pixel_buffer,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(Self::WORLD_TEXTURE_SIZE * 4),
+                        rows_per_image: Some(Self::WORLD_TEXTURE_SIZE),
+                    },
+                    wgpu::Extent3d {
+                        width: Self::WORLD_TEXTURE_SIZE,
+                        height: Self::WORLD_TEXTURE_SIZE,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            } else {
+                // Incremental upload: only upload dirty chunks
+                self.upload_dirty_chunks();
+            }
         }
         timing.gpu_upload_ms = t1.elapsed().as_secs_f32() * 1000.0;
 

@@ -41,6 +41,10 @@ pub struct UiState {
 
     /// Toast notification (message, shown_at)
     pub toast_message: Option<(String, Instant)>,
+
+    /// Whether puffin profiler window is visible
+    #[cfg(feature = "profiling")]
+    pub puffin_visible: bool,
 }
 
 impl UiState {
@@ -60,6 +64,8 @@ impl UiState {
             inventory: InventoryPanel::new(),
             crafting_ui: CraftingUI::new(),
             toast_message: None,
+            #[cfg(feature = "profiling")]
+            puffin_visible: false,
         }
     }
 
@@ -86,6 +92,12 @@ impl UiState {
     /// Toggle crafting UI visibility
     pub fn toggle_crafting(&mut self) {
         self.crafting_ui.toggle();
+    }
+
+    /// Toggle puffin profiler visibility
+    #[cfg(feature = "profiling")]
+    pub fn toggle_puffin(&mut self) {
+        self.puffin_visible = !self.puffin_visible;
     }
 
     /// Show a toast notification
@@ -173,6 +185,12 @@ impl UiState {
 
         // Render material tooltip (only if creature tooltip not visible)
         self.tooltip.render(ctx, cursor_screen_pos);
+
+        // Render puffin profiler window
+        #[cfg(feature = "profiling")]
+        if self.puffin_visible {
+            puffin_egui::profiler_window(ctx);
+        }
     }
 
     fn render_stats(&mut self, ctx: &egui::Context) {

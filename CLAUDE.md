@@ -17,6 +17,7 @@ just test    # fmt, clippy --fix, tests, release build, web build
 # Development
 just start   # Run with --regenerate (new world)
 just load    # Run release (load existing world)
+just profile # Run with puffin profiler (F3 to toggle flamegraph)
 just web     # Build and serve web version at localhost:8080
 
 # Individual commands (prefer just test)
@@ -129,6 +130,7 @@ pub fn load_chunk(&self, x: i32, y: i32) -> Result<Chunk> {
 | Compression | lz4_flex |
 | RNG | rand + rand_xoshiro (deterministic) |
 | Neural/Graph | petgraph 0.6 |
+| Profiling | puffin + puffin_egui (opt-in feature) |
 
 ### World Structure
 ```
@@ -260,6 +262,7 @@ F5             : Manual save
 # UI Toggles
 H              : Help panel
 F1             : Debug stats
+F3             : Puffin profiler (requires --features profiling)
 T              : Temperature overlay
 ```
 

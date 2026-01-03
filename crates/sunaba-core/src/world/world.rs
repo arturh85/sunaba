@@ -941,6 +941,9 @@ impl World {
     }
 
     fn step_simulation(&mut self, stats: &mut dyn crate::world::SimStats) {
+        #[cfg(feature = "profiling")]
+        puffin::profile_function!();
+
         const LIGHT_TIMESTEP: f32 = 1.0 / 15.0; // 15fps for light propagation
 
         // 0. Update active chunks (remove distant, re-activate nearby)
@@ -984,13 +987,21 @@ impl World {
             }
         }
 
-        for pos in &chunks_to_update {
-            self.update_chunk_ca(*pos, stats);
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("ca_updates");
+            for pos in &chunks_to_update {
+                self.update_chunk_ca(*pos, stats);
+            }
         }
 
         // 3. Temperature diffusion (30fps throttled) - active chunks only
-        self.temperature_sim
-            .update(&mut self.chunks, &self.active_chunks);
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("temperature");
+            self.temperature_sim
+                .update(&mut self.chunks, &self.active_chunks);
+        }
 
         // 4. Light propagation (15fps throttled) - active chunks only
         self.light_time_accumulator += 1.0 / 60.0; // Fixed timestep
@@ -1019,7 +1030,11 @@ impl World {
         }
 
         // 7. Update rigid body physics
-        self.physics_world.step();
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("physics");
+            self.physics_world.step();
+        }
 
         // 8. Check for settled debris and reconstruct as pixels
         let settled = self.physics_world.get_settled_debris();
@@ -1042,10 +1057,14 @@ impl World {
             crate::physics::PhysicsWorld::empty(), // Lightweight placeholder
         );
 
-        creature_manager.update(1.0 / 60.0, self, &mut physics_world);
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("creatures");
+            creature_manager.update(1.0 / 60.0, self, &mut physics_world);
 
-        // 11. Execute creature actions (eat, mine, build)
-        creature_manager.execute_actions(self, 1.0 / 60.0);
+            // 11. Execute creature actions (eat, mine, build)
+            creature_manager.execute_actions(self, 1.0 / 60.0);
+        }
 
         // Put them back
         self.creature_manager = creature_manager;

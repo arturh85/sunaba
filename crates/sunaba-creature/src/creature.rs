@@ -44,6 +44,9 @@ pub struct Creature {
     /// Counter for food items eaten (for fitness evaluation)
     pub food_eaten: u32,
 
+    /// Counter for blocks mined (for fitness evaluation)
+    pub blocks_mined: u32,
+
     // Movement state (not serialized - runtime only)
     #[serde(skip)]
     pub velocity: Vec2,
@@ -57,6 +60,8 @@ pub struct Creature {
     pub grounded: bool,
     #[serde(skip)]
     pub pending_motor_commands: Option<Vec<f32>>,
+    #[serde(skip)]
+    pub pending_mine_strength: Option<f32>,
 }
 
 impl Creature {
@@ -74,7 +79,7 @@ impl Creature {
         let num_materials = 5;
         let input_dim = morphology.body_parts.len()
             * super::neural::BodyPartFeatures::feature_dim(num_raycasts, num_materials);
-        let output_dim = morphology.joints.len(); // One motor command per joint
+        let output_dim = morphology.joints.len() + 1; // Motor commands + mining action
 
         let brain = DeepNeuralController::from_genome(&genome.controller, input_dim, output_dim);
 
@@ -97,12 +102,14 @@ impl Creature {
             position,
             generation: 0,
             food_eaten: 0,
+            blocks_mined: 0,
             velocity: Vec2::ZERO,
             wander_target: None,
             wander_timer: 0.0,
             facing_direction: 1.0,
             grounded: false,
             pending_motor_commands: None,
+            pending_mine_strength: None,
         }
     }
 
@@ -130,7 +137,7 @@ impl Creature {
         let num_materials = 5;
         let input_dim = morphology.body_parts.len()
             * super::neural::BodyPartFeatures::feature_dim(num_raycasts, num_materials);
-        let output_dim = morphology.joints.len(); // One motor command per joint
+        let output_dim = morphology.joints.len() + 1; // Motor commands + mining action
 
         let brain = DeepNeuralController::from_genome(&genome.controller, input_dim, output_dim);
 
@@ -153,12 +160,14 @@ impl Creature {
             position,
             generation: 0,
             food_eaten: 0,
+            blocks_mined: 0,
             velocity: Vec2::ZERO,
             wander_target: None,
             wander_timer: 0.0,
             facing_direction: 1.0,
             grounded: false,
             pending_motor_commands: None,
+            pending_mine_strength: None,
         }
     }
 
@@ -279,10 +288,19 @@ impl Creature {
         if let Some(ref mut brain) = self.brain {
             // Ensure input dimensions match
             if input_vec.len() == brain.input_dim() {
-                let motor_commands = brain.forward(&input_vec);
+                let outputs = brain.forward(&input_vec);
 
-                // Store motor commands to be applied during apply_movement
-                self.pending_motor_commands = Some(motor_commands);
+                // Split outputs: joint motor commands + mining action
+                let num_joints = self.morphology.joints.len();
+                if outputs.len() > num_joints {
+                    let (joint_commands, action_commands) = outputs.split_at(num_joints);
+                    self.pending_motor_commands = Some(joint_commands.to_vec());
+                    self.pending_mine_strength = action_commands.first().copied();
+                } else {
+                    // Fallback: all outputs are motor commands (no mining)
+                    self.pending_motor_commands = Some(outputs);
+                    self.pending_mine_strength = None;
+                }
             }
         }
     }
@@ -318,7 +336,7 @@ impl Creature {
 
         let input_dim = self.morphology.body_parts.len()
             * super::neural::BodyPartFeatures::feature_dim(num_raycasts, num_materials);
-        let output_dim = self.morphology.joints.len();
+        let output_dim = self.morphology.joints.len() + 1; // Motor commands + mining action
 
         let brain =
             DeepNeuralController::from_genome(&self.genome.controller, input_dim, output_dim);
@@ -665,6 +683,58 @@ impl Creature {
             {
                 let world_pos = self.position + part.local_position;
                 rb.set_translation(vector![world_pos.x, world_pos.y], true);
+            }
+        }
+    }
+
+    /// Try to mine blocks based on neural network output
+    ///
+    /// When the mining output exceeds the threshold, mines blocks in the
+    /// direction the creature is moving (toward food on the right).
+    pub fn try_mine(&mut self, world: &mut impl crate::WorldMutAccess) {
+        use sunaba_simulation::MaterialId;
+
+        // Check if mining action was requested
+        let mine_strength = match self.pending_mine_strength.take() {
+            Some(s) => s,
+            None => return,
+        };
+
+        // Mining threshold - neural output must exceed this to trigger mining
+        // Output is tanh so range is [-1, 1], threshold at 0.3 means ~65% activation
+        const MINE_THRESHOLD: f32 = 0.3;
+        if mine_strength < MINE_THRESHOLD {
+            return;
+        }
+
+        // Determine mining direction based on velocity or facing
+        let mine_dir = if self.velocity.x.abs() > 0.5 {
+            self.velocity.x.signum()
+        } else {
+            self.facing_direction
+        };
+
+        // Mine position: ahead of creature in movement direction
+        let mine_offset = 8.0; // Distance ahead to mine
+        let mine_x = (self.position.x + mine_dir * mine_offset) as i32;
+        let mine_y = self.position.y as i32;
+
+        // Mine a 3x3 area centered on the mining point
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                let px = mine_x + dx;
+                let py = mine_y + dy;
+
+                if let Some(pixel) = world.get_pixel(px, py) {
+                    // Only mine certain materials (stone, dirt, etc.)
+                    // Don't mine bedrock or other protected materials
+                    if pixel.material_id == MaterialId::STONE
+                        || pixel.material_id == MaterialId::SAND
+                    {
+                        world.set_pixel(px, py, MaterialId::AIR);
+                        self.blocks_mined += 1;
+                    }
+                }
             }
         }
     }

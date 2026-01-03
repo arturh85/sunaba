@@ -157,6 +157,8 @@ impl FitnessFunction for SurvivalFitness {
 }
 
 /// Measures food collected with distance bonus
+/// Currently used in tests; kept for potential future scenario use
+#[allow(dead_code)]
 pub struct FoodCollectionFitness {
     /// Points per food item collected
     pub food_points: f32,
@@ -166,6 +168,7 @@ pub struct FoodCollectionFitness {
 
 impl FoodCollectionFitness {
     /// Create with default values
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             food_points: 10.0,
@@ -224,6 +227,8 @@ pub struct DirectionalFoodFitness {
     pub movement_points: f32,
     /// Penalty for moving in wrong direction
     pub wrong_direction_penalty: f32,
+    /// Points per block mined (rewards learning to mine through obstacles)
+    pub mining_points: f32,
 }
 
 impl DirectionalFoodFitness {
@@ -235,12 +240,25 @@ impl DirectionalFoodFitness {
             target_direction: Vec2::X,    // Food is to the RIGHT (positive X)
             movement_points: 1.0,         // 1 point per pixel in correct direction
             wrong_direction_penalty: 0.5, // 50% penalty for wrong direction
+            mining_points: 2.0,           // Reward for mining through obstacles
         }
     }
 
-    /// Create for parcour scenario (food is to the right)
+    /// Create for parcour scenario - tuned to encourage mining
+    ///
+    /// Key changes from default:
+    /// - Higher food reward (100) - food is the main goal
+    /// - Lower movement bonus (0.2) - movement alone not enough
+    /// - Higher mining reward (5.0) - mining is valuable
     pub fn parcour() -> Self {
-        Self::new() // Default is already correct for parcour
+        Self {
+            food_points: 100.0,           // Food is king - high reward
+            direction_bonus_weight: 0.2,  // Reduced - movement alone not enough
+            target_direction: Vec2::X,    // Food is to the RIGHT
+            movement_points: 0.5,         // Small - provides gradient signal only
+            wrong_direction_penalty: 0.5, // 50% penalty for wrong direction
+            mining_points: 5.0,           // High - mining is valuable
+        }
     }
 }
 
@@ -260,6 +278,9 @@ impl FitnessFunction for DirectionalFoodFitness {
     ) -> f32 {
         // Primary fitness: food collected (heavily weighted)
         let food_score = creature.food_eaten as f32 * self.food_points;
+
+        // Mining score: reward for mining through obstacles
+        let mining_score = creature.blocks_mined as f32 * self.mining_points;
 
         // Calculate movement vector
         let movement = creature.position - spawn_pos;
@@ -285,7 +306,8 @@ impl FitnessFunction for DirectionalFoodFitness {
         // Combined fitness
         // - Food is king (high points)
         // - Directional movement provides gradient signal
-        let total = food_score + direction_score;
+        // - Mining rewards breaking through obstacles
+        let total = food_score + direction_score + mining_score;
 
         // Ensure non-negative fitness
         total.max(0.0)

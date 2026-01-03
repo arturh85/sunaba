@@ -43,11 +43,11 @@ impl PixelRenderer {
         let min_x = (center.x - half_width).floor() as i32;
         let min_y = (center.y - half_height).floor() as i32;
 
-        // Clear buffer to sky color
+        // Clear buffer to black background (better visibility for training GIFs)
         for pixel in self.buffer.chunks_exact_mut(4) {
-            pixel[0] = 135; // R - sky blue
-            pixel[1] = 206; // G
-            pixel[2] = 235; // B
+            pixel[0] = 0; // R - black
+            pixel[1] = 0; // G
+            pixel[2] = 0; // B
             pixel[3] = 255; // A
         }
 

@@ -10,6 +10,10 @@ start:
 load:
     cargo run -p sunaba --bin sunaba --release
 
+# Run with puffin profiling enabled (F3 to toggle profiler)
+profile:
+    cargo run -p sunaba --bin sunaba --release --features profiling
+
 test: fmt clippy
     cargo test --workspace --quiet
     cargo build --workspace --release
