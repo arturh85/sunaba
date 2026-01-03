@@ -98,8 +98,8 @@ Function A (file.rs:123)
 ## Next Steps
 
 Create experiments for proposed solutions:
-1. [ ] `/research new "[solution A description]"`
-2. [ ] `/research new "[solution B description]"`
+1. [ ] `/research "[solution A description]"`
+2. [ ] `/research "[solution B description]"`
 
 ## Artifacts
 
