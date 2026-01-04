@@ -39,6 +39,28 @@ pub fn load_or_create_chunk(
     // Generate new
     log::debug!("Generating chunk ({}, {})", chunk_x, chunk_y);
     world.generate_chunk(pos);
+
+    // CRITICAL FIX: Save newly generated chunk to database immediately
+    // Without this, chunks exist only in server memory and aren't synced to clients
+    if let Some(chunk) = world.get_chunk(chunk_x, chunk_y) {
+        let pixel_data =
+            encoding::encode_chunk(chunk).expect("Failed to encode newly generated chunk");
+
+        ctx.db.chunk_data().insert(ChunkData {
+            id: 0, // auto_inc
+            x: chunk_x,
+            y: chunk_y,
+            pixel_data,
+            dirty: false,
+            last_modified_tick: 0,
+        });
+
+        log::debug!(
+            "Saved newly generated chunk ({}, {}) to DB",
+            chunk_x,
+            chunk_y
+        );
+    }
 }
 
 /// Sync dirty chunks from World to database
@@ -130,4 +152,25 @@ pub fn update_player_physics(ctx: &ReducerContext, player: Player, delta_time: f
         vel_y,
         ..player
     });
+}
+
+// ============================================================================
+// Admin Authentication Helpers
+// ============================================================================
+
+/// Check if sender is an admin
+pub fn is_admin(ctx: &ReducerContext) -> bool {
+    use crate::tables::admin_user;
+    ctx.db.admin_user().identity().find(ctx.sender).is_some()
+}
+
+/// Require admin status or return early (macro)
+#[macro_export]
+macro_rules! require_admin {
+    ($ctx:expr) => {
+        if !$crate::helpers::is_admin($ctx) {
+            log::warn!("Admin action denied for {:?}", $ctx.sender);
+            return;
+        }
+    };
 }

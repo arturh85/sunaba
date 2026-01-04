@@ -1,6 +1,6 @@
 //! Scheduled tick reducers for world simulation, creature AI, and settlement
 
-use glam::Vec2;
+use glam::{IVec2, Vec2};
 use spacetimedb::{ReducerContext, Table};
 use std::time::Duration;
 
@@ -63,15 +63,34 @@ pub fn world_tick(ctx: &ReducerContext, _arg: WorldTickTimer) {
     let online_players: Vec<Player> = ctx.db.player().iter().filter(|p| p.online).collect();
 
     // Load 7x7 chunks around each player
+    let mut chunks_loaded_this_tick = 0;
     for player in &online_players {
         let chunk_x = (player.x as i32).div_euclid(64);
         let chunk_y = (player.y as i32).div_euclid(64);
 
+        let chunks_before = world.active_chunks().count();
         for dy in -3..=3 {
             for dx in -3..=3 {
                 load_or_create_chunk(ctx, world, chunk_x + dx, chunk_y + dy);
             }
         }
+        let chunks_after = world.active_chunks().count();
+        chunks_loaded_this_tick += chunks_after - chunks_before;
+    }
+
+    // Log statistics periodically (every 60 ticks = ~1 second at 60fps)
+    if new_tick_count % 60 == 0 && !online_players.is_empty() {
+        log::info!(
+            "[TICK {}] {} online players, {} chunks in memory{}",
+            new_tick_count,
+            online_players.len(),
+            world.active_chunks().count(),
+            if chunks_loaded_this_tick > 0 {
+                format!(" (+{} new)", chunks_loaded_this_tick)
+            } else {
+                String::new()
+            }
+        );
     }
 
     // Run simulation (World::update uses dirty chunk optimization internally)
@@ -83,9 +102,26 @@ pub fn world_tick(ctx: &ReducerContext, _arg: WorldTickTimer) {
     // Sync ONLY dirty chunks to database
     sync_dirty_chunks_to_db(ctx, world, config.tick_count);
 
-    // Update players
+    // Update players (only if their chunk is loaded)
     for player in online_players {
-        update_player_physics(ctx, player, delta_time);
+        let chunk_x = (player.x as i32).div_euclid(64);
+        let chunk_y = (player.y as i32).div_euclid(64);
+
+        // Check if player's current chunk is loaded
+        let player_chunk_loaded = world.has_chunk(IVec2::new(chunk_x, chunk_y));
+
+        if player_chunk_loaded {
+            // Only run physics if player's chunk exists
+            update_player_physics(ctx, player, delta_time);
+        } else {
+            log::debug!(
+                "Skipping physics for player at ({:.0}, {:.0}) - chunk ({}, {}) not loaded yet",
+                player.x,
+                player.y,
+                chunk_x,
+                chunk_y
+            );
+        }
     }
 
     // Collect server metrics every 10th tick (6fps sampling)

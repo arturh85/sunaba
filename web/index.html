@@ -245,13 +245,25 @@
             mineMaterial,
             isConnected,
             requestPing,
-            getLatestServerMetrics
+            getLatestServerMetrics,
+            claimAdmin,
+            rebuildWorld
         } from './js/spacetime_bridge.js';
+
+        // Import OAuth functions
+        import {
+            initiateOAuthLogin,
+            handleOAuthCallback,
+            getStoredIdToken,
+            clearStoredTokens,
+            parseJWT
+        } from './js/oauth.js';
 
         // Expose spacetimeClient to global scope for WASM to call
         window.spacetimeClient = {
             connect: async (host, dbName) => {
-                await connectSpacetime(host, dbName);
+                const token = getStoredIdToken();
+                await connectSpacetime(host, dbName, token);
             },
             subscribeWorld: async () => {
                 await subscribeWorld();
@@ -273,13 +285,34 @@
             },
             getLatestServerMetrics: () => {
                 return getLatestServerMetrics();
+            },
+            claimAdmin: async (email) => {
+                await claimAdmin(email);
+            },
+            rebuildWorld: async () => {
+                await rebuildWorld();
             }
+        };
+
+        // Expose OAuth client to global scope for WASM to call
+        window.oauthClient = {
+            login: async () => await initiateOAuthLogin(),
+            getToken: () => getStoredIdToken(),
+            clearTokens: () => clearStoredTokens(),
+            parseToken: (token) => parseJWT(token),
         };
 
         console.log('[Sunaba] SpacetimeDB client bridge initialized');
 
         async function init() {
             try {
+                // Handle OAuth callback FIRST (before WebGPU/WASM)
+                const token = await handleOAuthCallback();
+                if (token) {
+                    const claims = parseJWT(token);
+                    console.log('[Sunaba] Logged in as:', claims.email);
+                }
+
                 // Check for WebGPU support
                 if (!navigator.gpu) {
                     throw new Error('WebGPU is not supported in this browser. Please use Chrome 113+, Edge 113+, or enable WebGPU in your browser flags.');

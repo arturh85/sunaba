@@ -40,6 +40,26 @@ extern "C" {
     /// Get latest server metrics from JavaScript cache
     #[wasm_bindgen(js_namespace = ["window", "spacetimeClient"], js_name = "getLatestServerMetrics")]
     fn js_get_latest_server_metrics() -> JsValue;
+
+    // OAuth bindings
+    #[wasm_bindgen(js_namespace = ["window", "oauthClient"], js_name = "login", catch)]
+    async fn js_oauth_login() -> Result<(), JsValue>;
+
+    #[wasm_bindgen(js_namespace = ["window", "oauthClient"], js_name = "getToken")]
+    fn js_oauth_get_token() -> JsValue;
+
+    #[wasm_bindgen(js_namespace = ["window", "oauthClient"], js_name = "clearTokens")]
+    fn js_oauth_clear_tokens();
+
+    #[wasm_bindgen(js_namespace = ["window", "oauthClient"], js_name = "parseToken")]
+    fn js_oauth_parse_token(token: &str) -> JsValue;
+
+    // Admin action bindings
+    #[wasm_bindgen(js_namespace = ["window", "spacetimeClient"], js_name = "claimAdmin", catch)]
+    async fn js_claim_admin(email: &str) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(js_namespace = ["window", "spacetimeClient"], js_name = "rebuildWorld", catch)]
+    async fn js_rebuild_world() -> Result<(), JsValue>;
 }
 
 /// Server performance metrics (matches server schema)
@@ -98,6 +118,40 @@ impl ServerMetrics {
             dirty_chunks_synced: get_u32("dirty_chunks_synced")?,
             online_players: get_u32("online_players")?,
             creatures_alive: get_u32("creatures_alive")?,
+        })
+    }
+}
+
+/// OAuth email claims parsed from JWT
+#[derive(Debug, Clone)]
+pub struct OAuthClaims {
+    pub email: Option<String>,
+    pub name: Option<String>,
+}
+
+impl OAuthClaims {
+    pub fn from_token_string(token: &str) -> Option<Self> {
+        let parsed = js_oauth_parse_token(token);
+        Self::from_js_value(parsed)
+    }
+
+    fn from_js_value(val: JsValue) -> Option<Self> {
+        if val.is_null() || val.is_undefined() {
+            return None;
+        }
+
+        use wasm_bindgen::JsCast;
+        let obj = val.dyn_into::<js_sys::Object>().ok()?;
+
+        let get_string = |key: &str| -> Option<String> {
+            js_sys::Reflect::get(&obj, &JsValue::from_str(key))
+                .ok()?
+                .as_string()
+        };
+
+        Some(Self {
+            email: get_string("email"),
+            name: get_string("name"),
         })
     }
 }
@@ -230,6 +284,54 @@ impl MultiplayerClient {
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
         log::info!("Disconnecting from SpacetimeDB (JS SDK)");
         self.connected = false;
+        Ok(())
+    }
+
+    /// Initiate OAuth login (redirects to Google)
+    pub async fn oauth_login(&self) -> anyhow::Result<()> {
+        js_oauth_login()
+            .await
+            .map_err(|e| anyhow::anyhow!("OAuth login failed: {:?}", e))?;
+        Ok(())
+    }
+
+    /// Get stored OAuth token
+    pub fn get_oauth_token(&self) -> Option<String> {
+        js_oauth_get_token().as_string()
+    }
+
+    /// Get OAuth claims from stored token
+    pub fn get_oauth_claims(&self) -> Option<OAuthClaims> {
+        let token = self.get_oauth_token()?;
+        OAuthClaims::from_token_string(&token)
+    }
+
+    /// Clear OAuth tokens (logout)
+    pub fn oauth_logout(&self) {
+        js_oauth_clear_tokens();
+    }
+
+    /// Claim admin status (sends email to server for whitelist validation)
+    pub async fn claim_admin(&self, email: String) -> anyhow::Result<()> {
+        if !self.connected {
+            anyhow::bail!("Not connected to server");
+        }
+
+        js_claim_admin(&email)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to claim admin: {:?}", e))?;
+        Ok(())
+    }
+
+    /// Rebuild world (admin only - clears all chunks and resets world)
+    pub async fn rebuild_world(&self) -> anyhow::Result<()> {
+        if !self.connected {
+            anyhow::bail!("Not connected to server");
+        }
+
+        js_rebuild_world()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to rebuild world: {:?}", e))?;
         Ok(())
     }
 }

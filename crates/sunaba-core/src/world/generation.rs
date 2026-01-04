@@ -168,17 +168,6 @@ impl WorldGenerator {
 
     /// Determine material at a world coordinate using biome-based generation
     fn get_material_at(&self, world_x: i32, world_y: i32) -> u16 {
-        // DEBUG: Log first pixel of each chunk
-        let is_chunk_origin =
-            (world_x % CHUNK_SIZE as i32 == 0) && (world_y % CHUNK_SIZE as i32 == 0);
-        if is_chunk_origin {
-            log::trace!(
-                "[TERRAIN_DEBUG] Generating pixel at ({}, {})",
-                world_x,
-                world_y
-            );
-        }
-
         // Bedrock layer (indestructible floor)
         if world_y <= BEDROCK_Y {
             return MaterialId::BEDROCK;
@@ -188,21 +177,6 @@ impl WorldGenerator {
         let temperature = self.temperature_noise.get([world_x as f64, 0.0]);
         let moisture = self.moisture_noise.get([world_x as f64, 0.0]);
 
-        // DEBUG: Check noise values
-        if is_chunk_origin {
-            log::trace!(
-                "[TERRAIN_DEBUG]   noise: temp={:.3}, moist={:.3}",
-                temperature,
-                moisture
-            );
-            if temperature.is_nan() || temperature.is_infinite() {
-                log::error!("[TERRAIN_DEBUG]   ERROR: temperature is NaN/Inf!");
-            }
-            if moisture.is_nan() || moisture.is_infinite() {
-                log::error!("[TERRAIN_DEBUG]   ERROR: moisture is NaN/Inf!");
-            }
-        }
-
         let biome_type = select_biome(temperature, moisture);
         let biome = self.biome_registry.get(biome_type);
 
@@ -211,17 +185,6 @@ impl WorldGenerator {
         // Apply biome-specific height variance and offset
         let height_variation = (terrain_height_value * 100.0 * biome.height_variance as f64) as i32;
         let terrain_y = SURFACE_Y + biome.height_offset + height_variation;
-
-        // DEBUG: Log terrain calculation
-        if is_chunk_origin {
-            log::trace!(
-                "[TERRAIN_DEBUG]   biome={:?}, terrain_y={}, world_y={}, depth={}",
-                biome_type,
-                terrain_y,
-                world_y,
-                terrain_y - world_y
-            );
-        }
 
         // Step 3: Handle ocean biome specially
         if biome_type == BiomeType::Ocean {

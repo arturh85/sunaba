@@ -5,7 +5,7 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 export RUST_LOG := "info"
 
 start:
-    cargo run -p sunaba --bin sunaba --release -- --regenerate
+    cargo run -p sunaba --bin sunaba --release --features multiplayer_native -- --regenerate
 
 load:
     cargo run -p sunaba --bin sunaba --release

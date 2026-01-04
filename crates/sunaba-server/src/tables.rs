@@ -1,6 +1,6 @@
 //! SpacetimeDB table definitions for Sunaba multiplayer server
 
-use spacetimedb::{Identity, ScheduleAt};
+use spacetimedb::{Identity, ScheduleAt, Timestamp};
 
 // Import reducer functions for scheduled tables
 use crate::reducers::{creature_tick, settle_world_tick, world_tick};
@@ -168,4 +168,18 @@ pub struct SettleTickTimer {
     #[auto_inc]
     pub id: u64,
     pub scheduled_at: ScheduleAt,
+}
+
+// ============================================================================
+// Admin Tables
+// ============================================================================
+
+/// Admin users (granted based on email whitelist from environment variable)
+#[spacetimedb::table(name = admin_user, public)]
+pub struct AdminUser {
+    #[primary_key]
+    pub identity: Identity,
+    pub email: String,
+    pub granted_at: Timestamp,
+    pub last_seen: Timestamp,
 }

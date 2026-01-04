@@ -16,7 +16,7 @@ let latestServerMetrics = null;
  * @param {string} dbName - Database/module name
  * @returns {Promise<void>}
  */
-export async function connectSpacetime(host, dbName) {
+export async function connectSpacetime(host, dbName, authToken = null) {
     try {
         console.log(`[SpacetimeDB] Connecting to ${host}/${dbName}...`);
 
@@ -25,8 +25,13 @@ export async function connectSpacetime(host, dbName) {
         // and bundle it, or use a CDN link in index.html
         const { SpacetimeDBClient } = await import('@clockworklabs/spacetimedb-sdk');
 
-        // Create client instance
-        spacetimeClient = new SpacetimeDBClient(host, dbName);
+        // Create client with optional token
+        if (authToken) {
+            console.log('[SpacetimeDB] Connecting with OAuth token');
+            spacetimeClient = new SpacetimeDBClient(host, dbName, authToken);
+        } else {
+            spacetimeClient = new SpacetimeDBClient(host, dbName);
+        }
 
         // Connect to the server
         await spacetimeClient.connect();
@@ -218,4 +223,42 @@ export async function requestPing(timestampMs) {
  */
 export function getLatestServerMetrics() {
     return latestServerMetrics;
+}
+
+/**
+ * Claim admin status (sends email to server for whitelist validation)
+ * @param {string} email - User's email address from OAuth token
+ * @returns {Promise<void>}
+ */
+export async function claimAdmin(email) {
+    if (!spacetimeClient) {
+        throw new Error('Not connected to SpacetimeDB');
+    }
+
+    try {
+        console.log('[SpacetimeDB] Claiming admin status:', email);
+        await spacetimeClient.call('claim_admin', email);
+    } catch (error) {
+        console.error('[SpacetimeDB] Failed to claim admin:', error);
+        throw error;
+    }
+}
+
+/**
+ * Rebuild world (admin only - clears all chunks and resets world)
+ * @returns {Promise<void>}
+ */
+export async function rebuildWorld() {
+    if (!spacetimeClient) {
+        throw new Error('Not connected to SpacetimeDB');
+    }
+
+    try {
+        console.log('[SpacetimeDB] Requesting world rebuild...');
+        await spacetimeClient.call('rebuild_world');
+        console.log('[SpacetimeDB] World rebuild complete');
+    } catch (error) {
+        console.error('[SpacetimeDB] Failed to rebuild world:', error);
+        throw error;
+    }
 }

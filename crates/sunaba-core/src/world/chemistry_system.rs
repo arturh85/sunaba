@@ -197,7 +197,6 @@ impl ChemistrySystem {
     pub fn check_pixel_reactions<R: WorldRng>(
         chunks: &mut HashMap<IVec2, Chunk>,
         reactions: &ReactionRegistry,
-        _materials: &Materials,
         chunk_pos: IVec2,
         x: usize,
         y: usize,

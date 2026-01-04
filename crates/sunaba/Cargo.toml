@@ -17,7 +17,18 @@ default = ["native", "profiling"]
 native = []
 headless = []
 multiplayer = []                                    # Parent feature for all multiplayer functionality
-multiplayer_native = ["multiplayer", "spacetimedb-sdk"]  # Rust SDK for native builds (depends on multiplayer)
+multiplayer_native = [
+    "multiplayer",
+    "spacetimedb-sdk",
+    "ureq",
+    "tiny_http",
+    "webbrowser",
+    "urlencoding",
+    "dirs",
+    "base64",
+    "sha2",
+    "serde_json"
+]  # Rust SDK + OAuth for native builds (depends on multiplayer)
 multiplayer_wasm = ["multiplayer"]                       # TypeScript SDK via JS for WASM builds (depends on multiplayer)
 profiling = ["puffin", "puffin_egui", "sunaba-core/profiling"]
 
@@ -71,6 +82,16 @@ indicatif = "0.17"
 puffin = { git = "https://github.com/blip-radar/puffin.git", branch = "egui-0.33", optional = true }
 puffin_egui = { git = "https://github.com/blip-radar/puffin.git", branch = "egui-0.33", optional = true }
 spacetimedb-sdk = { version = "1.0", optional = true }  # Rust SDK for native multiplayer
+
+# OAuth dependencies (native only) - lightweight versions
+ureq = { version = "2.10", features = ["json"], optional = true }  # Synchronous HTTP client (~100KB vs reqwest 1MB+)
+tiny_http = { version = "0.12", optional = true }
+webbrowser = { version = "1.0", optional = true }
+urlencoding = { version = "2.1", optional = true }
+dirs = { version = "5.0", optional = true }
+base64 = { version = "0.22", optional = true }
+sha2 = { version = "0.10", optional = true }
+serde_json = { version = "1.0", optional = true }  # Used for manual JWT parsing (lighter than jsonwebtoken)
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

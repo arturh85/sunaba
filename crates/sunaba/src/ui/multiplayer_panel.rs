@@ -10,7 +10,7 @@ use crate::config::MultiplayerConfig;
 #[cfg(feature = "multiplayer")]
 use crate::multiplayer::metrics::MultiplayerMetrics;
 #[cfg(feature = "multiplayer")]
-use crate::multiplayer::{MultiplayerManager, MultiplayerState};
+use crate::multiplayer::{MultiplayerManager, MultiplayerState, OAuthClaims};
 
 /// UI state for the multiplayer panel
 #[cfg(feature = "multiplayer")]
@@ -26,6 +26,18 @@ pub struct MultiplayerPanelState {
     pub disconnect_requested: bool,
     /// Flag: cancel connection/reconnection requested
     pub cancel_requested: bool,
+
+    // OAuth state
+    /// Flag: OAuth login requested
+    pub oauth_login_requested: bool,
+    /// Flag: OAuth logout requested
+    pub oauth_logout_requested: bool,
+    /// Cached OAuth claims (available on both native and WASM)
+    pub oauth_claims: Option<OAuthClaims>,
+
+    // Admin actions
+    /// Flag: rebuild world requested
+    pub rebuild_world_requested: bool,
 }
 
 #[cfg(feature = "multiplayer")]
@@ -39,6 +51,9 @@ impl MultiplayerPanelState {
         self.connect_requested = None;
         self.disconnect_requested = false;
         self.cancel_requested = false;
+        self.oauth_login_requested = false;
+        self.oauth_logout_requested = false;
+        self.rebuild_world_requested = false;
     }
 }
 
@@ -58,7 +73,8 @@ pub fn render_multiplayer_panel(
             render_connecting_ui(ui, server_url, panel_state);
         }
         MultiplayerState::Connected { server_url } => {
-            render_connected_ui(ui, server_url, metrics, panel_state);
+            let chunk_progress = manager.chunk_load_progress();
+            render_connected_ui(ui, server_url, metrics, chunk_progress, panel_state);
         }
         MultiplayerState::Reconnecting {
             server_url,
@@ -85,6 +101,27 @@ fn render_disconnected_ui(
 ) {
     ui.heading("Multiplayer Server");
     ui.add_space(10.0);
+
+    // OAuth login section (available on both native and WASM)
+    ui.horizontal(|ui| {
+        if let Some(ref claims) = state.oauth_claims {
+            let email = claims
+                .email
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or("Unknown");
+            ui.label(format!("Logged in: {}", email));
+            if ui.button("Logout").clicked() {
+                state.oauth_logout_requested = true;
+            }
+        } else {
+            ui.label("Not logged in (anonymous)");
+            if ui.button("Login with Google").clicked() {
+                state.oauth_login_requested = true;
+            }
+        }
+    });
+    ui.separator();
 
     ui.label("Select a server to connect:");
     ui.add_space(5.0);
@@ -181,13 +218,51 @@ fn render_connected_ui(
     ui: &mut Ui,
     server_url: &str,
     metrics: Option<&MultiplayerMetrics>,
+    chunk_progress: Option<(usize, usize)>,
     state: &mut MultiplayerPanelState,
 ) {
     ui.horizontal(|ui| {
         ui.heading("Connected");
         ui.label("|");
         ui.label(server_url);
+
+        // Admin badge (available on both native and WASM)
+        if state.oauth_claims.is_some() {
+            ui.label("|");
+            ui.colored_label(Color32::GOLD, "🛡 Admin");
+        }
     });
+
+    ui.add_space(5.0);
+
+    // Show chunk loading progress if not complete
+    if let Some((loaded, total)) = chunk_progress {
+        if loaded < total {
+            let percent = (loaded as f32 / total as f32) * 100.0;
+            ui.label(format!(
+                "Loading chunks: {}/{} ({:.0}%)",
+                loaded, total, percent
+            ));
+            ui.add(egui::ProgressBar::new(loaded as f32 / total as f32).show_percentage());
+            ui.add_space(5.0);
+        } else {
+            ui.label("✓ Chunks loaded");
+            ui.add_space(5.0);
+        }
+    }
+
+    // Admin actions section (available on both native and WASM)
+    if state.oauth_claims.is_some() {
+        ui.separator();
+        ui.heading("Admin Actions");
+
+        if ui.button("🔄 Rebuild World").clicked() {
+            state.rebuild_world_requested = true;
+        }
+        ui.label("Clears all chunks and resets world state");
+
+        ui.separator();
+    }
 
     ui.add_space(5.0);
 

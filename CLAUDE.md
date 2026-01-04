@@ -180,6 +180,115 @@ When you modify `crates/sunaba-server/src/` (add/remove/modify tables in tables.
 ✅ **DO:** Test both native and WASM builds after schema changes
 ✅ **DO:** Let generated clients handle all type safety automatically
 
+### SpacetimeDB Subscription Best Practices
+
+**CRITICAL:** SpacetimeDB subscriptions have specific SQL limitations and performance characteristics that require careful query design.
+
+#### SQL Limitations
+
+SpacetimeDB's SQL WHERE clauses have limited functionality:
+
+- ❌ **No subqueries**: Cannot use `WHERE x = (SELECT chunk_x FROM player ...)`
+- ❌ **No arithmetic in WHERE**: Cannot use `ABS(x - player.x) <= 10`
+- ❌ **No functions in WHERE**: Cannot use `ABS()`, `SQRT()`, `POW()`, etc.
+- ✅ **Use BETWEEN for ranges**: `WHERE x BETWEEN -10 AND 10 AND y BETWEEN -10 AND 10`
+- ✅ **Basic comparisons only**: `=`, `<`, `>`, `<=`, `>=`, `!=`, `<>`
+
+**Example:**
+```rust
+// ❌ WRONG - Uses ABS() function
+subscribe("SELECT * FROM chunk_data WHERE ABS(x) <= 10 AND ABS(y) <= 10");
+
+// ✅ CORRECT - Uses BETWEEN
+subscribe("SELECT * FROM chunk_data WHERE x BETWEEN -10 AND 10 AND y BETWEEN -10 AND 10");
+
+// ❌ WRONG - No subqueries or arithmetic
+subscribe("SELECT * FROM chunk_data WHERE x = (SELECT chunk_x FROM player WHERE id = me)");
+
+// ✅ CORRECT - Client-side filtering or re-subscription
+let center = get_player_chunk_pos();
+subscribe(&format!(
+    "SELECT * FROM chunk_data WHERE x BETWEEN {} AND {} AND y BETWEEN {} AND {}",
+    center.x - 10, center.x + 10, center.y - 10, center.y + 10
+));
+```
+
+#### Subscription Management
+
+**Zero-copy subscriptions:** Same query subscribed multiple times has no overhead (SpacetimeDB deduplicates internally)
+
+**Overlapping queries have overhead:** Different queries with overlapping data cause server to process/serialize rows multiple times
+
+**Update pattern:** Always unsubscribe → subscribe to minimize overlap
+
+```rust
+// ✅ CORRECT - Minimize overlap by unsubscribing first
+if let Some(old_sub) = self.chunk_subscription.take() {
+    old_sub.unsubscribe();  // Unsubscribe first
+}
+let new_sub = conn.subscribe("SELECT * FROM ..."); // Then subscribe
+self.chunk_subscription = Some(new_sub);
+
+// ❌ WRONG - Subscribe before unsubscribe causes overlap
+let new_sub = conn.subscribe("SELECT * FROM ...");
+if let Some(old_sub) = self.chunk_subscription.take() {
+    old_sub.unsubscribe();  // Too late - overlap already happened
+}
+```
+
+**Brief gaps are OK:** Chunks remain in client world during re-subscription, only subscription cache updates
+
+#### Dynamic Filtering Workarounds
+
+Since SpacetimeDB doesn't support dynamic WHERE clauses based on other table values:
+
+1. **Client-side filtering**: Subscribe to large area, filter progressively on client
+2. **Re-subscription**: Periodically re-subscribe with new center when player moves
+3. **Rate limiting**: Control sync rate to avoid frame drops (2-3 items per frame)
+
+**Example progressive loading pattern:**
+```rust
+// 1. Initial subscription: small radius for fast spawn
+subscribe("SELECT * FROM chunk_data WHERE x BETWEEN -3 AND 3 AND y BETWEEN -3 AND 3");
+
+// 2. After spawn loads: expand to larger radius
+unsubscribe_old();
+subscribe("SELECT * FROM chunk_data WHERE x BETWEEN -10 AND 10 AND y BETWEEN -10 AND 10");
+
+// 3. When player moves >8 chunks: re-subscribe with new center
+let new_center = player_chunk_pos;
+subscribe(&format!(
+    "SELECT * FROM chunk_data WHERE x BETWEEN {} AND {} AND y BETWEEN {} AND {}",
+    new_center.x - 10, new_center.x + 10,
+    new_center.y - 10, new_center.y + 10
+));
+```
+
+#### Performance Tips
+
+- **Start small**: Begin with small subscription for fast initial load (e.g., 3-chunk radius = 49 chunks)
+- **Expand progressively**: Expand to larger subscription after critical data loaded (e.g., 10-chunk radius = 441 chunks)
+- **Re-subscribe on movement**: Re-subscribe when player moves far from subscription center (>8 chunks for 10-radius subscription)
+- **Use eviction**: Keep memory usage bounded by unloading distant chunks
+- **Rate-limit client sync**: Process 2-3 chunks per frame to avoid frame drops
+
+**Example implementation:**
+```rust
+// Fast initial load: 49 chunks (7x7 grid) loads in <1 second
+subscribe("WHERE x BETWEEN -3 AND 3 AND y BETWEEN -3 AND 3");
+
+// Progressive expansion: Stream remaining 392 chunks in background
+// Use spiral iterator + ChunkLoadQueue for rate-limited loading
+
+// Dynamic re-subscription: Update center as player explores
+if player_moved_far {
+    resubscribe_chunks(new_center, radius);  // Unsubscribe → subscribe pattern
+}
+
+// Memory management: Evict chunks >10 from player
+world.evict_distant_chunks(player_pos);
+```
+
 ## Workspace Structure
 
 sunaba is organized as a Cargo workspace with 5 crates:

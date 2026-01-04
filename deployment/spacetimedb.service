@@ -29,6 +29,10 @@ WorkingDirectory=%h/spacetimedb
 # Create data directory if it doesn't exist (run manually first time)
 # mkdir -p ~/spacetimedb
 
+# Admin whitelist (comma-separated email list for admin access)
+# Uncomment and set to enable admin-only features
+# Environment="SUNABA_ADMIN_EMAILS=your.email@gmail.com,friend@gmail.com"
+
 # Start SpacetimeDB listening on all interfaces
 # Port 3000 for HTTP + WebSocket connections
 ExecStart=/usr/local/bin/spacetime start --listen-addr=0.0.0.0:3000

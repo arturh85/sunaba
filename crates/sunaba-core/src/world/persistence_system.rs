@@ -187,21 +187,8 @@ impl PersistenceSystem {
             persistence.load_chunk(chunk_x, chunk_y, &self.generator)
         } else {
             // Ephemeral mode: use generator without saving to disk
-            log::debug!(
-                "[GEN] Ephemeral mode: generating chunk ({}, {}) without persistence",
-                chunk_x,
-                chunk_y
-            );
             self.generator.generate_chunk(chunk_x, chunk_y)
         };
-
-        let non_air = chunk.count_non_air();
-        log::debug!(
-            "[LOAD] Adding chunk ({}, {}) to world - {} non-air pixels",
-            chunk_x,
-            chunk_y,
-            non_air
-        );
 
         self.add_chunk(chunk_manager, chunk, player_pos);
 

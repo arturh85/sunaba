@@ -11,7 +11,6 @@ anyhow = "1.0"
 bincode-next = { version = "2.0", features = ["serde"] }
 bitflags = "2.4"
 glam = { version = "0.25", features = ["serde"] }
-web-time = "1.1"  # WASM-compatible time (replaces unmaintained instant crate)
 log = "0.4"
 noise = "0.9"
 petgraph = "0.6"

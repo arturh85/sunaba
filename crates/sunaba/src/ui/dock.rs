@@ -67,6 +67,7 @@ impl DockManager {
     #[cfg(target_arch = "wasm32")]
     pub fn new() -> Self {
         // WASM: Stats tab present from start (but can be closed)
+        #[cfg_attr(not(feature = "multiplayer"), allow(unused_mut))]
         let mut tabs = vec![DockTab::Stats];
 
         #[cfg(feature = "multiplayer")]

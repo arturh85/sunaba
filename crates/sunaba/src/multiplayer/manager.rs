@@ -3,7 +3,9 @@
 //! Manages multiplayer connection state, reconnection logic, and world switching.
 
 use super::MultiplayerClient;
+use super::chunk_loader::ChunkLoadQueue;
 use crate::config::MultiplayerConfig;
+use glam::IVec2;
 use web_time::Instant;
 
 /// Multiplayer connection state
@@ -68,6 +70,12 @@ pub struct MultiplayerManager {
 
     /// Track if singleplayer world was saved before connecting
     saved_singleplayer: bool,
+
+    /// Progressive chunk loading queue
+    pub chunk_load_queue: Option<ChunkLoadQueue>,
+
+    /// Subscription center in chunk coordinates (for re-subscription)
+    pub subscription_center: IVec2,
 }
 
 impl MultiplayerManager {
@@ -78,6 +86,8 @@ impl MultiplayerManager {
             state: MultiplayerState::Disconnected,
             config,
             saved_singleplayer: false,
+            chunk_load_queue: None,
+            subscription_center: IVec2::ZERO,
         }
     }
 
@@ -172,5 +182,18 @@ impl MultiplayerManager {
             // Generic fallback
             "Connection failed - Please try again".to_string()
         }
+    }
+
+    /// Get chunk load progress (loaded, total)
+    pub fn chunk_load_progress(&self) -> Option<(usize, usize)> {
+        self.chunk_load_queue.as_ref().map(|q| q.progress())
+    }
+
+    /// Check if progressive chunk loading is complete
+    pub fn is_progressive_load_complete(&self) -> bool {
+        self.chunk_load_queue
+            .as_ref()
+            .map(|q| q.is_complete())
+            .unwrap_or(true)
     }
 }

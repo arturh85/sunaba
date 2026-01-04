@@ -4,8 +4,8 @@ use spacetimedb::{ReducerContext, Table};
 use std::time::Duration;
 
 use crate::tables::{
-    CreatureTickTimer, Player, SettleTickTimer, WorldConfig, WorldTickTimer, creature_tick_timer,
-    player, settle_tick_timer, world_config, world_tick_timer,
+    AdminUser, CreatureTickTimer, Player, SettleTickTimer, WorldConfig, WorldTickTimer, admin_user,
+    creature_tick_timer, player, settle_tick_timer, world_config, world_tick_timer,
 };
 
 // ============================================================================
@@ -47,6 +47,20 @@ pub fn init(ctx: &ReducerContext) {
         scheduled_at: Duration::from_millis(100).into(),
     });
 
+    // Log admin whitelist from environment
+    let admin_emails = std::env::var("SUNABA_ADMIN_EMAILS").unwrap_or_else(|_| String::new());
+
+    if admin_emails.is_empty() {
+        log::warn!("No admin emails configured (set SUNABA_ADMIN_EMAILS)");
+    } else {
+        for email in admin_emails.split(',') {
+            let email = email.trim();
+            if !email.is_empty() {
+                log::info!("Admin whitelist: {}", email);
+            }
+        }
+    }
+
     log::info!("Scheduled reducers initialized");
 }
 
@@ -54,6 +68,17 @@ pub fn init(ctx: &ReducerContext) {
 #[spacetimedb::reducer(client_connected)]
 pub fn client_connected(ctx: &ReducerContext) {
     log::info!("Client connected: {:?}", ctx.sender);
+
+    // Update last seen for existing admin (if they are one)
+    if let Some(existing) = ctx.db.admin_user().identity().find(ctx.sender) {
+        let email = existing.email.clone();
+
+        ctx.db.admin_user().identity().update(AdminUser {
+            last_seen: ctx.timestamp,
+            ..existing
+        });
+        log::info!("Admin reconnected: {}", email);
+    }
 
     // Check if player already exists
     if let Some(player) = ctx.db.player().identity().find(ctx.sender) {

@@ -1,6 +1,6 @@
 //! World - manages chunks and simulation
 
-use glam::IVec2;
+use glam::{IVec2, Vec2};
 use std::collections::HashMap;
 
 use super::ca_update::CellularAutomataUpdater;
@@ -71,7 +71,7 @@ pub struct World {
 }
 
 impl World {
-    pub fn new(skip_initial_creatures: bool) -> Self {
+    pub fn new(#[allow(unused_variables)] skip_initial_creatures: bool) -> Self {
         let mut world = Self {
             chunk_manager: ChunkManager::new(),
             materials: Materials::new(),
@@ -925,6 +925,54 @@ impl World {
         self.chunk_manager.chunks.insert(pos, chunk);
     }
 
+    /// Evict chunks that are far from player position (for multiplayer memory management)
+    ///
+    /// Removes chunks >10 chunks away from player to keep memory usage bounded.
+    /// In multiplayer mode, skips disk save (server is authoritative).
+    /// In singleplayer mode, saves dirty chunks before eviction.
+    pub fn evict_distant_chunks(&mut self, player_pos: Vec2) {
+        let player_chunk = IVec2::new(
+            (player_pos.x as i32).div_euclid(CHUNK_SIZE as i32),
+            (player_pos.y as i32).div_euclid(CHUNK_SIZE as i32),
+        );
+
+        let mut to_evict = Vec::new();
+
+        // Find chunks to evict (>10 chunks from player)
+        for pos in self.chunk_manager.chunks.keys() {
+            let dist = (*pos - player_chunk).abs().max_element();
+
+            if dist > 10 {
+                to_evict.push(*pos);
+            }
+        }
+
+        // Evict chunks
+        for pos in to_evict {
+            if let Some(chunk) = self.chunk_manager.chunks.remove(&pos) {
+                // In singleplayer: save dirty chunks to disk
+                // In multiplayer: skip save (server is authoritative, persistence is disabled)
+                if chunk.dirty
+                    && self.persistence_system.persistence.is_some()
+                    && let Err(e) = self
+                        .persistence_system
+                        .persistence
+                        .as_ref()
+                        .unwrap()
+                        .save_chunk(&chunk)
+                {
+                    log::error!("Failed to save chunk ({}, {}): {}", pos.x, pos.y, e);
+                }
+
+                log::debug!(
+                    "Evicted chunk {:?} (distance {})",
+                    pos,
+                    (pos - player_chunk).abs().max_element()
+                );
+            }
+        }
+    }
+
     /// Generate a single chunk at position (for SpacetimeDB server)
     pub fn generate_chunk(&mut self, pos: IVec2) {
         let chunk = self
@@ -1135,7 +1183,6 @@ impl World {
         ChemistrySystem::check_pixel_reactions(
             &mut self.chunk_manager.chunks,
             &self.reactions,
-            &self.materials,
             chunk_pos,
             x,
             y,

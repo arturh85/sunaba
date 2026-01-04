@@ -13,6 +13,13 @@ use generated::server_metrics_table::ServerMetricsTableAccess;
 use generated::{player_mine, player_place_material, player_update_position};
 use spacetimedb_sdk::{DbContext, Table}; // Trait for connection and table methods
 
+// OAuth imports (native only)
+#[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+use crate::multiplayer::oauth_native::{
+    OAuthClaims, delete_oauth_token as native_delete_token, load_oauth_token as native_load_token,
+    oauth_login as native_oauth_login, parse_jwt_claims, save_oauth_token as native_save_token,
+};
+
 /// SpacetimeDB client wrapper for native multiplayer integration
 pub struct MultiplayerClient {
     /// SpacetimeDB connection (wrapped in Arc<Mutex> for interior mutability)
@@ -50,13 +57,38 @@ impl MultiplayerClient {
             self.db_name
         );
 
+        // Load OAuth token if available (native only)
+        #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+        let token = native_load_token();
+
+        #[cfg(not(all(not(target_arch = "wasm32"), feature = "multiplayer_native")))]
+        let token: Option<String> = None;
+
+        if let Some(ref token) = token {
+            log::info!("[SpacetimeDB] Connecting with OAuth token");
+            // Extract email for logging
+            #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+            if let Ok(claims) = parse_jwt_claims(token) {
+                log::info!("[SpacetimeDB] Authenticated as: {:?}", claims.email);
+            }
+        } else {
+            log::info!("[SpacetimeDB] Connecting anonymously (no OAuth token)");
+        }
+
         // Build connection using generated DbConnection
-        let conn = DbConnection::builder()
+        let mut builder = DbConnection::builder()
             .on_connect(Self::on_connected)
             .on_connect_error(Self::on_connect_error)
             .on_disconnect(Self::on_disconnected)
             .with_uri(&self.host)
-            .with_module_name(&self.db_name)
+            .with_module_name(&self.db_name);
+
+        // Add token if available
+        if let Some(token) = token {
+            builder = builder.with_token(Some(token));
+        }
+
+        let conn = builder
             .build()
             .context("Failed to build SpacetimeDB connection")?;
 
@@ -87,6 +119,10 @@ impl MultiplayerClient {
             .subscribe("SELECT * FROM world_config");
 
         // Subscribe to chunk data with update callbacks
+        // Initial subscription: small radius (3 chunks) for fast spawn load
+        // This gives us a 7x7 grid (49 chunks) instead of larger area
+        // Will be expanded to larger radius after spawn chunks are loaded
+        // Note: Use BETWEEN instead of ABS() - SpacetimeDB doesn't support functions in WHERE
         let _chunk_sub = conn_guard
             .subscription_builder()
             .on_applied(|ctx| {
@@ -95,7 +131,7 @@ impl MultiplayerClient {
                     ctx.db.chunk_data().iter().count()
                 );
             })
-            .subscribe("SELECT * FROM chunk_data");
+            .subscribe("SELECT * FROM chunk_data WHERE x BETWEEN -3 AND 3 AND y BETWEEN -3 AND 3");
 
         // Subscribe to players
         let _player_sub = conn_guard
@@ -193,7 +229,64 @@ impl MultiplayerClient {
         Ok(())
     }
 
-    /// Sync chunks from server cache to local world
+    /// Sync chunks from server cache to local world (progressive loading)
+    ///
+    /// Uses a chunk load queue to rate-limit chunk loading (2-3 chunks per frame).
+    /// Call this in your game loop for progressive, non-blocking chunk streaming.
+    pub fn sync_chunks_progressive(
+        &self,
+        world: &mut sunaba_core::world::World,
+        load_queue: &mut crate::multiplayer::chunk_loader::ChunkLoadQueue,
+    ) -> anyhow::Result<usize> {
+        let conn = self
+            .connection
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Not connected to server"))?;
+
+        let conn_guard = conn.lock().unwrap();
+        let mut synced_count = 0;
+
+        // Get next batch from queue (2-3 chunks)
+        let batch = load_queue.next_batch();
+
+        for pos in batch {
+            // Skip if already loaded in world
+            if world.has_chunk(pos) {
+                load_queue.mark_loaded(pos);
+                continue;
+            }
+
+            // Find chunk in subscribed cache
+            let chunk_row = conn_guard
+                .db
+                .chunk_data()
+                .iter()
+                .find(|c| c.x == pos.x && c.y == pos.y);
+
+            if let Some(chunk_row) = chunk_row {
+                // Decode and insert
+                let Ok(chunk) = crate::encoding::decode_chunk(&chunk_row.pixel_data) else {
+                    log::warn!("Failed to decode chunk ({}, {})", pos.x, pos.y);
+                    continue;
+                };
+
+                world.insert_chunk(pos, chunk);
+                load_queue.mark_loaded(pos);
+                synced_count += 1;
+            }
+            // Note: Don't mark as loaded if not found - chunk may arrive later
+        }
+
+        if synced_count > 0 {
+            log::debug!("Synced {} chunks from server (progressive)", synced_count);
+        }
+
+        Ok(synced_count)
+    }
+
+    /// Sync chunks from server cache to local world (legacy method, loads all at once)
+    ///
+    /// For progressive loading, use `sync_chunks_progressive()` instead.
     pub fn sync_chunks_to_world(
         &self,
         world: &mut sunaba_core::world::World,
@@ -300,6 +393,134 @@ impl MultiplayerClient {
         }
 
         Ok(())
+    }
+
+    // ===== Progressive Chunk Loading Methods =====
+
+    /// Expand chunk subscription from initial small radius to larger radius
+    ///
+    /// Called after initial spawn chunks are loaded to expand the subscription area.
+    /// Note: SpacetimeDB SDK manages subscription lifecycle automatically.
+    pub fn expand_chunk_subscription(
+        &mut self,
+        center: glam::IVec2,
+        radius: i32,
+    ) -> anyhow::Result<()> {
+        log::info!(
+            "Expanding chunk subscription to radius {} around {:?}",
+            radius,
+            center
+        );
+
+        let conn = self
+            .connection
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Not connected to server"))?;
+
+        let conn_guard = conn.lock().unwrap();
+
+        // Subscribe to larger area using BETWEEN (SpacetimeDB doesn't support ABS())
+        // Previous subscription will be automatically managed by SDK
+        let query = format!(
+            "SELECT * FROM chunk_data WHERE x BETWEEN {} AND {} AND y BETWEEN {} AND {}",
+            center.x - radius,
+            center.x + radius,
+            center.y - radius,
+            center.y + radius
+        );
+
+        let _new_sub = conn_guard
+            .subscription_builder()
+            .on_applied(|ctx| {
+                log::info!(
+                    "Expanded chunk subscription applied - {} chunks received",
+                    ctx.db.chunk_data().iter().count()
+                );
+            })
+            .subscribe(query);
+
+        log::info!("Expanded chunk subscription successfully");
+
+        Ok(())
+    }
+
+    /// Re-subscribe to chunks centered around new position (when player moves far)
+    ///
+    /// Called when player moves >8 chunks from subscription center.
+    /// Note: SpacetimeDB SDK manages subscription lifecycle automatically.
+    pub fn resubscribe_chunks(&mut self, center: glam::IVec2, radius: i32) -> anyhow::Result<()> {
+        log::info!(
+            "Re-subscribing chunks around {:?} with radius {}",
+            center,
+            radius
+        );
+
+        let conn = self
+            .connection
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Not connected to server"))?;
+
+        let conn_guard = conn.lock().unwrap();
+
+        // Subscribe to new range centered on player using BETWEEN
+        // Previous subscription will be automatically managed by SDK
+        let query = format!(
+            "SELECT * FROM chunk_data WHERE x BETWEEN {} AND {} AND y BETWEEN {} AND {}",
+            center.x - radius,
+            center.x + radius,
+            center.y - radius,
+            center.y + radius
+        );
+
+        let _new_sub = conn_guard
+            .subscription_builder()
+            .on_applied(|ctx| {
+                log::info!(
+                    "Re-subscribed chunks - {} chunks received",
+                    ctx.db.chunk_data().iter().count()
+                );
+            })
+            .subscribe(query);
+
+        log::info!("Re-subscribed to chunks successfully");
+
+        Ok(())
+    }
+
+    // ===== OAuth Methods (Native Only) =====
+
+    /// Initiate OAuth login flow (native only)
+    /// Opens browser automatically, starts local HTTP server for callback
+    #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+    pub fn oauth_login(&self) -> anyhow::Result<String> {
+        native_oauth_login()
+    }
+
+    /// Save OAuth token to file (native only)
+    #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+    pub fn save_oauth_token(&self, token: &str) -> anyhow::Result<()> {
+        native_save_token(token)
+    }
+
+    /// Load saved OAuth token from file (native only)
+    #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+    pub fn load_oauth_token(&self) -> Option<String> {
+        native_load_token()
+    }
+
+    /// Get OAuth claims from saved token (native only)
+    #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+    pub fn get_oauth_claims(&self) -> Option<OAuthClaims> {
+        let token = self.load_oauth_token()?;
+        parse_jwt_claims(&token).ok()
+    }
+
+    /// Delete OAuth token (logout, native only)
+    #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+    pub fn oauth_logout(&self) {
+        if let Err(e) = native_delete_token() {
+            log::error!("Failed to delete OAuth token: {}", e);
+        }
     }
 
     // Connection lifecycle callbacks

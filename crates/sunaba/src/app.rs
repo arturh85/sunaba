@@ -375,6 +375,16 @@ impl App {
                 // Mark as connected
                 manager.mark_connected(server_url);
 
+                // Initialize progressive chunk loading queue (3 chunks radius initially)
+                manager.chunk_load_queue =
+                    Some(crate::multiplayer::chunk_loader::ChunkLoadQueue::new(
+                        glam::IVec2::ZERO, // Initial center at spawn
+                        10,                // Max radius (will expand after spawn loads)
+                        2,                 // Batch size (2 chunks per frame)
+                    ));
+                manager.subscription_center = glam::IVec2::ZERO;
+                log::info!("Initialized progressive chunk loading (radius 10, batch size 2)");
+
                 // Initialize metrics collector
                 self.ui_state.metrics_collector =
                     Some(crate::multiplayer::metrics::MetricsCollector::new());
@@ -554,12 +564,26 @@ impl App {
         // Process SpacetimeDB messages (native multiplayer only)
         #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer"))]
         {
-            if let Some(manager) = self.multiplayer_manager.as_ref() {
+            if let Some(manager) = self.multiplayer_manager.as_mut() {
                 manager.client.frame_tick();
 
-                // Sync chunks from server to local world for rendering
-                if let Err(e) = manager.client.sync_chunks_to_world(&mut self.world) {
-                    log::error!("Failed to sync chunks from server: {}", e);
+                // Progressive chunk sync with rate limiting (2-3 chunks per frame)
+                if let Some(ref mut queue) = manager.chunk_load_queue {
+                    if let Ok(synced) = manager
+                        .client
+                        .sync_chunks_progressive(&mut self.world, queue)
+                    {
+                        if synced > 0 {
+                            log::debug!("Loaded {} chunks (progressive)", synced);
+                        }
+                    } else {
+                        log::error!("Failed to sync chunks progressively");
+                    }
+                }
+
+                // Evict chunks >10 from player (multiplayer mode)
+                if manager.state.is_connected() {
+                    self.world.evict_distant_chunks(self.world.player.position);
                 }
             }
 
@@ -586,6 +610,15 @@ impl App {
                         "Initial spawn chunks loaded ({}), enabling player rendering",
                         spawn_chunk_positions.len()
                     );
+
+                    // Expand subscription to larger radius now that spawn is loaded
+                    if let Some(manager) = self.multiplayer_manager.as_mut() {
+                        if let Err(e) = manager.client.expand_chunk_subscription(IVec2::ZERO, 10) {
+                            log::error!("Failed to expand chunk subscription: {}", e);
+                        } else {
+                            log::info!("Expanded chunk subscription to radius 10");
+                        }
+                    }
                 } else {
                     // Chunks still loading - throttle logging and check for timeout
                     let now = Instant::now();
@@ -630,6 +663,46 @@ impl App {
                 }
             }
 
+            // Check for re-subscription every 60 frames (~1 second at 60fps)
+            if let Some(manager) = self.multiplayer_manager.as_mut() {
+                use std::sync::atomic::{AtomicU32, Ordering};
+                static RESUB_CHECK_FRAME: AtomicU32 = AtomicU32::new(0);
+                let frame = RESUB_CHECK_FRAME.fetch_add(1, Ordering::Relaxed);
+
+                if frame % 60 == 0 && manager.state.is_connected() {
+                    use glam::IVec2;
+                    let player_chunk = IVec2::new(
+                        (self.world.player.position.x as i32).div_euclid(64),
+                        (self.world.player.position.y as i32).div_euclid(64),
+                    );
+
+                    let distance = (player_chunk - manager.subscription_center)
+                        .abs()
+                        .max_element();
+
+                    if distance > 8 {
+                        log::info!(
+                            "Player moved >8 chunks from subscription center ({:?} -> {:?}, distance {}), re-subscribing",
+                            manager.subscription_center,
+                            player_chunk,
+                            distance
+                        );
+
+                        // Re-subscribe with new center (unsubscribe → subscribe, no reconnection)
+                        if let Err(e) = manager.client.resubscribe_chunks(player_chunk, 10) {
+                            log::error!("Failed to re-subscribe chunks: {}", e);
+                        } else {
+                            // Reset chunk queue with new center
+                            if let Some(ref mut queue) = manager.chunk_load_queue {
+                                queue.reset_center(player_chunk, 10);
+                            }
+                            manager.subscription_center = player_chunk;
+                            log::info!("Re-subscribed to chunks around {:?}", player_chunk);
+                        }
+                    }
+                }
+            }
+
             // Update metrics collector
             if let Some(manager) = self.multiplayer_manager.as_ref() {
                 // Update metrics collector
@@ -667,160 +740,175 @@ impl App {
             }
         }
 
-        // Update player from input
-        self.world.update_player(&self.input_state, 1.0 / 60.0);
-
-        // Send player position to server (multiplayer only)
+        // CRITICAL: Skip ALL game simulation when loading multiplayer chunks
         #[cfg(feature = "multiplayer")]
-        {
-            if let Some(manager) = self.multiplayer_manager.as_ref() {
-                let pos = self.world.player.position;
-                if let Err(e) = manager.client.update_player_position(pos.x, pos.y) {
-                    log::warn!("Failed to send player position to server: {}", e);
-                }
-            }
-        }
+        let is_loading_chunks = self
+            .multiplayer_manager
+            .as_ref()
+            .map(|m| m.state.is_connected() && !self.multiplayer_initial_chunks_loaded)
+            .unwrap_or(false);
+        #[cfg(not(feature = "multiplayer"))]
+        let is_loading_chunks = false;
 
-        // Spawn flight particles when flying (W pressed while airborne)
-        if self.input_state.w_pressed && !self.world.player.grounded {
-            self.particle_system.spawn_flight_burst(
-                self.world.player.position,
-                crate::entity::player::Player::HEIGHT,
-            );
-        }
+        if is_loading_chunks {
+            // Skip player update, world update, input processing
+            // Jump directly to rendering (after world update section)
+        } else {
+            // Normal game loop - update player from input
+            self.world.update_player(&self.input_state, 1.0 / 60.0);
 
-        // Update visual particles
-        self.particle_system.update(1.0 / 60.0);
-
-        // Update camera zoom
-        #[cfg(not(target_arch = "wasm32"))]
-        let (min_zoom, max_zoom) = (self.config.camera.min_zoom, self.config.camera.max_zoom);
-        #[cfg(target_arch = "wasm32")]
-        let (min_zoom, max_zoom) = (MIN_ZOOM, MAX_ZOOM);
-        self.renderer
-            .update_zoom(self.input_state.zoom_delta, min_zoom, max_zoom);
-
-        // Log camera state periodically
-        use std::sync::atomic::{AtomicU32, Ordering};
-        static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
-        let frame = FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
-        if frame.is_multiple_of(600) {
-            // Every 10 seconds at 60fps
-            log::info!(
-                "Frame {}: player_pos={:?}, zoom={:.2}, selected_material={}",
-                frame,
-                self.world.player.position,
-                self.renderer.camera_zoom(),
-                self.input_state.selected_material
-            );
-        }
-
-        // DEBUG: Right-click instant mining circle (for exploration)
-        // Continuously mines while button is held
-        if self.input_state.right_mouse_pressed {
-            let player_pos = self.world.player.position;
-            let center_x = player_pos.x as i32;
-            let center_y = player_pos.y as i32;
-            self.world.debug_mine_circle(center_x, center_y, 16);
-
-            // Send mining action to server (multiplayer only)
+            // Send player position to server (multiplayer only)
             #[cfg(feature = "multiplayer")]
             {
                 if let Some(manager) = self.multiplayer_manager.as_ref() {
-                    if let Err(e) = manager.client.mine(center_x, center_y) {
-                        log::warn!("Failed to send mining action to server: {}", e);
+                    let pos = self.world.player.position;
+                    if let Err(e) = manager.client.update_player_position(pos.x, pos.y) {
+                        log::warn!("Failed to send player position to server: {}", e);
                     }
                 }
             }
 
-            // Spawn dust particles at mining location
-            self.particle_system.spawn_dust_cloud(
-                player_pos,
-                [140, 130, 120, 255], // Generic dusty color
-            );
-        }
+            // Spawn flight particles when flying (W pressed while airborne)
+            if self.input_state.w_pressed && !self.world.player.grounded {
+                self.particle_system.spawn_flight_burst(
+                    self.world.player.position,
+                    crate::entity::player::Player::HEIGHT,
+                );
+            }
 
-        // Placing material from inventory with left mouse button
-        if self.input_state.left_mouse_pressed
-            && let Some((wx, wy)) = self.input_state.mouse_world_pos
-        {
-            let material_id = self.input_state.selected_material;
-            let material_def = self.world.materials.get(material_id);
-            let color = material_def.color;
-            let is_liquid = material_def.material_type == MaterialType::Liquid;
+            // Update visual particles
+            self.particle_system.update(1.0 / 60.0);
 
+            // Update camera zoom
             #[cfg(not(target_arch = "wasm32"))]
-            let brush_size = self.config.debug.brush_size;
+            let (min_zoom, max_zoom) = (self.config.camera.min_zoom, self.config.camera.max_zoom);
             #[cfg(target_arch = "wasm32")]
-            let brush_size = 1; // Default brush size for WASM
+            let (min_zoom, max_zoom) = (MIN_ZOOM, MAX_ZOOM);
+            self.renderer
+                .update_zoom(self.input_state.zoom_delta, min_zoom, max_zoom);
 
-            if self.debug_placement() {
-                self.world
-                    .place_material_debug(wx, wy, material_id, brush_size);
-            } else {
-                self.world
-                    .place_material_from_inventory(wx, wy, material_id, brush_size);
+            // Log camera state periodically
+            use std::sync::atomic::{AtomicU32, Ordering};
+            static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
+            let frame = FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
+            if frame.is_multiple_of(600) {
+                // Every 10 seconds at 60fps
+                log::info!(
+                    "Frame {}: player_pos={:?}, zoom={:.2}, selected_material={}",
+                    frame,
+                    self.world.player.position,
+                    self.renderer.camera_zoom(),
+                    self.input_state.selected_material
+                );
             }
 
-            // Send material placement to server (multiplayer only)
-            #[cfg(feature = "multiplayer")]
-            {
-                if let Some(manager) = self.multiplayer_manager.as_ref() {
-                    if let Err(e) = manager.client.place_material(wx, wy, material_id) {
-                        log::warn!("Failed to send material placement to server: {}", e);
+            // DEBUG: Right-click instant mining circle (for exploration)
+            // Continuously mines while button is held
+            if self.input_state.right_mouse_pressed {
+                let player_pos = self.world.player.position;
+                let center_x = player_pos.x as i32;
+                let center_y = player_pos.y as i32;
+                self.world.debug_mine_circle(center_x, center_y, 16);
+
+                // Send mining action to server (multiplayer only)
+                #[cfg(feature = "multiplayer")]
+                {
+                    if let Some(manager) = self.multiplayer_manager.as_ref() {
+                        if let Err(e) = manager.client.mine(center_x, center_y) {
+                            log::warn!("Failed to send mining action to server: {}", e);
+                        }
                     }
+                }
+
+                // Spawn dust particles at mining location
+                self.particle_system.spawn_dust_cloud(
+                    player_pos,
+                    [140, 130, 120, 255], // Generic dusty color
+                );
+            }
+
+            // Placing material from inventory with left mouse button
+            if self.input_state.left_mouse_pressed
+                && let Some((wx, wy)) = self.input_state.mouse_world_pos
+            {
+                let material_id = self.input_state.selected_material;
+                let material_def = self.world.materials.get(material_id);
+                let color = material_def.color;
+                let is_liquid = material_def.material_type == MaterialType::Liquid;
+
+                #[cfg(not(target_arch = "wasm32"))]
+                let brush_size = self.config.debug.brush_size;
+                #[cfg(target_arch = "wasm32")]
+                let brush_size = 1; // Default brush size for WASM
+
+                if self.debug_placement() {
+                    self.world
+                        .place_material_debug(wx, wy, material_id, brush_size);
+                } else {
+                    self.world
+                        .place_material_from_inventory(wx, wy, material_id, brush_size);
+                }
+
+                // Send material placement to server (multiplayer only)
+                #[cfg(feature = "multiplayer")]
+                {
+                    if let Some(manager) = self.multiplayer_manager.as_ref() {
+                        if let Err(e) = manager.client.place_material(wx, wy, material_id) {
+                            log::warn!("Failed to send material placement to server: {}", e);
+                        }
+                    }
+                }
+
+                // Spawn particles at placement location
+                let pos = Vec2::new(wx as f32, wy as f32);
+                if is_liquid {
+                    self.particle_system.spawn_liquid_splash(pos, color);
+                } else {
+                    self.particle_system.spawn_impact_burst(pos, color);
                 }
             }
 
-            // Spawn particles at placement location
-            let pos = Vec2::new(wx as f32, wy as f32);
-            if is_liquid {
-                self.particle_system.spawn_liquid_splash(pos, color);
-            } else {
-                self.particle_system.spawn_impact_burst(pos, color);
-            }
-        }
+            // Update simulation with timing (disabled when connected to multiplayer - server is authoritative)
+            // Run simulation if: (1) multiplayer disabled, OR (2) multiplayer enabled but disconnected
+            let should_simulate = {
+                #[cfg(feature = "multiplayer")]
+                {
+                    // Only simulate if not connected
+                    self.multiplayer_manager
+                        .as_ref()
+                        .map(|m| !m.state.is_connected())
+                        .unwrap_or(true)
+                }
+                #[cfg(not(feature = "multiplayer"))]
+                {
+                    true
+                }
+            };
 
-        // Update simulation with timing (disabled when connected to multiplayer - server is authoritative)
-        // Run simulation if: (1) multiplayer disabled, OR (2) multiplayer enabled but disconnected
-        let should_simulate = {
-            #[cfg(feature = "multiplayer")]
-            {
-                // Only simulate if not connected
-                self.multiplayer_manager
+            if should_simulate {
+                #[cfg(feature = "profiling")]
+                puffin::profile_scope!("simulation");
+                self.ui_state.stats.begin_sim();
+
+                // Check if connected to multiplayer (redundant check, but kept for clarity)
+                #[cfg(feature = "multiplayer")]
+                let is_multiplayer_connected = self
+                    .multiplayer_manager
                     .as_ref()
-                    .map(|m| !m.state.is_connected())
-                    .unwrap_or(true)
+                    .map(|m| m.state.is_connected())
+                    .unwrap_or(false);
+                #[cfg(not(feature = "multiplayer"))]
+                let is_multiplayer_connected = false;
+
+                self.world.update(
+                    1.0 / 60.0,
+                    &mut self.ui_state.stats,
+                    &mut rand::thread_rng(),
+                    is_multiplayer_connected,
+                );
+                self.ui_state.stats.end_sim();
             }
-            #[cfg(not(feature = "multiplayer"))]
-            {
-                true
-            }
-        };
-
-        if should_simulate {
-            #[cfg(feature = "profiling")]
-            puffin::profile_scope!("simulation");
-            self.ui_state.stats.begin_sim();
-
-            // Check if connected to multiplayer (redundant check, but kept for clarity)
-            #[cfg(feature = "multiplayer")]
-            let is_multiplayer_connected = self
-                .multiplayer_manager
-                .as_ref()
-                .map(|m| m.state.is_connected())
-                .unwrap_or(false);
-            #[cfg(not(feature = "multiplayer"))]
-            let is_multiplayer_connected = false;
-
-            self.world.update(
-                1.0 / 60.0,
-                &mut self.ui_state.stats,
-                &mut rand::thread_rng(),
-                is_multiplayer_connected,
-            );
-            self.ui_state.stats.end_sim();
-        }
+        } // End of game loop - skip when loading chunks
 
         // Collect world stats
         self.ui_state.stats.collect_world_stats(&self.world);
@@ -1012,6 +1100,157 @@ impl App {
                         log::error!("Error during cancel: {}", e);
                     } else {
                         self.ui_state.show_toast("Connection cancelled");
+                    }
+                }
+
+                // Handle OAuth login (both native and WASM)
+                #[cfg(feature = "multiplayer")]
+                if self.ui_state.multiplayer_panel.oauth_login_requested {
+                    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
+                    if let Some(ref mp_manager) = self.multiplayer_manager {
+                        // WASM: async OAuth via JavaScript
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            let client = mp_manager.client.clone();
+                            wasm_bindgen_futures::spawn_local(async move {
+                                if let Err(e) = client.oauth_login().await {
+                                    log::error!("OAuth login failed: {}", e);
+                                }
+                            });
+                        }
+
+                        // Native: blocking OAuth in background thread
+                        // TODO: Re-enable OAuth once we refactor to not require cloning the client
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            log::warn!("OAuth login temporarily disabled - needs refactoring");
+                            self.ui_state.show_toast("OAuth temporarily disabled");
+                            // let client = mp_manager.client.clone();
+                            // std::thread::spawn(move || match client.oauth_login() {
+                            //     Ok(token) => {
+                            //         if let Err(e) = client.save_oauth_token(&token) {
+                            //             log::error!("Failed to save OAuth token: {}", e);
+                            //         } else {
+                            //             log::info!("OAuth login successful");
+                            //         }
+                            //     }
+                            //     Err(e) => log::error!("OAuth login failed: {}", e),
+                            // });
+                            // self.ui_state
+                            //     .show_toast("Opening browser for Google login...");
+                        }
+                    }
+                }
+
+                // Handle OAuth logout (both native and WASM)
+                #[cfg(feature = "multiplayer")]
+                if self.ui_state.multiplayer_panel.oauth_logout_requested {
+                    if let Some(ref mp_manager) = self.multiplayer_manager {
+                        mp_manager.client.oauth_logout();
+                        self.ui_state.multiplayer_panel.oauth_claims = None;
+                        self.ui_state.show_toast("Logged out");
+                    }
+                }
+
+                // Update cached OAuth claims and claim admin status (both native and WASM)
+                #[cfg(feature = "multiplayer")]
+                if let Some(ref mp_manager) = self.multiplayer_manager {
+                    if let Some(platform_claims) = mp_manager.client.get_oauth_claims() {
+                        // Convert platform-specific claims to shared type
+                        let claims = crate::multiplayer::OAuthClaims::from(platform_claims);
+
+                        // Check if this is a new login (claims changed)
+                        let is_new_login = self
+                            .ui_state
+                            .multiplayer_panel
+                            .oauth_claims
+                            .as_ref()
+                            .map(|old| old.email != claims.email)
+                            .unwrap_or(true);
+
+                        self.ui_state.multiplayer_panel.oauth_claims = Some(claims.clone());
+
+                        // If new login with email, claim admin status on server
+                        if is_new_login && mp_manager.state.is_connected() {
+                            #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
+                            if let Some(ref email) = claims.email {
+                                // WASM: async claim_admin call
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    let client = mp_manager.client.clone();
+                                    let email = email.clone();
+                                    wasm_bindgen_futures::spawn_local(async move {
+                                        if let Err(e) = client.claim_admin(email).await {
+                                            log::error!("Failed to claim admin: {}", e);
+                                        } else {
+                                            log::info!("Admin claim request sent to server");
+                                        }
+                                    });
+                                }
+
+                                // Native: async claim_admin call via blocking
+                                // TODO: Re-enable claim_admin once we refactor to not require cloning
+                                #[cfg(not(target_arch = "wasm32"))]
+                                {
+                                    log::warn!(
+                                        "claim_admin temporarily disabled - needs refactoring"
+                                    );
+                                    // let client = mp_manager.client.clone();
+                                    // let email = email.clone();
+                                    // std::thread::spawn(move || {
+                                    //     if let Err(e) =
+                                    //         pollster::block_on(client.claim_admin(email))
+                                    //     {
+                                    //         log::error!("Failed to claim admin: {}", e);
+                                    //     } else {
+                                    //         log::info!("Admin claim request sent to server");
+                                    //     }
+                                    // });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Handle admin rebuild world (both native and WASM)
+                #[cfg(feature = "multiplayer")]
+                if self.ui_state.multiplayer_panel.rebuild_world_requested {
+                    if let Some(ref mp_manager) = self.multiplayer_manager {
+                        if mp_manager.state.is_connected() {
+                            // WASM: async rebuild_world call
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                let client = mp_manager.client.clone();
+                                wasm_bindgen_futures::spawn_local(async move {
+                                    if let Err(e) = client.rebuild_world().await {
+                                        log::error!("Failed to rebuild world: {}", e);
+                                    } else {
+                                        log::info!("World rebuild requested");
+                                    }
+                                });
+                            }
+
+                            // Native: async rebuild_world call via blocking
+                            // TODO: Re-enable rebuild_world once we refactor to not require cloning
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                log::warn!(
+                                    "rebuild_world temporarily disabled - needs refactoring"
+                                );
+                                // let client = mp_manager.client.clone();
+                                // std::thread::spawn(move || {
+                                //     if let Err(e) = pollster::block_on(client.rebuild_world()) {
+                                //         log::error!("Failed to rebuild world: {}", e);
+                                //     } else {
+                                //         log::info!("World rebuild requested");
+                                //     }
+                                // });
+                            }
+
+                            self.ui_state.show_toast("Rebuilding world...");
+                        } else {
+                            self.ui_state.show_toast("Not connected to server");
+                        }
                     }
                 }
 

@@ -161,6 +161,7 @@ fn run_training(args: &Args) -> anyhow::Result<()> {
     env.run()
 }
 
+#[cfg_attr(not(feature = "multiplayer"), allow(unused_variables, unused_mut))]
 async fn run(server_url: Option<String>) -> anyhow::Result<()> {
     let (mut app, event_loop) = App::new().await?;
 

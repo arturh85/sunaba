@@ -6,8 +6,11 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+pub mod admin_user_table;
+pub mod admin_user_type;
 pub mod chunk_data_table;
 pub mod chunk_data_type;
+pub mod claim_admin_reducer;
 pub mod client_connected_reducer;
 pub mod client_disconnected_reducer;
 pub mod creature_data_table;
@@ -20,6 +23,7 @@ pub mod player_place_material_reducer;
 pub mod player_table;
 pub mod player_type;
 pub mod player_update_position_reducer;
+pub mod rebuild_world_reducer;
 pub mod request_ping_reducer;
 pub mod server_metrics_table;
 pub mod server_metrics_type;
@@ -35,8 +39,11 @@ pub mod world_tick_reducer;
 pub mod world_tick_timer_table;
 pub mod world_tick_timer_type;
 
+pub use admin_user_table::*;
+pub use admin_user_type::AdminUser;
 pub use chunk_data_table::*;
 pub use chunk_data_type::ChunkData;
+pub use claim_admin_reducer::{ClaimAdminCallbackId, claim_admin, set_flags_for_claim_admin};
 pub use client_connected_reducer::{
     ClientConnectedCallbackId, client_connected, set_flags_for_client_connected,
 };
@@ -58,6 +65,9 @@ pub use player_table::*;
 pub use player_type::Player;
 pub use player_update_position_reducer::{
     PlayerUpdatePositionCallbackId, player_update_position, set_flags_for_player_update_position,
+};
+pub use rebuild_world_reducer::{
+    RebuildWorldCallbackId, rebuild_world, set_flags_for_rebuild_world,
 };
 pub use request_ping_reducer::{RequestPingCallbackId, request_ping, set_flags_for_request_ping};
 pub use server_metrics_table::*;
@@ -90,6 +100,9 @@ pub use world_tick_timer_type::WorldTickTimer;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
+    ClaimAdmin {
+        email: String,
+    },
     ClientConnected,
     ClientDisconnected,
     CreatureTick {
@@ -110,6 +123,7 @@ pub enum Reducer {
         vel_x: f32,
         vel_y: f32,
     },
+    RebuildWorld,
     RequestPing {
         client_timestamp_ms: u64,
     },
@@ -137,12 +151,14 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
+            Reducer::ClaimAdmin { .. } => "claim_admin",
             Reducer::ClientConnected => "client_connected",
             Reducer::ClientDisconnected => "client_disconnected",
             Reducer::CreatureTick { .. } => "creature_tick",
             Reducer::PlayerMine { .. } => "player_mine",
             Reducer::PlayerPlaceMaterial { .. } => "player_place_material",
             Reducer::PlayerUpdatePosition { .. } => "player_update_position",
+            Reducer::RebuildWorld => "rebuild_world",
             Reducer::RequestPing { .. } => "request_ping",
             Reducer::SetPlayerName { .. } => "set_player_name",
             Reducer::SettleWorldTick { .. } => "settle_world_tick",
@@ -157,6 +173,13 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __sdk::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {
         match &value.reducer_name[..] {
+            "claim_admin" => Ok(
+                __sdk::parse_reducer_args::<claim_admin_reducer::ClaimAdminArgs>(
+                    "claim_admin",
+                    &value.args,
+                )?
+                .into(),
+            ),
             "client_connected" => Ok(__sdk::parse_reducer_args::<
                 client_connected_reducer::ClientConnectedArgs,
             >("client_connected", &value.args)?
@@ -183,6 +206,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "player_update_position" => Ok(__sdk::parse_reducer_args::<
                 player_update_position_reducer::PlayerUpdatePositionArgs,
             >("player_update_position", &value.args)?
+            .into()),
+            "rebuild_world" => Ok(__sdk::parse_reducer_args::<
+                rebuild_world_reducer::RebuildWorldArgs,
+            >("rebuild_world", &value.args)?
             .into()),
             "request_ping" => Ok(
                 __sdk::parse_reducer_args::<request_ping_reducer::RequestPingArgs>(
@@ -228,6 +255,7 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
+    admin_user: __sdk::TableUpdate<AdminUser>,
     chunk_data: __sdk::TableUpdate<ChunkData>,
     creature_data: __sdk::TableUpdate<CreatureData>,
     creature_tick_timer: __sdk::TableUpdate<CreatureTickTimer>,
@@ -244,6 +272,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
+                "admin_user" => db_update
+                    .admin_user
+                    .append(admin_user_table::parse_table_update(table_update)?),
                 "chunk_data" => db_update
                     .chunk_data
                     .append(chunk_data_table::parse_table_update(table_update)?),
@@ -294,6 +325,9 @@ impl __sdk::DbUpdate for DbUpdate {
     ) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.admin_user = cache
+            .apply_diff_to_table::<AdminUser>("admin_user", &self.admin_user)
+            .with_updates_by_pk(|row| &row.identity);
         diff.chunk_data = cache
             .apply_diff_to_table::<ChunkData>("chunk_data", &self.chunk_data)
             .with_updates_by_pk(|row| &row.id);
@@ -330,6 +364,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
+    admin_user: __sdk::TableAppliedDiff<'r, AdminUser>,
     chunk_data: __sdk::TableAppliedDiff<'r, ChunkData>,
     creature_data: __sdk::TableAppliedDiff<'r, CreatureData>,
     creature_tick_timer: __sdk::TableAppliedDiff<'r, CreatureTickTimer>,
@@ -351,6 +386,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         event: &EventContext,
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
+        callbacks.invoke_table_row_callbacks::<AdminUser>("admin_user", &self.admin_user, event);
         callbacks.invoke_table_row_callbacks::<ChunkData>("chunk_data", &self.chunk_data, event);
         callbacks.invoke_table_row_callbacks::<CreatureData>(
             "creature_data",
@@ -1102,6 +1138,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type SubscriptionHandle = SubscriptionHandle;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        admin_user_table::register_table(client_cache);
         chunk_data_table::register_table(client_cache);
         creature_data_table::register_table(client_cache);
         creature_tick_timer_table::register_table(client_cache);
