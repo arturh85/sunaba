@@ -111,6 +111,12 @@ pub struct App {
     /// On WASM, this is a no-op but we keep it for API consistency.
     #[allow(dead_code)]
     hot_reload: crate::hot_reload::HotReloadManager,
+    /// Multiplayer client (native: Rust SDK, WASM: TypeScript SDK via JS)
+    #[cfg(any(
+        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+        all(target_arch = "wasm32", feature = "multiplayer_wasm")
+    ))]
+    multiplayer_client: Option<crate::multiplayer::MultiplayerClient>,
 }
 
 impl App {
@@ -214,6 +220,38 @@ impl App {
         #[cfg(target_arch = "wasm32")]
         let ui_state = UiState::default();
 
+        // Initialize multiplayer client (WASM only, requires multiplayer feature)
+        #[cfg(any(
+        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+        all(target_arch = "wasm32", feature = "multiplayer_wasm")
+    ))]
+        let mut multiplayer_client = Some(crate::multiplayer::MultiplayerClient::new());
+
+        // Connect to SpacetimeDB server (WASM multiplayer only)
+        #[cfg(any(
+        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+        all(target_arch = "wasm32", feature = "multiplayer_wasm")
+    ))]
+        {
+            if let Some(ref mut client) = multiplayer_client {
+                // TODO: Get server URL from environment or config
+                // For now, hardcode to localhost:3000
+                match client.connect("http://localhost:3000", "sunaba").await {
+                    Ok(_) => {
+                        log::info!("Connected to SpacetimeDB server");
+                        // Subscribe to world state
+                        if let Err(e) = client.subscribe_world().await {
+                            log::error!("Failed to subscribe to world state: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to connect to SpacetimeDB server: {}", e);
+                        multiplayer_client = None;
+                    }
+                }
+            }
+        }
+
         let app = Self {
             window,
             renderer,
@@ -229,6 +267,11 @@ impl App {
             #[cfg(not(target_arch = "wasm32"))]
             config,
             hot_reload: crate::hot_reload::HotReloadManager::new(),
+            #[cfg(any(
+        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+        all(target_arch = "wasm32", feature = "multiplayer_wasm")
+    ))]
+            multiplayer_client,
         };
 
         Ok((app, event_loop))
@@ -395,6 +438,20 @@ impl App {
         // Update player from input
         self.world.update_player(&self.input_state, 1.0 / 60.0);
 
+        // Send player position to server (multiplayer only)
+        #[cfg(any(
+        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+        all(target_arch = "wasm32", feature = "multiplayer_wasm")
+    ))]
+        {
+            if let Some(ref client) = self.multiplayer_client {
+                let pos = self.world.player.position;
+                if let Err(e) = client.update_player_position(pos.x, pos.y) {
+                    log::warn!("Failed to send player position to server: {}", e);
+                }
+            }
+        }
+
         // Spawn flight particles when flying (W pressed while airborne)
         if self.input_state.w_pressed && !self.world.player.grounded {
             self.particle_system.spawn_flight_burst(
@@ -437,6 +494,19 @@ impl App {
             let center_y = player_pos.y as i32;
             self.world.debug_mine_circle(center_x, center_y, 16);
 
+            // Send mining action to server (multiplayer only)
+            #[cfg(any(
+        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+        all(target_arch = "wasm32", feature = "multiplayer_wasm")
+    ))]
+            {
+                if let Some(ref client) = self.multiplayer_client {
+                    if let Err(e) = client.mine(center_x, center_y) {
+                        log::warn!("Failed to send mining action to server: {}", e);
+                    }
+                }
+            }
+
             // Spawn dust particles at mining location
             self.particle_system.spawn_dust_cloud(
                 player_pos,
@@ -460,6 +530,19 @@ impl App {
                     .place_material_from_inventory(wx, wy, material_id);
             }
 
+            // Send material placement to server (multiplayer only)
+            #[cfg(any(
+        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+        all(target_arch = "wasm32", feature = "multiplayer_wasm")
+    ))]
+            {
+                if let Some(ref client) = self.multiplayer_client {
+                    if let Err(e) = client.place_material(wx, wy, material_id) {
+                        log::warn!("Failed to send material placement to server: {}", e);
+                    }
+                }
+            }
+
             // Spawn particles at placement location
             let pos = Vec2::new(wx as f32, wy as f32);
             if is_liquid {
@@ -473,7 +556,7 @@ impl App {
         #[cfg(feature = "profiling")]
         puffin::profile_scope!("simulation");
         self.ui_state.stats.begin_sim();
-        self.world.update(1.0 / 60.0, &mut self.ui_state.stats, &mut rand::rng());
+        self.world.update(1.0 / 60.0, &mut self.ui_state.stats, &mut rand::thread_rng());
         self.ui_state.stats.end_sim();
 
         // Collect world stats

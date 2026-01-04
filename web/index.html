@@ -225,7 +225,51 @@
         </div>
     </div>
 
+    <!-- SpacetimeDB TypeScript SDK (for multiplayer) -->
+    <!-- Note: Build WASM with --features multiplayer_wasm to enable -->
+    <script type="importmap">
+    {
+        "imports": {
+            "@clockworklabs/spacetimedb-sdk": "https://cdn.jsdelivr.net/npm/@clockworklabs/spacetimedb-sdk@latest/dist/index.js"
+        }
+    }
+    </script>
+
     <script type="module">
+        // Import SpacetimeDB bridge functions
+        import {
+            connectSpacetime,
+            subscribeWorld,
+            updatePlayerPosition,
+            placeMaterial,
+            mineMaterial,
+            isConnected
+        } from './js/spacetime_bridge.js';
+
+        // Expose spacetimeClient to global scope for WASM to call
+        window.spacetimeClient = {
+            connect: async (host, dbName) => {
+                await connectSpacetime(host, dbName);
+            },
+            subscribeWorld: async () => {
+                await subscribeWorld();
+            },
+            updatePlayerPosition: (x, y) => {
+                updatePlayerPosition(x, y);
+            },
+            placeMaterial: (x, y, materialId) => {
+                placeMaterial(x, y, materialId);
+            },
+            mine: (x, y) => {
+                mineMaterial(x, y);
+            },
+            isConnected: () => {
+                return isConnected();
+            }
+        };
+
+        console.log('[Sunaba] SpacetimeDB client bridge initialized');
+
         async function init() {
             try {
                 // Check for WebGPU support
@@ -243,6 +287,7 @@
                 document.getElementById('loading').classList.add('hidden');
 
                 // Run the game
+                // Note: Multiplayer connection happens inside WASM if built with multiplayer_wasm feature
                 run();
             } catch (error) {
                 console.error('Failed to initialize game:', error);

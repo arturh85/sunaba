@@ -72,26 +72,44 @@ Sunaba supports real-time multiplayer via [SpacetimeDB](https://spacetimedb.com/
 curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh
 
 # Start local server
-spacetime start
+just spacetime-start
 
 # Build and publish the server module
-spacetime build -p crates/sunaba-server
-cd crates/sunaba-server && spacetime publish -s http://localhost:3000 sunaba-server
+just spacetime-build
+just spacetime-publish-local
 
 # Test it works - spawn a creature
-spacetime call sunaba-server spawn_creature --server http://localhost:3000 -- spider 0.0 100.0
+spacetime call sunaba --server http://localhost:3000 spawn_creature -- walker 150.0 250.0
 
 # Query the database
-spacetime sql sunaba-server --server http://localhost:3000 "SELECT * FROM creature_data"
+spacetime sql sunaba --server http://localhost:3000 "SELECT * FROM creature_data"
+
+# View server logs
+just spacetime-logs-tail
 ```
 
-**Architecture:**
+**Client Architecture:**
+
+Sunaba uses a dual-client approach to support both native and browser multiplayer:
+
+- **Native Builds** (`--features multiplayer_native`): Use the Rust SpacetimeDB SDK for direct server connection
+  - Currently a structured stub pending full SDK integration
+  - Will provide direct, low-latency connection to SpacetimeDB
+
+- **WASM Builds** (`--features multiplayer_wasm`): Use TypeScript SDK via JavaScript bridge
+  - Browser-compatible multiplayer using `@clockworklabs/spacetimedb-sdk`
+  - JavaScript bridge exposes `window.spacetimeClient` to WASM via wasm-bindgen
+  - See `web/js/spacetime_bridge.js` for implementation
+
+**Server Architecture:**
 
 The multiplayer server runs the same simulation code as the native game:
 - ✅ Full CA physics (falling sand, fire, reactions)
 - ✅ Server-side creature AI (neural network inference)
 - ✅ Deterministic RNG via `ctx.rng()` for consistency
 - ❌ No evolution/training (feature-gated out for WASM)
+
+The server compiles **without** `evolution` and `regeneration` features, eliminating the `rand` dependency. SpacetimeDB provides its own deterministic RNG via `ctx.rng()`, ensuring server-client consistency.
 
 See [CLAUDE.md](CLAUDE.md#spacetimedb-multiplayer-architecture) for detailed multiplayer architecture.
 

@@ -15,6 +15,13 @@ pub mod ui;
 #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
 pub mod headless;
 
+// Multiplayer module (native: Rust SDK, WASM: TypeScript SDK via JS)
+#[cfg(any(
+    all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+    all(target_arch = "wasm32", feature = "multiplayer_wasm")
+))]
+pub mod multiplayer;
+
 // Re-export core modules for convenience
 pub use sunaba_core::creature;
 pub use sunaba_core::entity;
