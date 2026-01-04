@@ -7,13 +7,15 @@ use super::ca_update::CellularAutomataUpdater;
 use super::chemistry_system::ChemistrySystem;
 use super::chunk_manager::ChunkManager;
 use super::collision::CollisionDetector;
+use super::debris_system::DebrisSystem;
+use super::light_system::LightSystem;
 use super::persistence_system::PersistenceSystem;
 use super::{CHUNK_SIZE, Chunk, Pixel, pixel_flags};
 use crate::entity::crafting::RecipeRegistry;
 use crate::entity::player::Player;
 use crate::entity::tools::ToolRegistry;
 use crate::simulation::{
-    ChunkRenderData, FallingChunk, FallingChunkSystem, LightPropagation, MaterialId, MaterialType,
+    ChunkRenderData, FallingChunk, MaterialId, MaterialType,
     Materials, ReactionRegistry, RegenerationSystem, StructuralIntegritySystem,
     TemperatureSimulator, WorldCollisionQuery, get_temperature_at_pixel,
     mining::calculate_mining_time,
@@ -43,14 +45,14 @@ pub struct World {
     /// Structural integrity checker
     structural_system: StructuralIntegritySystem,
 
-    /// Light propagation system
-    light_propagation: LightPropagation,
+    /// Light system (day/night cycle, light propagation, growth timer)
+    light_system: LightSystem,
 
     /// Resource regeneration system
     regeneration_system: RegenerationSystem,
 
-    /// Kinematic falling chunks (simple debris physics, WASM-compatible)
-    falling_chunks: FallingChunkSystem,
+    /// Debris system (kinematic falling chunks, simple debris physics, WASM-compatible)
+    debris_system: DebrisSystem,
 
     /// Creature manager (spawning, AI, behavior)
     pub creature_manager: crate::creature::spawning::CreatureManager,
@@ -60,15 +62,6 @@ pub struct World {
 
     /// Simulation time accumulator
     time_accumulator: f32,
-
-    /// Light propagation time accumulator (15fps throttled)
-    light_time_accumulator: f32,
-
-    /// Day/night cycle time (in seconds, 0-1200, where 1200s = 20 min = 24 hours game time)
-    day_night_time: f32,
-
-    /// Growth cycle timer (0-10 seconds, wraps) for tooltip progress display
-    growth_timer: f32,
 
     /// Persistence system (chunk loading, saving, world lifecycle)
     persistence_system: PersistenceSystem,
@@ -84,15 +77,12 @@ impl World {
             tool_registry: ToolRegistry::new(),
             recipe_registry: RecipeRegistry::new(),
             structural_system: StructuralIntegritySystem::new(),
-            light_propagation: LightPropagation::new(),
+            light_system: LightSystem::new(),
             regeneration_system: RegenerationSystem::new(),
-            falling_chunks: FallingChunkSystem::new(),
+            debris_system: DebrisSystem::new(),
             creature_manager: crate::creature::spawning::CreatureManager::new(200), // Max 200 creatures
             player: Player::new(glam::Vec2::new(0.0, 100.0)),
             time_accumulator: 0.0,
-            light_time_accumulator: 0.0,
-            day_night_time: 600.0, // Start at noon (midpoint of 0-1200)
-            growth_timer: 0.0,
             persistence_system: PersistenceSystem::new(42), // Default seed
         };
 
@@ -100,7 +90,12 @@ impl World {
         // (Demo levels still call generate_test_world() explicitly)
 
         // Initialize light levels before first CA update
-        world.initialize_light();
+        let active_chunks = world.chunk_manager.active_chunks.clone();
+        world.light_system.initialize_light(
+            &mut world.chunk_manager,
+            &world.materials,
+            &active_chunks,
+        );
 
         // Spawn 3 test creatures near spawn point with spacing
         #[cfg(feature = "evolution")]
@@ -854,13 +849,8 @@ impl World {
             // TODO: Handle player death (respawn, game over screen, etc.)
         }
 
-        // Update day/night cycle (20 min real-time = 24 hours game-time)
-        const DAY_NIGHT_CYCLE_DURATION: f32 = 1200.0; // 20 minutes in seconds
-        self.day_night_time = (self.day_night_time + dt) % DAY_NIGHT_CYCLE_DURATION;
-
-        // Update growth timer (10-second cycle for tooltip progress)
-        const GROWTH_CYCLE_DURATION: f32 = 10.0;
-        self.growth_timer = (self.growth_timer + dt) % GROWTH_CYCLE_DURATION;
+        // Update light system (day/night cycle, growth timer)
+        self.light_system.update(dt);
 
         self.time_accumulator += dt;
 
@@ -888,8 +878,6 @@ impl World {
     ) {
         #[cfg(feature = "profiling")]
         puffin::profile_function!();
-
-        const LIGHT_TIMESTEP: f32 = 1.0 / 15.0; // 15fps for light propagation
 
         // 0. Update active chunks (remove distant, re-activate nearby)
         self.update_active_chunks();
@@ -952,17 +940,12 @@ impl World {
         }
 
         // 4. Light propagation (15fps throttled) - active chunks only
-        self.light_time_accumulator += 1.0 / 60.0; // Fixed timestep
-        if self.light_time_accumulator >= LIGHT_TIMESTEP {
-            let sky_light = self.calculate_sky_light();
-            self.light_propagation.propagate_light(
-                &mut self.chunk_manager.chunks,
-                &self.materials,
-                sky_light,
-                &self.chunk_manager.active_chunks,
-            );
-            self.light_time_accumulator -= LIGHT_TIMESTEP;
-        }
+        let active_chunks = self.chunk_manager.active_chunks.clone();
+        self.light_system.update_light_propagation(
+            &mut self.chunk_manager,
+            &self.materials,
+            &active_chunks,
+        );
 
         // 5. State changes based on temperature
         for i in 0..self.chunk_manager.active_chunks.len() {
@@ -978,17 +961,17 @@ impl World {
         }
 
         // 7. Update falling chunks (kinematic debris physics)
-        // Temporarily take falling_chunks to avoid borrow checker issues with self as WorldCollisionQuery
-        let mut falling_chunks = std::mem::take(&mut self.falling_chunks);
+        // Temporarily take debris_system to avoid borrow checker issues with self as WorldCollisionQuery
+        let mut debris_system = std::mem::take(&mut self.debris_system);
         {
             #[cfg(feature = "profiling")]
             puffin::profile_scope!("falling_chunks");
-            let settled_chunks = falling_chunks.update(1.0 / 60.0, self);
+            let settled_chunks = debris_system.update(1.0 / 60.0, self);
             for chunk in settled_chunks {
                 self.reconstruct_falling_chunk(chunk);
             }
         }
-        self.falling_chunks = falling_chunks;
+        self.debris_system = debris_system;
 
         // 9. Resource regeneration (fruit spawning)
         self.regeneration_system.update(
@@ -1017,41 +1000,9 @@ impl World {
         self.creature_manager = creature_manager;
     }
 
-    /// Calculate sky light level based on day/night cycle (0-15)
-    /// Day/night cycle: 0-1200 seconds (20 min real-time = 24 hours game-time)
-    /// 0s = midnight, 300s = dawn, 600s = noon, 900s = dusk, 1200s = midnight
-    fn calculate_sky_light(&self) -> u8 {
-        const DAY_NIGHT_CYCLE_DURATION: f32 = 1200.0;
-
-        // Convert time to angle (0-2π)
-        let angle = (self.day_night_time / DAY_NIGHT_CYCLE_DURATION) * 2.0 * std::f32::consts::PI;
-
-        // Cosine wave: -1 (midnight) to 1 (noon)
-        // Shift so 0s = midnight (cos(0) = 1, we want -1)
-        let cosine = -(angle.cos());
-
-        // Map -1..1 to 0..15
-        // -1 (midnight) → 0, 0 (dawn/dusk) → 7.5, 1 (noon) → 15
-        let normalized = (cosine + 1.0) / 2.0; // 0..1
-        (normalized * 15.0) as u8
-    }
-
-    /// Initialize light levels before first CA update
-    /// This ensures that light_levels are valid before reactions start checking them
-    fn initialize_light(&mut self) {
-        let sky_light = self.calculate_sky_light();
-        self.light_propagation.propagate_light(
-            &mut self.chunk_manager.chunks,
-            &self.materials,
-            sky_light,
-            &self.chunk_manager.active_chunks,
-        );
-        log::info!("Initialized light propagation (sky_light={})", sky_light);
-    }
-
     /// Get growth progress as percentage (0-100) through the 10-second cycle
     pub fn get_growth_progress_percent(&self) -> f32 {
-        (self.growth_timer / 10.0) * 100.0
+        self.light_system.get_growth_progress_percent()
     }
 
     /// Check if a chunk needs CA update based on dirty state of itself and neighbors
@@ -1281,19 +1232,12 @@ impl World {
 
     /// Get light level at world coordinates (0-15)
     pub fn get_light_at(&self, world_x: i32, world_y: i32) -> Option<u8> {
-        let (chunk_pos, local_x, local_y) = ChunkManager::world_to_chunk_coords(world_x, world_y);
-        self.chunk_manager
-            .chunks
-            .get(&chunk_pos)
-            .map(|c| c.get_light(local_x, local_y))
+        self.light_system.get_light_at(&self.chunk_manager, world_x, world_y)
     }
 
     /// Set light level at world coordinates (0-15)
     pub fn set_light_at(&mut self, world_x: i32, world_y: i32, level: u8) {
-        let (chunk_pos, local_x, local_y) = ChunkManager::world_to_chunk_coords(world_x, world_y);
-        if let Some(chunk) = self.chunk_manager.chunks.get_mut(&chunk_pos) {
-            chunk.set_light(local_x, local_y, level);
-        }
+        self.light_system.set_light_at(&mut self.chunk_manager, world_x, world_y, level);
     }
 
     /// Get material ID at world coordinates
@@ -1372,12 +1316,12 @@ impl World {
 
     /// Get falling chunks for rendering (kinematic debris system)
     pub fn get_falling_chunks(&self) -> Vec<ChunkRenderData> {
-        self.falling_chunks.get_render_data()
+        self.debris_system.get_render_data()
     }
 
     /// Get count of active falling chunks (for debug stats)
     pub fn falling_chunk_count(&self) -> usize {
-        self.falling_chunks.chunk_count()
+        self.debris_system.chunk_count()
     }
 
     /// Get creature render data for rendering
@@ -1407,44 +1351,18 @@ impl World {
 
         // Remove pixels from world (convert to air)
         for pos in &region {
-            self.set_pixel_direct(pos.x, pos.y, MaterialId::AIR);
+            DebrisSystem::set_pixel_direct(&mut self.chunk_manager, pos.x, pos.y, MaterialId::AIR);
         }
 
-        // Create falling chunk (kinematic, WASM-compatible)
-        let id = self.falling_chunks.create_chunk(pixels);
+        // Create falling chunk (kinematic, WASM-compatible) - pass pixels directly
+        let id = self.debris_system.create_chunk(pixels);
         log::debug!("Created falling chunk id: {}", id);
         id
     }
 
-    /// Set pixel without triggering structural checks (internal use)
-    fn set_pixel_direct(&mut self, world_x: i32, world_y: i32, material_id: u16) {
-        let (chunk_pos, local_x, local_y) = ChunkManager::world_to_chunk_coords(world_x, world_y);
-        if let Some(chunk) = self.chunk_manager.chunks.get_mut(&chunk_pos) {
-            chunk.set_material(local_x, local_y, material_id);
-        }
-    }
-
-    /// Set pixel without triggering structural checks, returns success/failure
-    fn set_pixel_direct_checked(&mut self, world_x: i32, world_y: i32, material_id: u16) -> bool {
-        let (chunk_pos, local_x, local_y) = ChunkManager::world_to_chunk_coords(world_x, world_y);
-        if let Some(chunk) = self.chunk_manager.chunks.get_mut(&chunk_pos) {
-            chunk.set_material(local_x, local_y, material_id);
-            true
-        } else {
-            log::trace!(
-                "set_pixel_direct_checked: chunk {:?} not loaded for pixel at ({}, {})",
-                chunk_pos,
-                world_x,
-                world_y
-            );
-            false
-        }
-    }
-
     /// Reconstruct a settled falling chunk back into static pixels
     fn reconstruct_falling_chunk(&mut self, chunk: FallingChunk) {
-        let center_i =
-            glam::IVec2::new(chunk.center.x.round() as i32, chunk.center.y.round() as i32);
+        let center_i = IVec2::new(chunk.center.x.round() as i32, chunk.center.y.round() as i32);
 
         log::info!(
             "Reconstructing falling chunk {} ({} pixels) at ({}, {})",
@@ -1464,7 +1382,7 @@ impl World {
             if let Some(existing) = self.get_pixel(world_pos.x, world_pos.y)
                 && existing.is_empty()
             {
-                if self.set_pixel_direct_checked(world_pos.x, world_pos.y, material_id) {
+                if DebrisSystem::set_pixel_direct_checked(&mut self.chunk_manager, world_pos.x, world_pos.y, material_id) {
                     placed += 1;
                 } else {
                     failed += 1;
@@ -1483,6 +1401,7 @@ impl World {
         }
     }
 
+
     /// Clear all chunks from the world
     pub fn clear_all_chunks(&mut self) {
         self.persistence_system.clear_all_chunks(&mut self.chunk_manager);
@@ -1497,7 +1416,12 @@ impl World {
     pub fn load_persistent_world(&mut self) {
         let _ = self.persistence_system.load_persistent_world(&mut self.chunk_manager, &mut self.player);
         // Initialize light levels before first CA update
-        self.initialize_light();
+        let active_chunks = self.chunk_manager.active_chunks.clone();
+        self.light_system.initialize_light(
+            &mut self.chunk_manager,
+            &self.materials,
+            &active_chunks,
+        );
     }
 
     /// Disable persistence for demo levels
