@@ -71,7 +71,7 @@ pub struct World {
 }
 
 impl World {
-    pub fn new() -> Self {
+    pub fn new(skip_initial_creatures: bool) -> Self {
         let mut world = Self {
             chunk_manager: ChunkManager::new(),
             materials: Materials::new(),
@@ -100,9 +100,9 @@ impl World {
             &active_chunks,
         );
 
-        // Spawn 3 test creatures near spawn point with spacing
+        // Spawn 3 test creatures near spawn point with spacing (unless skipped for multiplayer)
         #[cfg(feature = "evolution")]
-        {
+        if !skip_initial_creatures {
             use crate::creature::genome::CreatureGenome;
 
             world
@@ -320,16 +320,7 @@ impl World {
                     player_height,
                 )
             },
-            |x, y, w, h| {
-                CollisionDetector::check_solid_collision(
-                    chunks,
-                    materials,
-                    x,
-                    y,
-                    w,
-                    h,
-                )
-            },
+            |x, y, w, h| CollisionDetector::check_solid_collision(chunks, materials, x, y, w, h),
         );
     }
 
@@ -534,6 +525,7 @@ impl World {
         dt: f32,
         stats: &mut dyn crate::world::SimStats,
         rng: &mut R,
+        is_multiplayer_connected: bool,
     ) {
         const FIXED_TIMESTEP: f32 = 1.0 / 60.0;
 
@@ -554,7 +546,7 @@ impl World {
         let mut steps = 0;
 
         while self.time_accumulator >= FIXED_TIMESTEP && steps < MAX_STEPS_PER_FRAME {
-            self.step_simulation(stats, rng);
+            self.step_simulation(stats, rng, is_multiplayer_connected);
             self.time_accumulator -= FIXED_TIMESTEP;
             steps += 1;
         }
@@ -569,6 +561,7 @@ impl World {
         &mut self,
         stats: &mut dyn crate::world::SimStats,
         rng: &mut R,
+        is_multiplayer_connected: bool,
     ) {
         #[cfg(feature = "profiling")]
         puffin::profile_function!();
@@ -676,23 +669,26 @@ impl World {
         );
 
         // 10. Update creatures (sensing, planning, neural control)
-        // Temporarily take creature_manager to avoid borrow checker issues
-        let mut creature_manager = std::mem::replace(
-            &mut self.creature_manager,
-            crate::creature::spawning::CreatureManager::new(0), // Dummy placeholder
-        );
+        // Skip creature updates when connected to multiplayer (server is authoritative)
+        if !is_multiplayer_connected {
+            // Temporarily take creature_manager to avoid borrow checker issues
+            let mut creature_manager = std::mem::replace(
+                &mut self.creature_manager,
+                crate::creature::spawning::CreatureManager::new(0), // Dummy placeholder
+            );
 
-        {
-            #[cfg(feature = "profiling")]
-            puffin::profile_scope!("creatures");
-            creature_manager.update(1.0 / 60.0, self);
+            {
+                #[cfg(feature = "profiling")]
+                puffin::profile_scope!("creatures");
+                creature_manager.update(1.0 / 60.0, self);
 
-            // 11. Execute creature actions (eat, mine, build)
-            creature_manager.execute_actions(self, 1.0 / 60.0);
+                // 11. Execute creature actions (eat, mine, build)
+                creature_manager.execute_actions(self, 1.0 / 60.0);
+            }
+
+            // Put it back
+            self.creature_manager = creature_manager;
         }
-
-        // Put it back
-        self.creature_manager = creature_manager;
     }
 
     /// Get growth progress as percentage (0-100) through the 10-second cycle
@@ -1151,7 +1147,7 @@ impl World {
 
 impl Default for World {
     fn default() -> Self {
-        Self::new()
+        Self::new(false) // Default: spawn creatures
     }
 }
 

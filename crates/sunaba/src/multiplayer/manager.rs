@@ -13,15 +13,10 @@ pub enum MultiplayerState {
     Disconnected,
 
     /// Attempting to connect to a server
-    Connecting {
-        server_url: String,
-        attempt: u32,
-    },
+    Connecting { server_url: String, attempt: u32 },
 
     /// Successfully connected to a server
-    Connected {
-        server_url: String,
-    },
+    Connected { server_url: String },
 
     /// Connection lost, attempting to reconnect
     Reconnecting {
@@ -31,10 +26,7 @@ pub enum MultiplayerState {
     },
 
     /// Connection error occurred
-    Error {
-        message: String,
-        server_url: String,
-    },
+    Error { message: String, server_url: String },
 }
 
 impl MultiplayerState {

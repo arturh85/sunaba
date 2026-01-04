@@ -161,7 +161,7 @@ impl Scenario {
     /// Set up the world for this scenario
     /// Returns the world and a list of food positions for optimized sensing
     pub fn setup_world(&self) -> (World, Vec<Vec2>) {
-        let mut world = World::new();
+        let mut world = World::new(false);
 
         // Ensure chunks exist for the entire scenario area
         world.ensure_chunks_for_area(

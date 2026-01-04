@@ -21,16 +21,12 @@ start-multiplayer server="http://localhost:3000":
     RUST_LOG=info cargo run -p sunaba --bin sunaba --release --features multiplayer_native -- --server {{server}}
 
 # Join local development server (localhost:3000)
-join-local:
+join:
     just start-multiplayer http://localhost:3000
 
-# Join official server (sunaba.app42.blue)
-join-official:
-    just start-multiplayer https://sunaba.app42.blue
-
-# Join production server (IP)
+# Join production server (sunaba.app42.blue)
 join-prod:
-    just start-multiplayer http://10.10.10.23:3000
+    just start-multiplayer https://sunaba.app42.blue
 
 [unix]
 test: fmt clippy
@@ -214,12 +210,8 @@ spacetime-stop:
     spacetime stop
 
 # Publish to SpacetimeDB instance (default: local)
-spacetime-publish-local name="sunaba" server="http://localhost:3000":
+spacetime-publish name="sunaba" server="http://localhost:3000":
     cd crates/sunaba-server && spacetime publish {{name}} -s {{server}}
-
-# Publish to SpacetimeDB cloud (requires auth)
-spacetime-publish-cloud name="sunaba":
-    cd crates/sunaba-server && spacetime publish {{name}}
 
 # View SpacetimeDB logs
 spacetime-logs name="sunaba" server="http://localhost:3000":
@@ -279,7 +271,7 @@ spacetime-dev name="sunaba":
     @echo "Setting up SpacetimeDB local development..."
     just spacetime-build
     just spacetime-start
-    just spacetime-publish-local {{name}}
+    just spacetime-publish {{name}}
     @echo "SpacetimeDB ready! Module published as '{{name}}'"
     @echo "Run 'just spacetime-logs-tail {{name}}' to watch logs"
 
@@ -288,51 +280,35 @@ spacetime-dev name="sunaba":
     @echo "Setting up SpacetimeDB local development..."
     just spacetime-build
     just spacetime-start
-    just spacetime-publish-local {{name}}
+    just spacetime-publish {{name}}
     @echo "SpacetimeDB ready! Module published as '{{name}}'"
     @echo "Run 'just spacetime-logs-tail {{name}}' to watch logs"
 
 # Reset database (delete and republish)
 spacetime-reset name="sunaba" server="http://localhost:3000":
     spacetime delete -s {{server}} {{name}} || true
-    just spacetime-publish-local {{name}} {{server}}
+    just spacetime-publish {{name}} {{server}}
 
 # Show database status
 spacetime-status name="sunaba" server="http://localhost:3000":
     spacetime describe -s {{server}} {{name}}
 
 # ============================================================================
-# Production Server Convenience Commands
+# Production Server Convenience Commands (sunaba.app42.blue)
 # ============================================================================
 
-# Publish to production server (IP)
+# Publish to production server
 spacetime-publish-prod name="sunaba":
-    just spacetime-publish-local {{name}} http://10.10.10.23:3000
+    just spacetime-publish {{name}} https://sunaba.app42.blue
 
-# Publish to production server (domain)
-spacetime-publish-domain name="sunaba":
-    just spacetime-publish-local {{name}} https://sunaba.app42.blue
-
-# Tail logs from production server (IP)
+# Tail logs from production server
 spacetime-logs-tail-prod name="sunaba":
-    just spacetime-logs-tail {{name}} http://10.10.10.23:3000
-
-# Tail logs from production server (domain)
-spacetime-logs-tail-domain name="sunaba":
     just spacetime-logs-tail {{name}} https://sunaba.app42.blue
 
-# Show production database status (IP)
+# Show production database status
 spacetime-status-prod name="sunaba":
-    just spacetime-status {{name}} http://10.10.10.23:3000
-
-# Show production database status (domain)
-spacetime-status-domain name="sunaba":
     just spacetime-status {{name}} https://sunaba.app42.blue
 
-# Reset production database (IP) - USE WITH CAUTION
+# Reset production database - USE WITH CAUTION
 spacetime-reset-prod name="sunaba":
-    just spacetime-reset {{name}} http://10.10.10.23:3000
-
-# Reset production database (domain) - USE WITH CAUTION
-spacetime-reset-domain name="sunaba":
     just spacetime-reset {{name}} https://sunaba.app42.blue

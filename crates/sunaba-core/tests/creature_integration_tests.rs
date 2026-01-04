@@ -22,7 +22,7 @@ use sunaba_simulation::MaterialId;
 
 #[test]
 fn test_is_edible() {
-    let world = World::new();
+    let world = World::new(false);
 
     // Fruit is edible
     assert!(is_edible(&world, MaterialId::FRUIT));
@@ -35,7 +35,7 @@ fn test_is_edible() {
 
 #[test]
 fn test_get_nutritional_value() {
-    let world = World::new();
+    let world = World::new(false);
 
     // Fruit should provide nutrition
     let fruit_nutrition = get_nutritional_value(&world, MaterialId::FRUIT);
@@ -48,7 +48,7 @@ fn test_get_nutritional_value() {
 
 #[test]
 fn test_consume_edible_material() {
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 100, 100);
 
     // Place fruit at (50, 50)
@@ -74,7 +74,7 @@ fn test_consume_edible_material() {
 
 #[test]
 fn test_consume_inedible_returns_none() {
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 100, 100);
 
     // Place stone at (50, 50)
@@ -95,7 +95,7 @@ fn test_consume_inedible_returns_none() {
 
 #[test]
 fn test_consume_air_returns_none() {
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 100, 100);
 
     // Position (50, 50) should be air
@@ -117,7 +117,7 @@ fn test_consume_air_returns_none() {
 
 #[test]
 fn test_sensory_input_gather_in_empty_world() {
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 200, 200);
 
     let config = SensorConfig::default();
@@ -138,7 +138,7 @@ fn test_sensory_input_gather_in_empty_world() {
 
 #[test]
 fn test_sensory_input_detect_nearby_food() {
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 200, 200);
 
     // Place fruit nearby at (110, 100)
@@ -157,7 +157,7 @@ fn test_sensory_input_detect_nearby_food() {
 
 #[test]
 fn test_sensory_input_raycast_hits_obstacle() {
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 200, 200);
 
     // Place a wall at x=120
@@ -192,7 +192,7 @@ fn test_sensory_input_raycast_hits_obstacle() {
 
 #[test]
 fn test_sensory_input_raycast_count_matches_config() {
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 200, 200);
 
     let config = SensorConfig {
@@ -210,7 +210,7 @@ fn test_sensory_input_raycast_count_matches_config() {
 
 #[test]
 fn test_chemical_gradients_normalized() {
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 200, 200);
 
     // Place multiple food sources
@@ -237,7 +237,7 @@ fn test_extract_body_part_features() {
     let morphology_config = MorphologyConfig::default();
     let morphology = CreatureMorphology::from_genome(&genome, &morphology_config);
 
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 200, 200);
 
     // Place some ground
@@ -273,7 +273,7 @@ fn test_environmental_damage_from_lava() {
     use sunaba_creature::types::Health;
     use sunaba_creature::world_interaction::apply_environmental_damage;
 
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 200, 200);
 
     // Place lava at (100, 100)
@@ -293,7 +293,7 @@ fn test_environmental_damage_safe_in_air() {
     use sunaba_creature::types::Health;
     use sunaba_creature::world_interaction::apply_environmental_damage;
 
-    let mut world = World::new();
+    let mut world = World::new(false);
     world.ensure_chunks_for_area(0, 0, 200, 200);
 
     // Check damage in air

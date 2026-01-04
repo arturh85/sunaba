@@ -3,8 +3,8 @@
 use glam::IVec2;
 use std::collections::HashMap;
 
-use super::{CHUNK_SIZE, Chunk, pixel_flags};
 use super::chunk_manager::ChunkManager;
+use super::{CHUNK_SIZE, Chunk, pixel_flags};
 use crate::simulation::{
     MaterialId, Materials, ReactionRegistry, StateChangeSystem, add_heat_at_pixel,
     get_temperature_at_pixel,

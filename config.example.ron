@@ -51,4 +51,27 @@
         // Enable verbose logging
         verbose_logging: false,
     ),
+
+    // Multiplayer configuration (requires multiplayer_native or multiplayer_wasm feature)
+    multiplayer: (
+        // List of predefined servers shown in connection panel
+        servers: [
+            (
+                name: "Local Dev Server",
+                url: "http://localhost:3000",
+            ),
+            (
+                name: "Production Server",
+                url: "https://sunaba.app42.blue",
+            ),
+        ],
+        // Last connected server (auto-saved, will be highlighted in UI)
+        last_server: Some("https://sunaba.app42.blue"),
+        // Connection timeout in seconds before showing error
+        connection_timeout_secs: 10,
+        // Maximum reconnection attempts before giving up
+        reconnect_max_attempts: 10,
+        // Maximum delay between reconnection attempts (exponential backoff capped at this)
+        reconnect_max_delay_secs: 30,
+    ),
 )

@@ -23,7 +23,7 @@ pub fn test_terrain_generation(ctx: &ReducerContext) {
     let mut world_guard = SERVER_WORLD.lock().unwrap();
     if world_guard.is_none() {
         log::info!("Initializing new World with seed {}", config.seed);
-        let mut world = sunaba_core::world::World::new();
+        let mut world = sunaba_core::world::World::new(true);
         world.set_generator(config.seed);
         log::info!("World generator set with seed {}", config.seed);
         *world_guard = Some(world);

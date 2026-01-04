@@ -57,7 +57,8 @@ impl ChunkStatus {
         // 2. Add nearby loaded chunks that aren't currently active
         let mut added_count = 0;
         for cy in (player_chunk_y - active_chunk_radius)..=(player_chunk_y + active_chunk_radius) {
-            for cx in (player_chunk_x - active_chunk_radius)..=(player_chunk_x + active_chunk_radius)
+            for cx in
+                (player_chunk_x - active_chunk_radius)..=(player_chunk_x + active_chunk_radius)
             {
                 let pos = IVec2::new(cx, cy);
 

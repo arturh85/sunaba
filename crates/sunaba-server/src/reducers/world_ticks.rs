@@ -48,7 +48,7 @@ pub fn world_tick(ctx: &ReducerContext, _arg: WorldTickTimer) {
     let mut world_guard = SERVER_WORLD.lock().unwrap();
     if world_guard.is_none() {
         log::info!("Initializing server World with seed {}", config.seed);
-        let mut world = sunaba_core::world::World::new();
+        let mut world = sunaba_core::world::World::new(true);
         world.set_generator(config.seed);
         log::info!("Server world initialized with terrain generation");
         *world_guard = Some(world);
@@ -78,7 +78,7 @@ pub fn world_tick(ctx: &ReducerContext, _arg: WorldTickTimer) {
     let delta_time = 0.016;
     let mut stats = NoOpStats;
     let mut rng = ctx.rng();
-    world.update(delta_time, &mut stats, &mut rng);
+    world.update(delta_time, &mut stats, &mut rng, true); // Server: skip creatures (not implemented server-side)
 
     // Sync ONLY dirty chunks to database
     sync_dirty_chunks_to_db(ctx, world, config.tick_count);

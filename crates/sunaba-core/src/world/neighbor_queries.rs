@@ -10,11 +10,7 @@ impl NeighborQueries {
     /// Returns Vec of neighbor material IDs (may be empty if neighbors are air or out of bounds)
     ///
     /// Order: NW, N, NE, W, E, SW, S, SE
-    pub fn get_8_neighbors(
-        chunk_manager: &ChunkManager,
-        center_x: i32,
-        center_y: i32,
-    ) -> Vec<u16> {
+    pub fn get_8_neighbors(chunk_manager: &ChunkManager, center_x: i32, center_y: i32) -> Vec<u16> {
         let mut neighbors = Vec::with_capacity(8);
 
         for (dx, dy) in [

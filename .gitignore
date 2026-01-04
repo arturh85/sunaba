@@ -13,3 +13,4 @@ config.ron
 # Auto-generated SpacetimeDB clients (regenerate with just spacetime-generate-rust/ts)
 crates/sunaba/src/multiplayer/generated/
 web/src/spacetime/
+/.mcp.json

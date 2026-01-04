@@ -142,6 +142,12 @@ pub struct DockContext<'a> {
     // Multiplayer metrics (both native and WASM, when multiplayer feature enabled)
     #[cfg(feature = "multiplayer")]
     pub multiplayer_metrics: Option<&'a crate::multiplayer::metrics::MultiplayerMetrics>,
+
+    // Multiplayer connection manager and panel state
+    #[cfg(feature = "multiplayer")]
+    pub multiplayer_manager: Option<&'a crate::multiplayer::MultiplayerManager>,
+    #[cfg(feature = "multiplayer")]
+    pub multiplayer_panel_state: &'a mut super::multiplayer_panel::MultiplayerPanelState,
 }
 
 /// Tab viewer implementation for dock
@@ -424,12 +430,17 @@ impl<'a> DockTabViewer<'a> {
     }
 
     #[cfg(feature = "multiplayer")]
-    fn render_multiplayer_stats(&self, ui: &mut egui::Ui) {
-        if let Some(metrics) = self.ctx.multiplayer_metrics {
-            super::multiplayer_stats::render_multiplayer_stats(ui, metrics);
+    fn render_multiplayer_stats(&mut self, ui: &mut egui::Ui) {
+        if let Some(manager) = self.ctx.multiplayer_manager {
+            super::multiplayer_panel::render_multiplayer_panel(
+                ui,
+                manager,
+                self.ctx.multiplayer_panel_state,
+                self.ctx.multiplayer_metrics,
+            );
         } else {
-            ui.label("Multiplayer not active");
-            ui.label("Connect to a SpacetimeDB server to view metrics");
+            ui.label("Multiplayer not available");
+            ui.label("Rebuild with --features multiplayer_native to enable");
         }
     }
 

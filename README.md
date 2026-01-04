@@ -13,10 +13,11 @@ A 2D falling-sand physics sandbox survival game featuring ML-evolved creatures w
 
 - **Emergent Physics**: Every pixel is simulated with material properties
 - **Chemistry System**: Materials react with each other (fire spreads, water evaporates, acid dissolves)
-- **Multiplayer Support**: Real-time multiplayer via SpacetimeDB with server-side simulation
-  - Server-side creature AI and physics
-  - Feature-gated architecture (evolution offline, runtime on server)
-  - Deterministic RNG for server-client consistency
+- **Runtime-Switchable Multiplayer**: Real-time multiplayer via SpacetimeDB
+  - Start in singleplayer, connect/disconnect on-demand (press M key)
+  - World persistence: singleplayer world saved and restored
+  - Auto-reconnect with exponential backoff
+  - Server-side creature AI and physics with deterministic RNG
 - **ML-Evolved Creatures**: Pre-evolved populations with diverse morphologies and behaviors
   - Articulated bodies controlled by neural networks (CPPN-NEAT + MAP-Elites)
   - Emergent survival strategies: hunting, building, tool use, social behaviors
@@ -63,28 +64,36 @@ just web
 
 ### Multiplayer (SpacetimeDB)
 
-Sunaba supports real-time multiplayer via [SpacetimeDB](https://spacetimedb.com/), a database-centric server framework.
+Sunaba supports **runtime-switchable multiplayer** via [SpacetimeDB](https://spacetimedb.com/). Start in singleplayer, connect to servers on-demand, switch back anytime.
 
-**Development Workflow:**
-
-After modifying the server schema (`crates/sunaba-server/src/lib.rs`):
+**Quick Join:**
 
 ```bash
-# 1. Rebuild server
-just spacetime-build
+# Start in singleplayer (default)
+just start
 
-# 2. Regenerate clients (auto-generated, type-safe)
-just spacetime-generate-rust  # Native Rust client
-just spacetime-generate-ts    # WASM TypeScript client
+# Connect to local dev server on startup
+just join-local
 
-# 3. Verify everything matches
-just test  # Validates both Rust and TypeScript clients
+# Connect to production server on startup
+just join-prod
 
-# 4. Test locally
-just spacetime-publish-local
+# Connect to custom server
+cargo run --features multiplayer_native -- --server https://your-server.com
 ```
 
-**Quick Start:**
+**In-Game Connection:**
+- Press `M` key to open multiplayer panel
+- Select from predefined servers or enter custom URL
+- Click "Connect" to join, "Disconnect" to return to singleplayer
+- Your singleplayer world is saved before connecting and restored when you disconnect
+
+**Connection Flow:**
+- **Singleplayer → Multiplayer:** Saves your world, switches to server-authoritative mode
+- **Multiplayer → Singleplayer:** Restores your world from snapshot
+- **Auto-Reconnect:** Exponential backoff on connection loss (1s, 2s, 4s, 8s, max 30s)
+
+**Server Setup (for hosting):**
 
 ```bash
 # Install SpacetimeDB CLI (first time only)
@@ -97,14 +106,19 @@ just spacetime-start
 just spacetime-build
 just spacetime-publish-local
 
-# Test it works - spawn a creature
-spacetime call sunaba --server http://localhost:3000 spawn_creature -- walker 150.0 250.0
-
-# Query the database
-spacetime sql sunaba --server http://localhost:3000 "SELECT * FROM creature_data"
-
 # View server logs
 just spacetime-logs-tail
+```
+
+**Development Workflow (schema changes):**
+
+After modifying `crates/sunaba-server/src/`:
+
+```bash
+just spacetime-build           # Rebuild server WASM
+just spacetime-generate-rust   # Regenerate Rust client
+just spacetime-generate-ts     # Regenerate TypeScript client
+just test                      # Validate both clients match server
 ```
 
 **Architecture:**

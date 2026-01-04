@@ -446,7 +446,7 @@ mod tests {
         let fitness = DistanceFitness;
         let spawn = Vec2::ZERO;
         let creature = make_test_creature(Vec2::new(100.0, 0.0), 50.0, 100.0);
-        let world = World::new();
+        let world = World::new(false);
 
         let score = fitness.evaluate(&creature, &world, spawn, 30.0);
         assert!((score - 100.0).abs() < 0.01);
@@ -456,7 +456,7 @@ mod tests {
     fn test_foraging_fitness() {
         let fitness = ForagingFitness;
         let creature = make_test_creature(Vec2::ZERO, 75.0, 100.0);
-        let world = World::new();
+        let world = World::new(false);
 
         let score = fitness.evaluate(&creature, &world, Vec2::ZERO, 30.0);
         assert!((score - 75.0).abs() < 0.01);
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn test_survival_fitness() {
         let fitness = SurvivalFitness;
-        let world = World::new();
+        let world = World::new(false);
 
         // Alive creature
         let alive = make_test_creature(Vec2::ZERO, 50.0, 100.0);
@@ -482,7 +482,7 @@ mod tests {
     fn test_composite_fitness() {
         let fitness = CompositeFitness::balanced();
         let creature = make_test_creature(Vec2::new(50.0, 0.0), 75.0, 100.0);
-        let world = World::new();
+        let world = World::new(false);
 
         let score = fitness.evaluate(&creature, &world, Vec2::ZERO, 30.0);
         assert!(score > 0.0);
@@ -491,7 +491,7 @@ mod tests {
     #[test]
     fn test_food_collection_fitness() {
         let fitness = FoodCollectionFitness::new();
-        let world = World::new();
+        let world = World::new(false);
 
         // Creature with no food at spawn
         let creature_no_food = make_test_creature_with_food(Vec2::ZERO, 0);
@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn test_directional_food_fitness_right_direction() {
         let fitness = DirectionalFoodFitness::new();
-        let world = World::new();
+        let world = World::new(false);
         let spawn = Vec2::ZERO;
 
         // Creature moved right (correct direction) with no food
@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn test_directional_food_fitness_with_food() {
         let fitness = DirectionalFoodFitness::new();
-        let world = World::new();
+        let world = World::new(false);
         let spawn = Vec2::ZERO;
 
         // Creature moved right and ate food
@@ -563,7 +563,7 @@ mod tests {
     fn test_directional_vs_nondirectional_fitness() {
         let dir_fitness = DirectionalFoodFitness::new();
         let old_fitness = FoodCollectionFitness::new();
-        let world = World::new();
+        let world = World::new(false);
         let spawn = Vec2::new(50.0, 50.0); // Parcour spawn position
 
         // Champion that moved 2400px LEFT (the observed behavior)

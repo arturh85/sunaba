@@ -1,4 +1,4 @@
-# SpacetimeDB Production Deployment Guide
+# Deployment Guide
 
 This guide covers deploying SpacetimeDB on a Linux server for Sunaba multiplayer.
 

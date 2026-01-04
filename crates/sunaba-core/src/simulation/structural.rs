@@ -269,7 +269,7 @@ mod tests {
 
     /// Helper to create a world with some terrain
     fn make_test_world() -> World {
-        let mut world = World::new();
+        let mut world = World::new(false);
         world.ensure_chunks_for_area(-100, -100, 100, 100);
         world
     }

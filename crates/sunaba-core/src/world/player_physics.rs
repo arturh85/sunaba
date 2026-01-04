@@ -1,8 +1,8 @@
 //! Player physics system - movement, gravity, jumping, collision
 
-use glam::Vec2;
 use crate::entity::input::InputState;
 use crate::entity::player::Player;
+use glam::Vec2;
 
 /// Player physics system - handles movement, jumping, gravity, collision
 pub struct PlayerPhysicsSystem;
@@ -105,19 +105,9 @@ impl PlayerPhysicsSystem {
         let new_x = player.position.x + movement.x;
         let new_y = player.position.y + movement.y;
 
-        let can_move_x = !check_collision(
-            new_x,
-            player.position.y,
-            Player::WIDTH,
-            Player::HEIGHT,
-        );
+        let can_move_x = !check_collision(new_x, player.position.y, Player::WIDTH, Player::HEIGHT);
 
-        let can_move_y = !check_collision(
-            player.position.x,
-            new_y,
-            Player::WIDTH,
-            Player::HEIGHT,
-        );
+        let can_move_y = !check_collision(player.position.x, new_y, Player::WIDTH, Player::HEIGHT);
 
         // Apply movement only on non-colliding axes
         let final_movement = Vec2::new(

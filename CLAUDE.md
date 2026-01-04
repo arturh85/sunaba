@@ -24,7 +24,7 @@ just web     # Build and serve web version at localhost:8080
 just spacetime-build      # Build WASM module
 just spacetime-start      # Start local instance
 just spacetime-stop       # Stop local instance
-just spacetime-publish-local  # Publish to local server
+just spacetime-publish  # Publish to local server
 just spacetime-logs-tail  # Follow server logs
 
 # Individual commands (prefer just test)
@@ -38,22 +38,51 @@ cargo fmt --all
 
 Real-time multiplayer via [SpacetimeDB](https://spacetimedb.com/), a database-centric server framework compiling Rust to WASM.
 
-**Quick Commands:**
+**Quick Start:**
 ```bash
+# Server commands
 just spacetime-build          # Build server WASM module
 just spacetime-start          # Start local server (localhost:3000)
-just spacetime-publish-local  # Publish module to local server
+just spacetime-publish        # Publish module to local server
 just spacetime-logs-tail      # View server logs
+
+# Client commands (runtime switchable!)
+just start                    # Start in singleplayer (default)
+just join                     # Connect to localhost:3000 on startup
+just join-prod                # Connect to sunaba.app42.blue on startup
+cargo run --features multiplayer_native -- --server <url>  # Custom server
 ```
+
+### Runtime Connection Management
+
+**Default Mode:** Singleplayer - Game starts disconnected, multiplayer is opt-in
+
+**Connection Methods:**
+1. **CLI Argument:** `--server <url>` connects on startup
+2. **In-Game UI:** Press `M` key → Multiplayer panel → Select server → Connect
+3. **Justfile Shortcuts:** `just join` or `just join-prod`
+
+**Connection Flow:**
+- **Singleplayer → Multiplayer:** Saves singleplayer world, switches to server-authoritative mode
+- **Multiplayer → Singleplayer:** Restores singleplayer world from snapshot
+- **Reconnection:** Automatic with exponential backoff (1s, 2s, 4s, 8s, max 30s)
+- **Error Handling:** User-friendly messages with retry option
+
+**UI States:** Disconnected (server selection) | Connecting | Connected (stats) | Reconnecting | Error
 
 ### Client Architecture (Dual SDK Approach)
 
 | Platform | SDK | Implementation | Status |
 |----------|-----|----------------|--------|
-| **Native** | Rust SDK | `crates/sunaba/src/multiplayer/client.rs` | Stub (pending) |
-| **WASM** | TypeScript SDK | `web/js/spacetime_bridge.js` → `window.spacetimeClient` | ✅ Ready |
+| **Native** | Rust SDK | `crates/sunaba/src/multiplayer/client.rs` | ✅ Runtime switchable |
+| **WASM** | TypeScript SDK | `web/js/spacetime_bridge.js` → `window.spacetimeClient` | ✅ Runtime switchable |
 
-**Feature flags:** `multiplayer_native` (native) or `multiplayer_wasm` (WASM browser)
+**Feature flags:**
+- `multiplayer` - Parent feature enabling all multiplayer code
+- `multiplayer_native` - Native Rust SDK (depends on `multiplayer`)
+- `multiplayer_wasm` - WASM TypeScript SDK (depends on `multiplayer`)
+- When `multiplayer` disabled: singleplayer-only build, no server dependencies
+- When `multiplayer` enabled: runtime-switchable between singleplayer/multiplayer
 
 ### Server Architecture
 
@@ -126,20 +155,20 @@ When you modify `crates/sunaba-server/src/` (add/remove/modify tables in tables.
 4. **Test locally with server:**
    ```bash
    just spacetime-start
-   just spacetime-publish-local
+   just spacetime-publish
    # Test both native and WASM builds
    ```
 
 #### Quick Commands
 
-| Command | Purpose |
-|---------|---------|
-| `just spacetime-build` | Build WASM server module |
-| `just spacetime-generate-rust` | Regenerate Rust client from server |
-| `just spacetime-generate-ts` | Regenerate TypeScript client from server |
-| `just spacetime-verify-clients` | Verify Rust client matches server schema |
-| `just spacetime-verify-ts` | Verify TypeScript client is regenerated |
-| `just test` | Full validation (includes both client verifications) |
+| Command                         | Purpose                                              |
+|---------------------------------|------------------------------------------------------|
+| `just spacetime-build`          | Build WASM server module                             |
+| `just spacetime-generate-rust`  | Regenerate Rust client from server                   |
+| `just spacetime-generate-ts`    | Regenerate TypeScript client from server             |
+| `just spacetime-verify-clients` | Verify Rust client matches server schema             |
+| `just spacetime-verify-ts`      | Verify TypeScript client is regenerated              |
+| `just test`                     | Full validation (includes both client verifications) |
 
 #### Common Pitfalls
 
@@ -249,18 +278,18 @@ pub fn load_chunk(&self, x: i32, y: i32) -> Result<Chunk> {
 ## Architecture Overview
 
 ### Tech Stack
-| Component | Crate |
-|-----------|-------|
-| Graphics | wgpu 27.0 |
-| Windowing | winit 0.30 |
-| UI | egui 0.33 |
-| Physics | Simple kinematic (no external physics engine) |
-| Math | glam 0.25 |
-| Serialization | serde + bincode + ron |
-| Compression | lz4_flex |
-| RNG | rand + rand_xoshiro (deterministic) |
-| Neural/Graph | petgraph 0.6 |
-| Profiling | puffin + puffin_egui (opt-in feature) |
+| Component     | Crate                                         |
+|---------------|-----------------------------------------------|
+| Graphics      | wgpu 27.0                                     |
+| Windowing     | winit 0.30                                    |
+| UI            | egui 0.33                                     |
+| Physics       | Simple kinematic (no external physics engine) |
+| Math          | glam 0.25                                     |
+| Serialization | serde + bincode + ron                         |
+| Compression   | lz4_flex                                      |
+| RNG           | rand + rand_xoshiro (deterministic)           |
+| Neural/Graph  | petgraph 0.6                                  |
+| Profiling     | puffin + puffin_egui (opt-in feature)         |
 
 ### World Structure
 ```
@@ -284,93 +313,92 @@ World
 
 ```
 crates/
-├── sunaba-simulation/      # Material simulation foundation
+├── sunaba-simulation/                 # Material simulation foundation
 │   └── src/
 │       ├── lib.rs
-│       ├── materials.rs          # MaterialDef, MaterialId, Materials
-│       ├── reactions.rs          # Reaction, ReactionRegistry
-│       └── pixel.rs              # Pixel, pixel_flags, CHUNK_SIZE
+│       ├── materials.rs               # MaterialDef, MaterialId, Materials
+│       ├── reactions.rs               # Reaction, ReactionRegistry
+│       └── pixel.rs                   # Pixel, pixel_flags, CHUNK_SIZE
 │
-├── sunaba-creature/        # ML-evolved creatures + physics
+├── sunaba-creature/                   # ML-evolved creatures + physics
 │   └── src/
 │       ├── lib.rs
-│       ├── traits.rs             # WorldAccess, WorldMutAccess traits
-│       ├── types.rs              # EntityId, Health, Hunger
-│       ├── simple_physics.rs     # CreaturePhysicsState (no external engine)
-│       ├── genome.rs             # CPPN-NEAT genome
-│       ├── morphology.rs         # Body generation from CPPN
-│       ├── neural.rs             # DeepNeuralController brain
-│       ├── behavior.rs           # GOAP planner
-│       ├── sensors.rs            # Raycasts, material detection
-│       ├── spawning.rs           # CreatureManager
-│       ├── world_interaction.rs  # Eating, mining, building
-│       └── creature.rs           # Main Creature entity
+│       ├── traits.rs                  # WorldAccess, WorldMutAccess traits
+│       ├── types.rs                   # EntityId, Health, Hunger
+│       ├── simple_physics.rs          # CreaturePhysicsState (no external engine)
+│       ├── genome.rs                  # CPPN-NEAT genome
+│       ├── morphology.rs              # Body generation from CPPN
+│       ├── neural.rs                  # DeepNeuralController brain
+│       ├── behavior.rs                # GOAP planner
+│       ├── sensors.rs                 # Raycasts, material detection
+│       ├── spawning.rs                # CreatureManager
+│       ├── world_interaction.rs       # Eating, mining, building
+│       └── creature.rs                # Main Creature entity
 │
-├── sunaba-core/            # World + entity + levels
+├── sunaba-core/                       # World + entity + levels
 │   └── src/
-│       ├── lib.rs                # Re-exports simulation + creature
-│       ├── world/
-│       │   ├── chunk.rs          # Chunk data structure (64x64)
-│       │   ├── world.rs          # World manager, chunk loading
-│       │   ├── generation.rs     # Procedural terrain (Perlin noise)
-│       │   ├── persistence.rs    # Save/load (bincode + lz4)
-│       │   ├── stats.rs          # SimStats trait
-│       │   └── biome.rs          # Biome definitions
+│       ├── lib.rs                     # Re-exports simulation + creature
+│       ├── world/                     # World management (20+ modules)
+│       │   ├── world.rs               # Main orchestrator (~1,200 lines, refactored)
+│       │   ├── chunk*.rs              # Chunk data, manager, status
+│       │   ├── *_system.rs            # Extracted systems (chemistry, debris, light, mining, persistence, player_physics)
+│       │   ├── *_queries.rs           # Stateless utilities (pixel, neighbor, raycasting, collision)
+│       │   └── ...                    # Generation, biomes, stats, CA update, RNG traits
 │       ├── simulation/
-│       │   ├── temperature.rs    # Heat diffusion
-│       │   ├── state_changes.rs  # Melt, freeze, boil
-│       │   ├── structural.rs     # Structural integrity
-│       │   ├── mining.rs         # Mining mechanics
-│       │   ├── regeneration.rs   # Resource regeneration
-│       │   └── light.rs          # Light propagation
+│       │   ├── temperature.rs         # Heat diffusion
+│       │   ├── state_changes.rs       # Melt, freeze, boil
+│       │   ├── structural.rs          # Structural integrity
+│       │   ├── mining.rs              # Mining mechanics
+│       │   ├── regeneration.rs        # Resource regeneration
+│       │   └── light.rs               # Light propagation
 │       ├── entity/
-│       │   ├── player.rs         # Player controller
-│       │   ├── input.rs          # InputState
-│       │   ├── inventory.rs      # Inventory system
-│       │   ├── crafting.rs       # Crafting recipes
-│       │   ├── tools.rs          # Tool definitions
-│       │   └── health.rs         # Health/hunger system
+│       │   ├── player.rs              # Player controller
+│       │   ├── input.rs               # InputState
+│       │   ├── inventory.rs           # Inventory system
+│       │   ├── crafting.rs            # Crafting recipes
+│       │   ├── tools.rs               # Tool definitions
+│       │   └── health.rs              # Health/hunger system
 │       └── levels/
-│           ├── level_def.rs      # Level definition
-│           └── demo_levels.rs    # 16 demo scenarios
+│           ├── level_def.rs           # Level definition
+│           └── demo_levels.rs         # 16 demo scenarios
 │
-└── sunaba/                 # Main binary + rendering crate
+└── sunaba/                            # Main binary + rendering crate
     └── src/
-        ├── main.rs               # Entry point, CLI
-        ├── lib.rs                # Library root, WASM entry
-        ├── app.rs                # Application state, game loop
+        ├── main.rs                    # Entry point, CLI
+        ├── lib.rs                     # Library root, WASM entry
+        ├── app.rs                     # Application state, game loop
         ├── render/
-        │   └── renderer.rs       # wgpu pipeline, camera
+        │   └── renderer.rs            # wgpu pipeline, camera
         ├── ui/
-        │   ├── ui_state.rs       # Central UI state
-        │   ├── hud.rs            # Heads-up display
-        │   ├── stats.rs          # Debug stats (F1)
-        │   ├── tooltip.rs        # Mouse hover info
-        │   ├── inventory_ui.rs   # Inventory panel
-        │   ├── crafting_ui.rs    # Crafting interface
-        │   ├── level_selector.rs # Level dropdown (L)
-        │   └── controls_help.rs  # Help overlay (H)
-        └── headless/             # Offline training (native only)
+        │   ├── ui_state.rs            # Central UI state
+        │   ├── hud.rs                 # Heads-up display
+        │   ├── stats.rs               # Debug stats (F1)
+        │   ├── tooltip.rs             # Mouse hover info
+        │   ├── inventory_ui.rs        # Inventory panel
+        │   ├── crafting_ui.rs         # Crafting interface
+        │   ├── level_selector.rs      # Level dropdown (L)
+        │   └── controls_help.rs       # Help overlay (H)
+        └── headless/                  # Offline training (native only)
             ├── training_env.rs
             ├── scenario.rs
             └── map_elites.rs
 │
-└── sunaba-server/          # SpacetimeDB multiplayer server
+└── sunaba-server/                     # SpacetimeDB multiplayer server
     └── src/
-        ├── lib.rs                # Module declarations + re-exports
-        ├── tables.rs             # SpacetimeDB table definitions (8 tables)
-        ├── state.rs              # Global server state (SERVER_WORLD)
+        ├── lib.rs                     # Module declarations + re-exports
+        ├── tables.rs                  # SpacetimeDB table definitions (8 tables)
+        ├── state.rs                   # Global server state (SERVER_WORLD)
         ├── reducers/
-        │   ├── mod.rs           # Reducer re-exports
-        │   ├── lifecycle.rs     # init, client connect/disconnect
-        │   ├── world_ticks.rs   # Scheduled simulation ticks (60fps, 30fps, 10fps)
-        │   ├── player_actions.rs # Player movement, placement, mining
-        │   ├── creatures.rs     # Creature spawning + feature extraction
-        │   ├── monitoring.rs    # Ping, metrics cleanup
-        │   └── testing.rs       # Debug/test reducers
-        ├── helpers.rs           # Chunk loading, sync, physics utilities
-        ├── world_access.rs      # WorldAccess impl over SpacetimeDB
-        └── encoding.rs          # Bincode serialization helpers
+        │   ├── mod.rs                 # Reducer re-exports
+        │   ├── lifecycle.rs           # init, client connect/disconnect
+        │   ├── world_ticks.rs         # Scheduled simulation ticks (60fps, 30fps, 10fps)
+        │   ├── player_actions.rs      # Player movement, placement, mining
+        │   ├── creatures.rs           # Creature spawning + feature extraction
+        │   ├── monitoring.rs          # Ping, metrics cleanup
+        │   └── testing.rs             # Debug/test reducers
+        ├── helpers.rs                 # Chunk loading, sync, physics utilities
+        ├── world_access.rs            # WorldAccess impl over SpacetimeDB
+        └── encoding.rs                # Bincode serialization helpers
 ```
 
 ## Development Phases
@@ -410,7 +438,7 @@ F5             : Manual save
 H              : Help panel
 F1             : Debug stats
 F3             : Puffin profiler (requires --features profiling)
-M              : Multiplayer stats (requires multiplayer_native feature)
+M              : Multiplayer panel (connection UI, server selection, stats)
 T              : Temperature overlay
 ```
 
@@ -430,4 +458,4 @@ When adding new controls, update the above list in addition to the controls help
 10. **Behavioral diversity**: MAP-Elites should produce genuinely different strategies
 11. **Morphology-controller coupling**: CPPN and brain genome should co-evolve together
 12. **Multiplayer client sync**: Both Rust (native) and TypeScript (WASM) clients auto-generate from server schema. CI validates both via `just spacetime-verify-clients` and `just spacetime-verify-ts`.
-13. **Multiplayer metrics**: Server metrics are sampled at 6fps (every 10th tick) to reduce overhead. Metrics retention: 3600 samples (10 minutes). Ping sampled at 1 request/second. Access stats panel with M key (native builds with multiplayer_native feature).
+13. **Multiplayer runtime switching**: Game defaults to singleplayer. Press M to open connection panel, select server, and connect/disconnect at runtime. Singleplayer world is saved before connecting and restored on disconnect. Use `--server <url>` CLI arg or `just join`/`just join-prod` to connect on startup. Server metrics sampled at 6fps, ping at 1Hz, retention: 3600 samples (10 minutes).

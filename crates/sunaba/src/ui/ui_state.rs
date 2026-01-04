@@ -9,6 +9,17 @@ use super::tooltip::TooltipState;
 use crate::config::GameConfig;
 use web_time::Instant;
 
+/// Action returned from the loading overlay
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadingAction {
+    /// No action taken (still loading)
+    None,
+    /// User wants to return to local world
+    ReturnToLocal,
+    /// User wants to retry connection
+    Retry,
+}
+
 /// Central UI state container
 pub struct UiState {
     /// Stats collector and display
@@ -37,6 +48,10 @@ pub struct UiState {
     /// Multiplayer metrics collector (both native and WASM)
     #[cfg(feature = "multiplayer")]
     pub metrics_collector: Option<crate::multiplayer::metrics::MetricsCollector>,
+
+    /// Multiplayer panel state (connection UI)
+    #[cfg(feature = "multiplayer")]
+    pub multiplayer_panel: super::multiplayer_panel::MultiplayerPanelState,
 }
 
 impl UiState {
@@ -57,6 +72,8 @@ impl UiState {
             params_changed: false,
             #[cfg(feature = "multiplayer")]
             metrics_collector: None,
+            #[cfg(feature = "multiplayer")]
+            multiplayer_panel: super::multiplayer_panel::MultiplayerPanelState::new(),
         }
     }
 
@@ -72,6 +89,8 @@ impl UiState {
             dock: DockManager::new(),
             #[cfg(feature = "multiplayer")]
             metrics_collector: None,
+            #[cfg(feature = "multiplayer")]
+            multiplayer_panel: super::multiplayer_panel::MultiplayerPanelState::new(),
         }
     }
 
@@ -138,6 +157,9 @@ impl UiState {
         tool_registry: &crate::entity::tools::ToolRegistry,
         recipe_registry: &crate::entity::crafting::RecipeRegistry,
         config: &mut crate::config::GameConfig,
+        #[cfg(feature = "multiplayer")] multiplayer_manager: Option<
+            &crate::multiplayer::MultiplayerManager,
+        >,
     ) {
         // Update stats display (throttled)
         if self.last_stats_update.elapsed().as_millis() >= Self::STATS_UPDATE_INTERVAL_MS {
@@ -160,6 +182,10 @@ impl UiState {
             params_changed: &mut self.params_changed,
             #[cfg(feature = "multiplayer")]
             multiplayer_metrics: self.metrics_collector.as_ref().map(|c| c.metrics()),
+            #[cfg(feature = "multiplayer")]
+            multiplayer_manager,
+            #[cfg(feature = "multiplayer")]
+            multiplayer_panel_state: &mut self.multiplayer_panel,
         };
         super::dock::render_dock(ctx, &mut self.dock, dock_ctx);
 
@@ -192,6 +218,9 @@ impl UiState {
         player: &crate::entity::player::Player,
         tool_registry: &crate::entity::tools::ToolRegistry,
         recipe_registry: &crate::entity::crafting::RecipeRegistry,
+        #[cfg(feature = "multiplayer")] multiplayer_manager: Option<
+            &crate::multiplayer::MultiplayerManager,
+        >,
     ) {
         // Update stats display (throttled)
         if self.last_stats_update.elapsed().as_millis() >= Self::STATS_UPDATE_INTERVAL_MS {
@@ -212,6 +241,10 @@ impl UiState {
             recipe_registry,
             #[cfg(feature = "multiplayer")]
             multiplayer_metrics: self.metrics_collector.as_ref().map(|c| c.metrics()),
+            #[cfg(feature = "multiplayer")]
+            multiplayer_manager,
+            #[cfg(feature = "multiplayer")]
+            multiplayer_panel_state: &mut self.multiplayer_panel,
         };
         super::dock::render_dock(ctx, &mut self.dock, dock_ctx);
 
@@ -227,6 +260,130 @@ impl UiState {
         self.toasts.render(ctx);
         self.tooltip.render_creature(ctx, Some(cursor_screen_pos));
         self.tooltip.render(ctx, cursor_screen_pos);
+    }
+
+    /// Render fullscreen loading overlay for multiplayer chunk loading
+    /// Returns LoadingAction based on user interaction
+    #[cfg(feature = "multiplayer")]
+    pub fn render_loading_overlay(
+        ctx: &egui::Context,
+        chunks_loaded: usize,
+        total_chunks: usize,
+        elapsed: std::time::Duration,
+        timed_out: bool,
+    ) -> LoadingAction {
+        use egui::{Align2, Color32, CornerRadius, FontId, Vec2};
+
+        let mut action = LoadingAction::None;
+
+        // Fullscreen overlay
+        egui::Area::new("loading_overlay".into())
+            .fixed_pos(egui::pos2(0.0, 0.0))
+            .anchor(Align2::LEFT_TOP, Vec2::ZERO)
+            .show(ctx, |ui| {
+                // Dark semi-transparent background covering entire screen
+                let screen_rect = ctx.viewport_rect();
+                ui.painter().rect_filled(
+                    screen_rect,
+                    CornerRadius::ZERO,
+                    Color32::from_black_alpha(220),
+                );
+
+                // Center panel
+                egui::Window::new("loading_panel")
+                    .title_bar(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+                    .show(ctx, |ui| {
+                        ui.set_min_width(400.0);
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(20.0);
+
+                            if timed_out {
+                                // ERROR STATE
+                                ui.label(
+                                    egui::RichText::new("⚠")
+                                        .size(64.0)
+                                        .color(Color32::from_rgb(255, 100, 100)),
+                                );
+                                ui.add_space(10.0);
+
+                                ui.label(
+                                    egui::RichText::new("Failed to Load World")
+                                        .font(FontId::proportional(24.0))
+                                        .color(Color32::WHITE),
+                                );
+                                ui.add_space(10.0);
+
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "Waited {}s without receiving chunks from server",
+                                        elapsed.as_secs()
+                                    ))
+                                    .font(FontId::proportional(14.0))
+                                    .color(Color32::LIGHT_GRAY),
+                                );
+
+                                ui.add_space(20.0);
+
+                                ui.horizontal(|ui| {
+                                    if ui
+                                        .add_sized(
+                                            [150.0, 40.0],
+                                            egui::Button::new("Back to Local World"),
+                                        )
+                                        .clicked()
+                                    {
+                                        action = LoadingAction::ReturnToLocal;
+                                    }
+
+                                    ui.add_space(10.0);
+
+                                    if ui
+                                        .add_sized([150.0, 40.0], egui::Button::new("Retry"))
+                                        .clicked()
+                                    {
+                                        action = LoadingAction::Retry;
+                                    }
+                                });
+                            } else {
+                                // LOADING STATE
+                                ui.add(egui::Spinner::new().size(64.0));
+                                ui.add_space(10.0);
+
+                                ui.label(
+                                    egui::RichText::new("Loading World from Server...")
+                                        .font(FontId::proportional(24.0))
+                                        .color(Color32::WHITE),
+                                );
+                                ui.add_space(10.0);
+
+                                // Progress bar
+                                let progress = chunks_loaded as f32 / total_chunks as f32;
+                                ui.add(
+                                    egui::ProgressBar::new(progress)
+                                        .text(format!(
+                                            "{}/{} chunks loaded",
+                                            chunks_loaded, total_chunks
+                                        ))
+                                        .desired_width(300.0),
+                                );
+
+                                ui.add_space(10.0);
+
+                                ui.label(
+                                    egui::RichText::new(format!("Waited {}s", elapsed.as_secs()))
+                                        .font(FontId::proportional(14.0))
+                                        .color(Color32::LIGHT_GRAY),
+                                );
+                            }
+
+                            ui.add_space(20.0);
+                        });
+                    });
+            });
+
+        action
     }
 }
 

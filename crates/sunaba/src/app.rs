@@ -118,6 +118,14 @@ pub struct App {
     /// Track whether initial spawn chunks have loaded (multiplayer only)
     #[cfg(feature = "multiplayer")]
     multiplayer_initial_chunks_loaded: bool,
+
+    /// Track last time we logged about waiting for chunks (throttle to 10s)
+    #[cfg(feature = "multiplayer")]
+    last_chunk_wait_log: Option<Instant>,
+
+    /// Track when chunk loading started (for timeout detection)
+    #[cfg(feature = "multiplayer")]
+    chunk_loading_started_at: Option<Instant>,
 }
 
 impl App {
@@ -194,7 +202,7 @@ impl App {
 
         let renderer = Renderer::new(&window).await?;
         #[allow(unused_mut)] // mut only needed in singleplayer mode
-        let mut world = World::new();
+        let mut world = World::new(false); // Spawn creatures in singleplayer (will be gated when connected to multiplayer)
 
         // Initialize level manager (but don't load a level yet)
         let level_manager = LevelManager::new();
@@ -251,7 +259,9 @@ impl App {
         };
 
         #[cfg(feature = "multiplayer")]
-        log::info!("Multiplayer manager initialized (disconnected - use UI or --server arg to connect)");
+        log::info!(
+            "Multiplayer manager initialized (disconnected - use UI or --server arg to connect)"
+        );
 
         let app = Self {
             window,
@@ -272,6 +282,10 @@ impl App {
             multiplayer_manager,
             #[cfg(feature = "multiplayer")]
             multiplayer_initial_chunks_loaded: false,
+            #[cfg(feature = "multiplayer")]
+            last_chunk_wait_log: None,
+            #[cfg(feature = "multiplayer")]
+            chunk_loading_started_at: None,
         };
 
         Ok((app, event_loop))
@@ -318,7 +332,9 @@ impl App {
     /// Connect to a multiplayer server
     #[cfg(feature = "multiplayer")]
     pub async fn connect_to_server(&mut self, server_url: String) -> anyhow::Result<()> {
-        let manager = self.multiplayer_manager.as_mut()
+        let manager = self
+            .multiplayer_manager
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Multiplayer manager not initialized"))?;
 
         // Check if already connected
@@ -329,6 +345,11 @@ impl App {
 
         log::info!("Connecting to server: {}", server_url);
         manager.start_connecting(server_url.clone());
+
+        // Reset chunk loading state
+        self.multiplayer_initial_chunks_loaded = false;
+        self.chunk_loading_started_at = Some(Instant::now());
+        self.last_chunk_wait_log = None;
 
         // Save singleplayer world before connecting
         log::info!("Saving singleplayer world...");
@@ -373,7 +394,9 @@ impl App {
     /// Disconnect from multiplayer server and restore singleplayer world
     #[cfg(feature = "multiplayer")]
     pub async fn disconnect_from_server(&mut self) -> anyhow::Result<()> {
-        let manager = self.multiplayer_manager.as_mut()
+        let manager = self
+            .multiplayer_manager
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Multiplayer manager not initialized"))?;
 
         if manager.state.is_disconnected() {
@@ -398,6 +421,11 @@ impl App {
 
         // Clear metrics collector
         self.ui_state.metrics_collector = None;
+
+        // Reset chunk loading state
+        self.multiplayer_initial_chunks_loaded = false;
+        self.chunk_loading_started_at = None;
+        self.last_chunk_wait_log = None;
 
         log::info!("Disconnected - singleplayer world restored");
         Ok(())
@@ -533,39 +561,77 @@ impl App {
                 if let Err(e) = manager.client.sync_chunks_to_world(&mut self.world) {
                     log::error!("Failed to sync chunks from server: {}", e);
                 }
+            }
 
-                // Wait for initial spawn chunks before rendering player
-                if !self.multiplayer_initial_chunks_loaded {
-                    use glam::IVec2;
+            // Wait for initial spawn chunks before rendering player (check after sync)
+            if !self.multiplayer_initial_chunks_loaded {
+                use glam::IVec2;
 
-                    let spawn_chunk_positions = vec![
-                        IVec2::new(0, 0), // Center
-                        IVec2::new(-1, 0),
-                        IVec2::new(1, 0), // Sides
-                        IVec2::new(0, -1),
-                        IVec2::new(0, 1), // Top/bottom
-                    ];
+                let spawn_chunk_positions = vec![
+                    IVec2::new(0, 0), // Center
+                    IVec2::new(-1, 0),
+                    IVec2::new(1, 0), // Sides
+                    IVec2::new(0, -1),
+                    IVec2::new(0, 1), // Top/bottom
+                ];
 
-                    let all_loaded = spawn_chunk_positions
-                        .iter()
-                        .all(|pos| self.world.has_chunk(*pos));
+                let all_loaded = spawn_chunk_positions
+                    .iter()
+                    .all(|pos| self.world.has_chunk(*pos));
 
-                    if all_loaded {
-                        self.multiplayer_initial_chunks_loaded = true;
-                        log::info!(
-                            "Initial spawn chunks loaded ({}), enabling player rendering",
-                            spawn_chunk_positions.len()
+                if all_loaded {
+                    self.multiplayer_initial_chunks_loaded = true;
+                    self.chunk_loading_started_at = None; // Clear timer
+                    log::info!(
+                        "Initial spawn chunks loaded ({}), enabling player rendering",
+                        spawn_chunk_positions.len()
+                    );
+                } else {
+                    // Chunks still loading - throttle logging and check for timeout
+                    let now = Instant::now();
+                    let elapsed = self
+                        .chunk_loading_started_at
+                        .map(|start| now.duration_since(start))
+                        .unwrap_or(std::time::Duration::ZERO);
+
+                    // Check for timeout (60 seconds)
+                    if elapsed.as_secs() >= 60 {
+                        log::error!(
+                            "Chunk loading timeout after {}s - disconnecting",
+                            elapsed.as_secs()
                         );
+                        // Trigger error state (need mutable access)
+                        if let Some(manager) = self.multiplayer_manager.as_mut() {
+                            manager.mark_error(
+                                format!("Failed to load chunks after {}s", elapsed.as_secs()),
+                                manager.state.server_url().unwrap_or("unknown").to_string(),
+                            );
+                        }
+                        self.chunk_loading_started_at = None;
                     } else {
-                        // Chunks still loading - world will be empty but UI will render
-                        log::info!(
-                            "Waiting for spawn chunks to load... (have {} chunks)",
-                            self.world.active_chunks().count()
-                        );
-                        // Continue to render UI/egui so logs are visible
+                        // Throttled logging - only log every 10 seconds
+                        let should_log = self
+                            .last_chunk_wait_log
+                            .map(|last_log| now.duration_since(last_log).as_secs() >= 10)
+                            .unwrap_or(true); // Log on first check
+
+                        if should_log {
+                            log::info!(
+                                "Waiting for spawn chunks... (waited {}s, have {}/5 chunks)",
+                                elapsed.as_secs(),
+                                spawn_chunk_positions
+                                    .iter()
+                                    .filter(|pos| self.world.has_chunk(**pos))
+                                    .count()
+                            );
+                            self.last_chunk_wait_log = Some(now);
+                        }
                     }
                 }
+            }
 
+            // Update metrics collector
+            if let Some(manager) = self.multiplayer_manager.as_ref() {
                 // Update metrics collector
                 if let Some(ref mut collector) = self.ui_state.metrics_collector {
                     // Record this update
@@ -736,10 +802,22 @@ impl App {
             #[cfg(feature = "profiling")]
             puffin::profile_scope!("simulation");
             self.ui_state.stats.begin_sim();
+
+            // Check if connected to multiplayer (redundant check, but kept for clarity)
+            #[cfg(feature = "multiplayer")]
+            let is_multiplayer_connected = self
+                .multiplayer_manager
+                .as_ref()
+                .map(|m| m.state.is_connected())
+                .unwrap_or(false);
+            #[cfg(not(feature = "multiplayer"))]
+            let is_multiplayer_connected = false;
+
             self.world.update(
                 1.0 / 60.0,
                 &mut self.ui_state.stats,
                 &mut rand::thread_rng(),
+                is_multiplayer_connected,
             );
             self.ui_state.stats.end_sim();
         }
@@ -800,6 +878,8 @@ impl App {
                 self.world.tool_registry(),
                 &self.world.recipe_registry,
                 &mut self.config,
+                #[cfg(feature = "multiplayer")]
+                self.multiplayer_manager.as_ref(),
             );
 
             #[cfg(target_arch = "wasm32")]
@@ -814,6 +894,8 @@ impl App {
                 &self.world.player,
                 self.world.tool_registry(),
                 &self.world.recipe_registry,
+                #[cfg(feature = "multiplayer")]
+                self.multiplayer_manager.as_ref(),
             );
 
             // Draw active chunks overlay if enabled
@@ -827,8 +909,116 @@ impl App {
                     active_chunks,
                 );
             }
+
+            // Render fullscreen loading overlay when waiting for multiplayer chunks
+            #[cfg(feature = "multiplayer")]
+            if let Some(manager) = self.multiplayer_manager.as_ref() {
+                if manager.state.is_connected() && !self.multiplayer_initial_chunks_loaded {
+                    use glam::IVec2;
+
+                    let spawn_chunk_positions = vec![
+                        IVec2::new(0, 0),
+                        IVec2::new(-1, 0),
+                        IVec2::new(1, 0),
+                        IVec2::new(0, -1),
+                        IVec2::new(0, 1),
+                    ];
+                    let chunks_loaded = spawn_chunk_positions
+                        .iter()
+                        .filter(|pos| self.world.has_chunk(**pos))
+                        .count();
+
+                    let elapsed = self
+                        .chunk_loading_started_at
+                        .map(|start| web_time::Instant::now().duration_since(start))
+                        .unwrap_or(std::time::Duration::ZERO);
+
+                    let timed_out = matches!(
+                        manager.state,
+                        crate::multiplayer::MultiplayerState::Error { .. }
+                    );
+
+                    let action = crate::ui::ui_state::UiState::render_loading_overlay(
+                        ctx,
+                        chunks_loaded,
+                        spawn_chunk_positions.len(),
+                        elapsed,
+                        timed_out,
+                    );
+
+                    // Store action in panel state for processing after egui::run()
+                    match action {
+                        crate::ui::ui_state::LoadingAction::ReturnToLocal => {
+                            self.ui_state.multiplayer_panel.disconnect_requested = true;
+                        }
+                        crate::ui::ui_state::LoadingAction::Retry => {
+                            // Retry by reconnecting to the same server
+                            if let Some(url) = manager.state.server_url() {
+                                self.ui_state.multiplayer_panel.connect_requested =
+                                    Some(url.to_string());
+                            }
+                        }
+                        crate::ui::ui_state::LoadingAction::None => {}
+                    }
+                }
+            }
         });
         let egui_build_time = egui_build_start.elapsed().as_secs_f32() * 1000.0;
+
+        // Handle multiplayer panel actions (connect/disconnect/cancel)
+        #[cfg(feature = "multiplayer")]
+        {
+            if let Some(_manager) = self.multiplayer_manager.as_ref() {
+                // Extract action flags from panel state (avoids borrow conflicts)
+                let connect_url = self.ui_state.multiplayer_panel.connect_requested.take();
+                let disconnect_req = self.ui_state.multiplayer_panel.disconnect_requested;
+                let cancel_req = self.ui_state.multiplayer_panel.cancel_requested;
+
+                // Handle connect request
+                if let Some(url) = connect_url {
+                    log::info!("Connecting to: {}", url);
+                    // Block on async connection (brief freeze during handshake is acceptable)
+                    if let Err(e) = pollster::block_on(self.connect_to_server(url.clone())) {
+                        log::error!("Failed to connect: {}", e);
+                        if let Some(manager) = self.multiplayer_manager.as_mut() {
+                            manager.mark_error(e.to_string(), url);
+                        }
+                        self.ui_state
+                            .show_toast_error(&format!("Connection failed: {}", e));
+                    } else {
+                        log::info!("Successfully connected");
+                        self.ui_state.show_toast("Connected to server!");
+                    }
+                }
+
+                // Handle disconnect request
+                if disconnect_req {
+                    log::info!("Disconnecting from server");
+                    if let Err(e) = pollster::block_on(self.disconnect_from_server()) {
+                        log::error!("Error during disconnect: {}", e);
+                        self.ui_state
+                            .show_toast_warning(&format!("Disconnect error: {}", e));
+                    } else {
+                        log::info!("Successfully disconnected");
+                        self.ui_state
+                            .show_toast("Disconnected - returned to singleplayer");
+                    }
+                }
+
+                // Handle cancel request
+                if cancel_req {
+                    log::info!("Cancelling connection - returning to singleplayer");
+                    if let Err(e) = pollster::block_on(self.disconnect_from_server()) {
+                        log::error!("Error during cancel: {}", e);
+                    } else {
+                        self.ui_state.show_toast("Connection cancelled");
+                    }
+                }
+
+                // Reset action flags after processing
+                self.ui_state.multiplayer_panel.reset_flags();
+            }
+        }
 
         // TODO: Level selector actions now handled via dock
         // The dock's LevelSelector tab currently just displays info
@@ -1216,21 +1406,38 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::KeyG => {
                             if pressed {
-                                use crate::creature::genome::CreatureGenome;
+                                // Check if connected to multiplayer - don't spawn creatures locally
+                                #[cfg(feature = "multiplayer")]
+                                let is_multiplayer = self
+                                    .multiplayer_manager
+                                    .as_ref()
+                                    .map(|m| m.state.is_connected())
+                                    .unwrap_or(false);
+                                #[cfg(not(feature = "multiplayer"))]
+                                let is_multiplayer = false;
 
-                                // Check population limit
-                                if self.world.creature_manager.can_spawn() {
-                                    // Randomly select genome
-                                    let genome = match rand::random::<u8>() % 3 {
-                                        0 => CreatureGenome::test_biped(),
-                                        1 => CreatureGenome::test_quadruped(),
-                                        _ => CreatureGenome::test_worm(),
-                                    };
-
-                                    let id = self.world.spawn_creature_at_player(genome);
-                                    log::info!("Spawned creature {} at player position", id);
+                                if is_multiplayer {
+                                    log::warn!("Cannot spawn creatures in multiplayer mode");
+                                    self.ui_state
+                                        .toasts
+                                        .info("Cannot spawn creatures while connected to server");
                                 } else {
-                                    log::warn!("Cannot spawn: population limit reached");
+                                    use crate::creature::genome::CreatureGenome;
+
+                                    // Check population limit
+                                    if self.world.creature_manager.can_spawn() {
+                                        // Randomly select genome
+                                        let genome = match rand::random::<u8>() % 3 {
+                                            0 => CreatureGenome::test_biped(),
+                                            1 => CreatureGenome::test_quadruped(),
+                                            _ => CreatureGenome::test_worm(),
+                                        };
+
+                                        let id = self.world.spawn_creature_at_player(genome);
+                                        log::info!("Spawned creature {} at player position", id);
+                                    } else {
+                                        log::warn!("Cannot spawn: population limit reached");
+                                    }
                                 }
                             }
                         }
