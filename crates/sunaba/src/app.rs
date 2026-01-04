@@ -648,10 +648,12 @@ impl App {
 
                     // Expand subscription to larger radius now that spawn is loaded
                     if let Some(manager) = self.multiplayer_manager.as_mut() {
-                        if let Err(e) = manager.client.expand_chunk_subscription(IVec2::ZERO, 10) {
-                            log::error!("Failed to expand chunk subscription: {}", e);
-                        } else {
-                            log::info!("Expanded chunk subscription to radius 10");
+                        if manager.state.is_connected() {
+                            if let Err(e) = manager.client.expand_chunk_subscription(IVec2::ZERO, 10) {
+                                log::error!("Failed to expand chunk subscription: {}", e);
+                            } else {
+                                log::info!("Expanded chunk subscription to radius 10");
+                            }
                         }
                     }
                 } else {
@@ -745,8 +747,10 @@ impl App {
                     // Record this update
                     collector.record_update();
 
-                    // Send ping periodically
-                    collector.send_ping(&manager.client);
+                    // Send ping periodically (only when connected)
+                    if manager.state.is_connected() {
+                        collector.send_ping(&manager.client);
+                    }
 
                     // Update server metrics from latest data
                     if let Some(server_metrics) = manager.client.get_latest_server_metrics() {
@@ -764,8 +768,10 @@ impl App {
                     // Record this update
                     collector.record_update();
 
-                    // Send ping periodically
-                    collector.send_ping(&manager.client);
+                    // Send ping periodically (only when connected)
+                    if manager.state.is_connected() {
+                        collector.send_ping(&manager.client);
+                    }
 
                     // Update server metrics from latest data
                     if let Some(server_metrics) = manager.client.get_latest_server_metrics() {
@@ -796,13 +802,15 @@ impl App {
             #[cfg(feature = "multiplayer")]
             {
                 if let Some(manager) = self.multiplayer_manager.as_ref() {
-                    let pos = self.world.player.position;
-                    let vel = self.world.player.velocity;
-                    if let Err(e) = manager
-                        .client
-                        .update_player_position(pos.x, pos.y, vel.x, vel.y)
-                    {
-                        log::warn!("Failed to send player position to server: {}", e);
+                    if manager.state.is_connected() {
+                        let pos = self.world.player.position;
+                        let vel = self.world.player.velocity;
+                        if let Err(e) = manager
+                            .client
+                            .update_player_position(pos.x, pos.y, vel.x, vel.y)
+                        {
+                            log::warn!("Failed to send player position to server: {}", e);
+                        }
                     }
                 }
             }
@@ -853,8 +861,10 @@ impl App {
                 #[cfg(feature = "multiplayer")]
                 {
                     if let Some(manager) = self.multiplayer_manager.as_ref() {
-                        if let Err(e) = manager.client.mine(center_x, center_y) {
-                            log::warn!("Failed to send mining action to server: {}", e);
+                        if manager.state.is_connected() {
+                            if let Err(e) = manager.client.mine(center_x, center_y) {
+                                log::warn!("Failed to send mining action to server: {}", e);
+                            }
                         }
                     }
                 }
@@ -892,8 +902,10 @@ impl App {
                 #[cfg(feature = "multiplayer")]
                 {
                     if let Some(manager) = self.multiplayer_manager.as_ref() {
-                        if let Err(e) = manager.client.place_material(wx, wy, material_id) {
-                            log::warn!("Failed to send material placement to server: {}", e);
+                        if manager.state.is_connected() {
+                            if let Err(e) = manager.client.place_material(wx, wy, material_id) {
+                                log::warn!("Failed to send material placement to server: {}", e);
+                            }
                         }
                     }
                 }
@@ -1192,10 +1204,12 @@ impl App {
                                 .trim()
                                 .to_string();
                             if let Some(ref manager) = self.multiplayer_manager {
-                                if let Err(e) = manager.client.set_nickname(nickname.clone()) {
-                                    log::warn!("Failed to set pre-entered nickname: {}", e);
-                                } else {
-                                    log::info!("Set pre-entered nickname: {}", nickname);
+                                if manager.state.is_connected() {
+                                    if let Err(e) = manager.client.set_nickname(nickname.clone()) {
+                                        log::warn!("Failed to set pre-entered nickname: {}", e);
+                                    } else {
+                                        log::info!("Set pre-entered nickname: {}", nickname);
+                                    }
                                 }
                             }
                         }
@@ -1281,14 +1295,19 @@ impl App {
                     .take()
                 {
                     if let Some(ref manager) = self.multiplayer_manager {
-                        if let Err(e) = manager.client.set_nickname(nickname.clone()) {
-                            log::error!("Failed to set nickname: {}", e);
-                            self.ui_state
-                                .show_toast_error(&format!("Failed to set nickname: {}", e));
+                        if manager.state.is_connected() {
+                            if let Err(e) = manager.client.set_nickname(nickname.clone()) {
+                                log::error!("Failed to set nickname: {}", e);
+                                self.ui_state
+                                    .show_toast_error(&format!("Failed to set nickname: {}", e));
+                            } else {
+                                log::info!("Nickname set to: {}", nickname);
+                                self.ui_state
+                                    .show_toast(&format!("Nickname changed to: {}", nickname));
+                            }
                         } else {
-                            log::info!("Nickname set to: {}", nickname);
                             self.ui_state
-                                .show_toast(&format!("Nickname changed to: {}", nickname));
+                                .show_toast_error("Cannot set nickname: not connected to server");
                         }
                     }
                 }
@@ -1398,9 +1417,14 @@ impl App {
                 #[cfg(feature = "multiplayer")]
                 {
                     if let Some(manager) = self.multiplayer_manager.as_ref() {
-                        // Multiplayer: request respawn from server
-                        if let Err(e) = manager.client.request_respawn() {
-                            log::error!("Failed to request respawn: {}", e);
+                        if manager.state.is_connected() {
+                            // Multiplayer: request respawn from server
+                            if let Err(e) = manager.client.request_respawn() {
+                                log::error!("Failed to request respawn: {}", e);
+                            }
+                        } else {
+                            // Not connected: respawn locally
+                            self.world.respawn_player();
                         }
                     } else {
                         // Singleplayer: respawn locally
