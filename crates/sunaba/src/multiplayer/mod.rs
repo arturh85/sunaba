@@ -6,10 +6,10 @@
 
 // Native client using Rust SDK
 #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer"))]
-pub mod generated;
+mod generated;
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer"))]
-mod client;
+pub(crate) mod client;
 
 // OAuth for native builds
 #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]

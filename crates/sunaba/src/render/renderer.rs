@@ -60,11 +60,11 @@ const QUAD_INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 /// Camera uniform data
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct CameraUniform {
+struct CameraUniform {
     /// Camera position in world pixels
-    pub position: [f32; 2],
+    position: [f32; 2],
     /// Zoom level (pixels per screen unit)
-    pub zoom: f32,
+    zoom: f32,
     /// Aspect ratio (width / height)
     aspect: f32,
 }
@@ -111,7 +111,7 @@ pub struct Renderer {
     // Camera
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    pub camera: CameraUniform,
+    camera: CameraUniform,
     /// Animated camera for smooth follow and zoom
     animated_camera: AnimatedCamera,
 
@@ -911,7 +911,7 @@ impl Renderer {
         &mut self,
         world: &mut World,
         particles: &ParticleSystem,
-        remote_players: &[crate::app::RemotePlayerRenderData],
+        #[allow(unused_variables)] remote_players: &[crate::app::RemotePlayerRenderData],
     ) {
         // If texture origin changed, need to fully rebuffer
         if self.needs_full_rebuffer {
@@ -1038,7 +1038,8 @@ impl Renderer {
             }
         }
 
-        // Render remote players (empty slice when multiplayer disabled)
+        // Render remote players (multiplayer only)
+        #[cfg(feature = "multiplayer")]
         for player in remote_players {
             self.render_remote_player_to_buffer(player.x, player.y, player.vel_x, player.vel_y);
         }

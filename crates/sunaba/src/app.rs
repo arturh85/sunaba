@@ -21,11 +21,7 @@ use crate::ui::UiState;
 use crate::world::World;
 
 #[cfg(feature = "multiplayer")]
-use crate::multiplayer::generated;
-#[cfg(feature = "multiplayer")]
-use generated::player_table::PlayerTableAccess;
-#[cfg(feature = "multiplayer")]
-use spacetimedb_sdk::{DbContext, Table};
+use crate::multiplayer::client::{DbContextTrait as _, PlayerTableAccessTrait as _, TableTrait as _};
 
 /// Game mode: persistent world or demo level
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -985,8 +981,8 @@ impl App {
                 None
             };
             let window_size = self.window.inner_size();
-            let camera_pos = glam::Vec2::from_array(self.renderer.camera.position);
-            let camera_zoom = self.renderer.camera.zoom;
+            let camera_pos = self.renderer.camera_position();
+            let camera_zoom = self.renderer.camera_zoom();
             let player_pos = self.world.player.position;
             (remote_players, local_player_name, window_size, camera_pos, camera_zoom, player_pos)
         };

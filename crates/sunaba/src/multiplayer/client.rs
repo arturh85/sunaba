@@ -17,6 +17,10 @@ use generated::set_player_name_reducer::set_player_name;
 use generated::{player_mine, player_place_material, player_update_position};
 use spacetimedb_sdk::{DbContext, Table}; // Trait for connection and table methods
 
+// Re-export traits needed by app.rs for player table access
+pub use generated::player_table::PlayerTableAccess as PlayerTableAccessTrait;
+pub use spacetimedb_sdk::{DbContext as DbContextTrait, Table as TableTrait};
+
 // OAuth imports (native only)
 #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
 use crate::multiplayer::oauth_native::{
@@ -162,20 +166,19 @@ impl MultiplayerClient {
             .subscribe("SELECT * FROM player");
 
         // Set default nickname if not already set
-        if let Some(identity) = conn_guard.try_identity() {
-            // Check if player has a name
-            if let Some(player) = conn_guard.db.player().identity().find(&identity) {
-                if player.name.is_none() {
-                    let default_name = generate_default_nickname(&identity);
-                    drop(conn_guard); // Release lock before calling reducer
-                    if let Err(e) = self.set_nickname(default_name.clone()) {
-                        log::warn!("Failed to set default nickname: {}", e);
-                    } else {
-                        log::info!("Set default nickname: {}", default_name);
-                    }
-                    // Re-acquire lock for remaining subscriptions
-                    conn_guard = conn.lock().unwrap();
+        let identity = conn_guard.identity();
+        // Check if player has a name
+        if let Some(player) = conn_guard.db.player().identity().find(&identity) {
+            if player.name.is_none() {
+                let default_name = generate_default_nickname(&identity);
+                drop(conn_guard); // Release lock before calling reducer
+                if let Err(e) = self.set_nickname(default_name.clone()) {
+                    log::warn!("Failed to set default nickname: {}", e);
+                } else {
+                    log::info!("Set default nickname: {}", default_name);
                 }
+                // Re-acquire lock for remaining subscriptions
+                conn_guard = conn.lock().unwrap();
             }
         }
 
