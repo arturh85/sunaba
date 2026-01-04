@@ -175,6 +175,15 @@ impl ParamsPanel {
                 self.changed |= ui
                     .checkbox(&mut self.config.debug.verbose_logging, "Verbose Logging")
                     .changed();
+                self.changed |= ui
+                    .add(
+                        egui::Slider::new(&mut self.config.debug.brush_size, 1..=10)
+                            .text("Brush Size"),
+                    )
+                    .on_hover_text(
+                        "Circular brush radius for material placement (1 = 3x3, 2 = 5x5, etc.)",
+                    )
+                    .changed();
             });
 
             ui.add_space(8.0);

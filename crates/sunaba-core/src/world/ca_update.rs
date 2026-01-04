@@ -11,52 +11,6 @@ use crate::world::{SimStats, WorldRng};
 pub struct CellularAutomataUpdater;
 
 impl CellularAutomataUpdater {
-    /// Update cellular automata for a single chunk
-    /// Processes bottom-to-top for correct falling physics, alternating direction for symmetry
-    pub fn update_chunk<R: WorldRng>(
-        chunks: &mut HashMap<IVec2, Chunk>,
-        chunk_pos: IVec2,
-        materials: &Materials,
-        stats: &mut dyn SimStats,
-        rng: &mut R,
-    ) {
-        // Update from bottom to top so falling works correctly
-        for y in 0..CHUNK_SIZE {
-            // Alternate direction each row for symmetry
-            let x_iter: Box<dyn Iterator<Item = usize>> = if y % 2 == 0 {
-                Box::new(0..CHUNK_SIZE)
-            } else {
-                Box::new((0..CHUNK_SIZE).rev())
-            };
-
-            for x in x_iter {
-                // Get pixel and check if it needs updating
-                let pixel = match chunks.get(&chunk_pos) {
-                    Some(chunk) => chunk.get_pixel(x, y),
-                    None => return,
-                };
-
-                if pixel.is_empty() {
-                    continue;
-                }
-
-                let material = materials.get(pixel.material_id);
-                match material.material_type {
-                    MaterialType::Powder => {
-                        Self::update_powder(chunks, chunk_pos, x, y, materials, stats, rng);
-                    }
-                    MaterialType::Liquid => {
-                        Self::update_liquid(chunks, chunk_pos, x, y, materials, stats, rng);
-                    }
-                    MaterialType::Gas => {
-                        Self::update_gas(chunks, chunk_pos, x, y, materials, stats, rng);
-                    }
-                    MaterialType::Solid => {}
-                }
-            }
-        }
-    }
-
     /// Update powder material (falls down, disperses diagonally)
     pub fn update_powder<R: WorldRng>(
         chunks: &mut HashMap<IVec2, Chunk>,

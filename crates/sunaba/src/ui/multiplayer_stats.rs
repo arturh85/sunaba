@@ -3,17 +3,11 @@
 use egui::{Color32, Ui};
 use egui_plot::{HLine, Legend, Line, Plot, PlotPoints};
 
-#[cfg(any(
-    all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-    all(target_arch = "wasm32", feature = "multiplayer_wasm")
-))]
+#[cfg(feature = "multiplayer")]
 use crate::multiplayer::metrics::{ConnectionStatus, MultiplayerMetrics};
 
 /// Render multiplayer statistics panel
-#[cfg(any(
-    all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-    all(target_arch = "wasm32", feature = "multiplayer_wasm")
-))]
+#[cfg(feature = "multiplayer")]
 pub fn render_multiplayer_stats(ui: &mut Ui, metrics: &MultiplayerMetrics) {
     ui.heading("Connection Health");
     render_connection_section(ui, metrics);
@@ -31,10 +25,7 @@ pub fn render_multiplayer_stats(ui: &mut Ui, metrics: &MultiplayerMetrics) {
     render_graphs(ui, metrics);
 }
 
-#[cfg(any(
-    all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-    all(target_arch = "wasm32", feature = "multiplayer_wasm")
-))]
+#[cfg(feature = "multiplayer")]
 fn render_connection_section(ui: &mut Ui, metrics: &MultiplayerMetrics) {
     // Status indicator
     let (status_text, status_color) = match metrics.connection_status {
@@ -85,10 +76,7 @@ fn render_connection_section(ui: &mut Ui, metrics: &MultiplayerMetrics) {
     }
 }
 
-#[cfg(any(
-    all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-    all(target_arch = "wasm32", feature = "multiplayer_wasm")
-))]
+#[cfg(feature = "multiplayer")]
 fn render_server_section(ui: &mut Ui, metrics: &MultiplayerMetrics) {
     ui.label(format!("Tick time: {:.2} ms", metrics.server_tick_time_ms));
     ui.label(format!("Active chunks: {}", metrics.server_active_chunks));
@@ -115,10 +103,7 @@ fn render_server_section(ui: &mut Ui, metrics: &MultiplayerMetrics) {
     }
 }
 
-#[cfg(any(
-    all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-    all(target_arch = "wasm32", feature = "multiplayer_wasm")
-))]
+#[cfg(feature = "multiplayer")]
 fn render_population_section(ui: &mut Ui, metrics: &MultiplayerMetrics) {
     ui.label(format!("Online players: {}", metrics.server_online_players));
     ui.label(format!(
@@ -131,10 +116,7 @@ fn render_population_section(ui: &mut Ui, metrics: &MultiplayerMetrics) {
     ui.label(format!("Total entities: {}", total_entities));
 }
 
-#[cfg(any(
-    all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-    all(target_arch = "wasm32", feature = "multiplayer_wasm")
-))]
+#[cfg(feature = "multiplayer")]
 fn render_graphs(ui: &mut Ui, metrics: &MultiplayerMetrics) {
     // Ping history graph
     if !metrics.ping_history.is_empty() {

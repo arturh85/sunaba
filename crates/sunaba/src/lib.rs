@@ -16,17 +16,11 @@ pub mod ui;
 pub mod headless;
 
 // Multiplayer module (native: Rust SDK, WASM: TypeScript SDK via JS)
-#[cfg(any(
-    all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-    all(target_arch = "wasm32", feature = "multiplayer_wasm")
-))]
+#[cfg(feature = "multiplayer")]
 pub mod multiplayer;
 
 // Encoding module for chunk synchronization (multiplayer only)
-#[cfg(any(
-    all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-    all(target_arch = "wasm32", feature = "multiplayer_wasm")
-))]
+#[cfg(feature = "multiplayer")]
 pub mod encoding;
 
 // Re-export core modules for convenience

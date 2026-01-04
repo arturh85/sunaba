@@ -110,18 +110,13 @@ pub struct App {
     /// On WASM, this is a no-op but we keep it for API consistency.
     #[allow(dead_code)]
     hot_reload: crate::hot_reload::HotReloadManager,
-    /// Multiplayer client (native: Rust SDK, WASM: TypeScript SDK via JS)
-    #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
-    multiplayer_client: Option<crate::multiplayer::MultiplayerClient>,
+
+    /// Multiplayer connection manager (handles state, client, reconnection)
+    #[cfg(feature = "multiplayer")]
+    multiplayer_manager: Option<crate::multiplayer::MultiplayerManager>,
 
     /// Track whether initial spawn chunks have loaded (multiplayer only)
-    #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+    #[cfg(feature = "multiplayer")]
     multiplayer_initial_chunks_loaded: bool,
 }
 
@@ -205,19 +200,13 @@ impl App {
         let level_manager = LevelManager::new();
 
         // In multiplayer mode, don't load local world - we'll receive state from server
-        #[cfg(not(any(
-            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-            all(target_arch = "wasm32", feature = "multiplayer_wasm")
-        )))]
+        #[cfg(not(feature = "multiplayer"))]
         {
             world.load_persistent_world();
             log::info!("Loaded persistent world (singleplayer mode)");
         }
 
-        #[cfg(any(
-            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-            all(target_arch = "wasm32", feature = "multiplayer_wasm")
-        ))]
+        #[cfg(feature = "multiplayer")]
         log::info!("Multiplayer mode - waiting for world state from server");
 
         let game_mode = GameMode::PersistentWorld;
@@ -236,56 +225,33 @@ impl App {
         log::info!("Loaded persistent world");
 
         #[cfg(not(target_arch = "wasm32"))]
-        #[allow(unused_mut)] // Mut needed for multiplayer_native feature
+        #[allow(unused_mut)] // Mut needed for multiplayer feature
         let mut ui_state = UiState::new(&config);
 
         #[cfg(target_arch = "wasm32")]
-        #[allow(unused_mut)] // Mut needed for multiplayer_native feature
+        #[allow(unused_mut)] // Mut needed for multiplayer feature
         let mut ui_state = UiState::default();
 
-        // Initialize multiplayer client (WASM only, requires multiplayer feature)
-        #[cfg(any(
-            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-            all(target_arch = "wasm32", feature = "multiplayer_wasm")
-        ))]
-        let mut multiplayer_client = Some(crate::multiplayer::MultiplayerClient::new());
-
-        // Connect to SpacetimeDB server (WASM multiplayer only)
-        #[cfg(any(
-            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-            all(target_arch = "wasm32", feature = "multiplayer_wasm")
-        ))]
-        {
-            if let Some(ref mut client) = multiplayer_client {
-                log::info!("Attempting to connect to SpacetimeDB at http://localhost:3000...");
-                // TODO: Get server URL from environment or config
-                // For now, hardcode to localhost:3000
-                match client.connect("http://localhost:3000", "sunaba").await {
-                    Ok(_) => {
-                        log::info!("Connected to SpacetimeDB server");
-                        // Subscribe to world state
-                        if let Err(e) = client.subscribe_world().await {
-                            log::error!("Failed to subscribe to world state: {}", e);
-                        }
-
-                        // Initialize metrics collector
-                        #[cfg(any(
-                            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-                            all(target_arch = "wasm32", feature = "multiplayer_wasm")
-                        ))]
-                        {
-                            ui_state.metrics_collector =
-                                Some(crate::multiplayer::metrics::MetricsCollector::new());
-                            log::info!("Initialized multiplayer metrics collector");
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to connect to SpacetimeDB server: {}", e);
-                        multiplayer_client = None;
-                    }
-                }
+        // Initialize multiplayer manager (starts disconnected)
+        #[cfg(feature = "multiplayer")]
+        let multiplayer_manager = {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                Some(crate::multiplayer::MultiplayerManager::new(
+                    config.multiplayer.clone(),
+                ))
             }
-        }
+            #[cfg(target_arch = "wasm32")]
+            {
+                // WASM: use default config (no access to config file)
+                Some(crate::multiplayer::MultiplayerManager::new(
+                    crate::config::MultiplayerConfig::default(),
+                ))
+            }
+        };
+
+        #[cfg(feature = "multiplayer")]
+        log::info!("Multiplayer manager initialized (disconnected - use UI or --server arg to connect)");
 
         let app = Self {
             window,
@@ -302,15 +268,9 @@ impl App {
             #[cfg(not(target_arch = "wasm32"))]
             config,
             hot_reload: crate::hot_reload::HotReloadManager::new(),
-            #[cfg(any(
-                all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-                all(target_arch = "wasm32", feature = "multiplayer_wasm")
-            ))]
-            multiplayer_client,
-            #[cfg(any(
-                all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-                all(target_arch = "wasm32", feature = "multiplayer_wasm")
-            ))]
+            #[cfg(feature = "multiplayer")]
+            multiplayer_manager,
+            #[cfg(feature = "multiplayer")]
             multiplayer_initial_chunks_loaded: false,
         };
 
@@ -476,13 +436,13 @@ impl App {
         }
 
         // Process SpacetimeDB messages (native multiplayer only)
-        #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+        #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer"))]
         {
-            if let Some(ref client) = self.multiplayer_client {
-                client.frame_tick();
+            if let Some(manager) = self.multiplayer_manager.as_ref() {
+                manager.client.frame_tick();
 
                 // Sync chunks from server to local world for rendering
-                if let Err(e) = client.sync_chunks_to_world(&mut self.world) {
+                if let Err(e) = manager.client.sync_chunks_to_world(&mut self.world) {
                     log::error!("Failed to sync chunks from server: {}", e);
                 }
 
@@ -524,10 +484,10 @@ impl App {
                     collector.record_update();
 
                     // Send ping periodically
-                    collector.send_ping(client);
+                    collector.send_ping(&manager.client);
 
                     // Update server metrics from latest data
-                    if let Some(server_metrics) = client.get_latest_server_metrics() {
+                    if let Some(server_metrics) = manager.client.get_latest_server_metrics() {
                         collector.update_server_metrics(&server_metrics);
                     }
                 }
@@ -535,18 +495,18 @@ impl App {
         }
 
         // Update metrics collector (WASM multiplayer only)
-        #[cfg(all(target_arch = "wasm32", feature = "multiplayer_wasm"))]
+        #[cfg(all(target_arch = "wasm32", feature = "multiplayer"))]
         {
-            if let Some(ref client) = self.multiplayer_client {
+            if let Some(manager) = self.multiplayer_manager.as_ref() {
                 if let Some(ref mut collector) = self.ui_state.metrics_collector {
                     // Record this update
                     collector.record_update();
 
                     // Send ping periodically
-                    collector.send_ping(client);
+                    collector.send_ping(&manager.client);
 
                     // Update server metrics from latest data
-                    if let Some(server_metrics) = client.get_latest_server_metrics() {
+                    if let Some(server_metrics) = manager.client.get_latest_server_metrics() {
                         collector.update_server_metrics(&server_metrics);
                     }
                 }
@@ -557,14 +517,11 @@ impl App {
         self.world.update_player(&self.input_state, 1.0 / 60.0);
 
         // Send player position to server (multiplayer only)
-        #[cfg(any(
-            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-            all(target_arch = "wasm32", feature = "multiplayer_wasm")
-        ))]
+        #[cfg(feature = "multiplayer")]
         {
-            if let Some(ref client) = self.multiplayer_client {
+            if let Some(manager) = self.multiplayer_manager.as_ref() {
                 let pos = self.world.player.position;
-                if let Err(e) = client.update_player_position(pos.x, pos.y) {
+                if let Err(e) = manager.client.update_player_position(pos.x, pos.y) {
                     log::warn!("Failed to send player position to server: {}", e);
                 }
             }
@@ -613,13 +570,10 @@ impl App {
             self.world.debug_mine_circle(center_x, center_y, 16);
 
             // Send mining action to server (multiplayer only)
-            #[cfg(any(
-                all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-                all(target_arch = "wasm32", feature = "multiplayer_wasm")
-            ))]
+            #[cfg(feature = "multiplayer")]
             {
-                if let Some(ref client) = self.multiplayer_client {
-                    if let Err(e) = client.mine(center_x, center_y) {
+                if let Some(manager) = self.multiplayer_manager.as_ref() {
+                    if let Err(e) = manager.client.mine(center_x, center_y) {
                         log::warn!("Failed to send mining action to server: {}", e);
                     }
                 }
@@ -641,21 +595,24 @@ impl App {
             let color = material_def.color;
             let is_liquid = material_def.material_type == MaterialType::Liquid;
 
+            #[cfg(not(target_arch = "wasm32"))]
+            let brush_size = self.config.debug.brush_size;
+            #[cfg(target_arch = "wasm32")]
+            let brush_size = 1; // Default brush size for WASM
+
             if self.debug_placement() {
-                self.world.place_material_debug(wx, wy, material_id);
+                self.world
+                    .place_material_debug(wx, wy, material_id, brush_size);
             } else {
                 self.world
-                    .place_material_from_inventory(wx, wy, material_id);
+                    .place_material_from_inventory(wx, wy, material_id, brush_size);
             }
 
             // Send material placement to server (multiplayer only)
-            #[cfg(any(
-                all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-                all(target_arch = "wasm32", feature = "multiplayer_wasm")
-            ))]
+            #[cfg(feature = "multiplayer")]
             {
-                if let Some(ref client) = self.multiplayer_client {
-                    if let Err(e) = client.place_material(wx, wy, material_id) {
+                if let Some(manager) = self.multiplayer_manager.as_ref() {
+                    if let Err(e) = manager.client.place_material(wx, wy, material_id) {
                         log::warn!("Failed to send material placement to server: {}", e);
                     }
                 }
@@ -671,10 +628,7 @@ impl App {
         }
 
         // Update simulation with timing (disabled in multiplayer - server is authoritative)
-        #[cfg(not(any(
-            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-            all(target_arch = "wasm32", feature = "multiplayer_wasm")
-        )))]
+        #[cfg(not(feature = "multiplayer"))]
         {
             #[cfg(feature = "profiling")]
             puffin::profile_scope!("simulation");
@@ -1140,10 +1094,7 @@ impl ApplicationHandler for App {
                                 self.ui_state.toggle_tab(crate::ui::DockTab::LevelSelector);
                             }
                         }
-                        #[cfg(any(
-                            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-                            all(target_arch = "wasm32", feature = "multiplayer_wasm")
-                        ))]
+                        #[cfg(feature = "multiplayer")]
                         KeyCode::KeyM => {
                             if pressed {
                                 self.ui_state

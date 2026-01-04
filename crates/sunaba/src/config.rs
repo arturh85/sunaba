@@ -31,6 +31,10 @@ pub struct GameConfig {
 
     #[serde(default)]
     pub rendering: RenderingConfig,
+
+    #[serde(default)]
+    #[cfg(feature = "multiplayer")]
+    pub multiplayer: MultiplayerConfig,
 }
 
 /// Camera/zoom settings
@@ -127,6 +131,8 @@ pub struct DebugConfig {
     pub debug_placement: bool,
     /// Enable verbose logging
     pub verbose_logging: bool,
+    /// Brush radius for material placement (1-10)
+    pub brush_size: u32,
 }
 
 impl Default for DebugConfig {
@@ -134,6 +140,7 @@ impl Default for DebugConfig {
         Self {
             debug_placement: true,
             verbose_logging: false,
+            brush_size: 1,
         }
     }
 }
@@ -182,6 +189,7 @@ impl GameConfig {
             .set_default("ui.show_stats_on_start", false)?
             .set_default("debug.debug_placement", true)?
             .set_default("debug.verbose_logging", false)?
+            .set_default("debug.brush_size", 1_i64)?
             .set_default("rendering.scanline_intensity", 0.15)?
             .set_default("rendering.vignette_intensity", 0.25)?
             .set_default("rendering.bloom_intensity", 0.3)?
@@ -200,6 +208,47 @@ impl GameConfig {
             .try_deserialize()
             .context("Failed to deserialize configuration")
     }
+}
+
+/// Multiplayer configuration
+#[cfg(feature = "multiplayer")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiplayerConfig {
+    pub servers: Vec<ServerEntry>,
+    pub last_server: Option<String>,
+    pub connection_timeout_secs: u64,
+    pub reconnect_max_attempts: u32,
+    pub reconnect_max_delay_secs: u64,
+}
+
+#[cfg(feature = "multiplayer")]
+impl Default for MultiplayerConfig {
+    fn default() -> Self {
+        Self {
+            servers: vec![
+                ServerEntry {
+                    name: "Local Dev Server".to_string(),
+                    url: "http://localhost:3000".to_string(),
+                },
+                ServerEntry {
+                    name: "Official Server".to_string(),
+                    url: "http://sunaba.app42.blue".to_string(),
+                },
+            ],
+            last_server: Some("http://sunaba.app42.blue".to_string()),
+            connection_timeout_secs: 10,
+            reconnect_max_attempts: 10,
+            reconnect_max_delay_secs: 30,
+        }
+    }
+}
+
+/// Server entry in multiplayer config
+#[cfg(feature = "multiplayer")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerEntry {
+    pub name: String,
+    pub url: String,
 }
 
 #[cfg(test)]

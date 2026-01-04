@@ -74,6 +74,60 @@ impl DebrisSystem {
             false
         }
     }
+
+    /// Reconstruct a settled falling chunk back into the world
+    /// Places all pixels from the chunk into world coordinates
+    pub fn reconstruct_falling_chunk(chunk_manager: &mut ChunkManager, chunk: FallingChunk) {
+        let center_i = IVec2::new(chunk.center.x.round() as i32, chunk.center.y.round() as i32);
+
+        log::info!(
+            "Reconstructing falling chunk {} ({} pixels) at ({}, {})",
+            chunk.id,
+            chunk.pixels.len(),
+            center_i.x,
+            center_i.y
+        );
+
+        let mut placed = 0;
+        let mut failed = 0;
+
+        for (relative_pos, material_id) in chunk.pixels {
+            let world_pos = center_i + relative_pos;
+
+            // Check if target position is empty (air) - inline get_pixel logic
+            let (chunk_pos, local_x, local_y) =
+                ChunkManager::world_to_chunk_coords(world_pos.x, world_pos.y);
+            let is_empty = chunk_manager
+                .chunks
+                .get(&chunk_pos)
+                .map(|c| c.get_pixel(local_x, local_y).is_empty())
+                .unwrap_or(false);
+
+            // Only place if target position is empty (air)
+            if is_empty {
+                if Self::set_pixel_direct_checked(
+                    chunk_manager,
+                    world_pos.x,
+                    world_pos.y,
+                    material_id,
+                ) {
+                    placed += 1;
+                } else {
+                    failed += 1;
+                }
+            }
+        }
+
+        if failed > 0 {
+            log::warn!(
+                "Falling chunk reconstruction: {} pixels placed, {} failed",
+                placed,
+                failed
+            );
+        } else {
+            log::debug!("Placed {} pixels from falling chunk", placed);
+        }
+    }
 }
 
 impl Default for DebrisSystem {

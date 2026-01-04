@@ -8,7 +8,7 @@ pub mod inventory_ui;
 pub mod level_selector;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod logger_panel;
-#[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer"))]
 pub mod multiplayer_stats;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod params_panel;

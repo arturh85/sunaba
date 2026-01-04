@@ -5,9 +5,6 @@ use crate::entity::player::Player;
 use crate::entity::tools::ToolRegistry;
 use crate::simulation::{MaterialId, Materials, mining::calculate_mining_time};
 
-/// Brush radius for circular placement (1 = 3x3, 2 = 5x5)
-const BRUSH_RADIUS: i32 = 1;
-
 /// Mining system - static utility methods for mining and placement
 pub struct MiningSystem;
 
@@ -68,14 +65,17 @@ impl MiningSystem {
         world_y: i32,
         material_id: u16,
         materials: &Materials,
+        brush_size: u32,
     ) -> Vec<(i32, i32)> {
         let material_name = materials.get(material_id).name.clone();
         let mut positions_to_place = Vec::new();
 
+        let brush_radius = brush_size as i32;
+
         // Calculate positions where we want to place (circular brush)
-        for dy in -BRUSH_RADIUS..=BRUSH_RADIUS {
-            for dx in -BRUSH_RADIUS..=BRUSH_RADIUS {
-                if dx * dx + dy * dy <= BRUSH_RADIUS * BRUSH_RADIUS {
+        for dy in -brush_radius..=brush_radius {
+            for dx in -brush_radius..=brush_radius {
+                if dx * dx + dy * dy <= brush_radius * brush_radius {
                     let x = world_x + dx;
                     let y = world_y + dy;
                     // Only count if target pixel is air (can be replaced)
@@ -129,12 +129,15 @@ impl MiningSystem {
         world_x: i32,
         world_y: i32,
         _material_id: u16,
+        brush_size: u32,
     ) -> Vec<(i32, i32)> {
         let mut positions_to_place = Vec::new();
 
-        for dy in -BRUSH_RADIUS..=BRUSH_RADIUS {
-            for dx in -BRUSH_RADIUS..=BRUSH_RADIUS {
-                if dx * dx + dy * dy <= BRUSH_RADIUS * BRUSH_RADIUS {
+        let brush_radius = brush_size as i32;
+
+        for dy in -brush_radius..=brush_radius {
+            for dx in -brush_radius..=brush_radius {
+                if dx * dx + dy * dy <= brush_radius * brush_radius {
                     let x = world_x + dx;
                     let y = world_y + dy;
                     let (chunk_pos, local_x, local_y) = ChunkManager::world_to_chunk_coords(x, y);

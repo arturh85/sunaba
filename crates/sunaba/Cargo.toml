@@ -16,8 +16,9 @@ required-features = ["native"]
 default = ["native", "profiling"]
 native = []
 headless = []
-multiplayer_native = ["spacetimedb-sdk"]  # Rust SDK for native builds
-multiplayer_wasm = []                      # TypeScript SDK via JS for WASM builds
+multiplayer = []                                    # Parent feature for all multiplayer functionality
+multiplayer_native = ["multiplayer", "spacetimedb-sdk"]  # Rust SDK for native builds (depends on multiplayer)
+multiplayer_wasm = ["multiplayer"]                       # TypeScript SDK via JS for WASM builds (depends on multiplayer)
 profiling = ["puffin", "puffin_egui", "sunaba-core/profiling"]
 
 [dependencies]

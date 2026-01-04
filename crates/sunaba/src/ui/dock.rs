@@ -12,10 +12,7 @@ pub enum DockTab {
     Crafting,
     #[cfg(not(target_arch = "wasm32"))]
     Logger,
-    #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+    #[cfg(feature = "multiplayer")]
     MultiplayerStats,
     #[cfg(not(target_arch = "wasm32"))]
     Parameters,
@@ -33,10 +30,7 @@ impl std::fmt::Display for DockTab {
             DockTab::Crafting => write!(f, "Crafting"),
             #[cfg(not(target_arch = "wasm32"))]
             DockTab::Logger => write!(f, "Log"),
-            #[cfg(any(
-                all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-                all(target_arch = "wasm32", feature = "multiplayer_wasm")
-            ))]
+            #[cfg(feature = "multiplayer")]
             DockTab::MultiplayerStats => write!(f, "Multiplayer"),
             #[cfg(not(target_arch = "wasm32"))]
             DockTab::Parameters => write!(f, "Parameters"),
@@ -57,7 +51,7 @@ impl DockManager {
         // All tabs present from start, grouped together - Logger is the active tab
         let mut tabs = vec![DockTab::Logger, DockTab::Stats];
 
-        #[cfg(any(feature = "multiplayer_native", feature = "multiplayer_wasm"))]
+        #[cfg(feature = "multiplayer")]
         tabs.push(DockTab::MultiplayerStats);
 
         #[cfg(feature = "profiling")]
@@ -75,7 +69,7 @@ impl DockManager {
         // WASM: Stats tab present from start (but can be closed)
         let mut tabs = vec![DockTab::Stats];
 
-        #[cfg(feature = "multiplayer_wasm")]
+        #[cfg(feature = "multiplayer")]
         tabs.push(DockTab::MultiplayerStats);
 
         let dock_state = DockState::new(tabs);
@@ -146,10 +140,7 @@ pub struct DockContext<'a> {
     pub params_changed: &'a mut bool,
 
     // Multiplayer metrics (both native and WASM, when multiplayer feature enabled)
-    #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+    #[cfg(feature = "multiplayer")]
     pub multiplayer_metrics: Option<&'a crate::multiplayer::metrics::MultiplayerMetrics>,
 }
 
@@ -174,10 +165,7 @@ impl<'a> TabViewer for DockTabViewer<'a> {
             DockTab::Crafting => self.render_crafting(ui),
             #[cfg(not(target_arch = "wasm32"))]
             DockTab::Logger => self.render_logger(ui),
-            #[cfg(any(
-                all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-                all(target_arch = "wasm32", feature = "multiplayer_wasm")
-            ))]
+            #[cfg(feature = "multiplayer")]
             DockTab::MultiplayerStats => self.render_multiplayer_stats(ui),
             #[cfg(not(target_arch = "wasm32"))]
             DockTab::Parameters => self.render_parameters(ui),
@@ -435,10 +423,7 @@ impl<'a> DockTabViewer<'a> {
         });
     }
 
-    #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+    #[cfg(feature = "multiplayer")]
     fn render_multiplayer_stats(&self, ui: &mut egui::Ui) {
         if let Some(metrics) = self.ctx.multiplayer_metrics {
             super::multiplayer_stats::render_multiplayer_stats(ui, metrics);

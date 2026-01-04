@@ -4,8 +4,10 @@ use glam::IVec2;
 use std::collections::HashMap;
 
 use super::{CHUNK_SIZE, Chunk, pixel_flags};
+use super::chunk_manager::ChunkManager;
 use crate::simulation::{
-    MaterialId, Materials, StateChangeSystem, add_heat_at_pixel, get_temperature_at_pixel,
+    MaterialId, Materials, ReactionRegistry, StateChangeSystem, add_heat_at_pixel,
+    get_temperature_at_pixel,
 };
 use crate::world::{SimStats, WorldRng};
 
@@ -186,6 +188,112 @@ impl ChemistrySystem {
             // Add heat from burning
             if let Some(chunk) = chunks.get_mut(&chunk_pos) {
                 add_heat_at_pixel(chunk, x, y, 20.0);
+            }
+        }
+    }
+
+    /// Check for chemical reactions with neighboring pixels
+    /// Called during CA update for each pixel that moved
+    pub fn check_pixel_reactions<R: WorldRng>(
+        chunks: &mut HashMap<IVec2, Chunk>,
+        reactions: &ReactionRegistry,
+        _materials: &Materials,
+        chunk_pos: IVec2,
+        x: usize,
+        y: usize,
+        stats: &mut dyn SimStats,
+        rng: &mut R,
+    ) {
+        // Get the chunk
+        let chunk = match chunks.get(&chunk_pos) {
+            Some(c) => c,
+            None => return,
+        };
+
+        let pixel = chunk.get_pixel(x, y);
+        if pixel.is_empty() {
+            return;
+        }
+
+        let temp = get_temperature_at_pixel(chunk, x, y);
+        let light_level = chunk.get_light(x, y);
+        let world_x = chunk_pos.x * CHUNK_SIZE as i32 + x as i32;
+        let world_y = chunk_pos.y * CHUNK_SIZE as i32 + y as i32;
+
+        // Get pressure at this pixel
+        let pressure = chunk.get_pressure_at(x, y);
+
+        // Collect all 8 neighbor materials for catalyst checking
+        let mut neighbor_materials = Vec::with_capacity(8);
+        for (dx, dy) in [
+            (-1, -1), // NW
+            (0, -1),  // N
+            (1, -1),  // NE
+            (-1, 0),  // W
+            (1, 0),   // E
+            (-1, 1),  // SW
+            (0, 1),   // S
+            (1, 1),   // SE
+        ] {
+            let nx = world_x + dx;
+            let ny = world_y + dy;
+            let (nchunk_pos, nlocal_x, nlocal_y) = ChunkManager::world_to_chunk_coords(nx, ny);
+            if let Some(nchunk) = chunks.get(&nchunk_pos) {
+                let npixel = nchunk.get_pixel(nlocal_x, nlocal_y);
+                neighbor_materials.push(npixel.material_id);
+            }
+        }
+
+        // Check 4 neighbors for reactions
+        for (dx, dy) in [(0, 1), (1, 0), (0, -1), (-1, 0)] {
+            let neighbor_x = world_x + dx;
+            let neighbor_y = world_y + dy;
+
+            // Get neighbor pixel
+            let (neighbor_chunk_pos, neighbor_local_x, neighbor_local_y) =
+                ChunkManager::world_to_chunk_coords(neighbor_x, neighbor_y);
+
+            let neighbor = match chunks.get(&neighbor_chunk_pos) {
+                Some(c) => c.get_pixel(neighbor_local_x, neighbor_local_y),
+                None => continue,
+            };
+
+            if neighbor.is_empty() {
+                continue;
+            }
+
+            // Find matching reaction
+            if let Some(reaction) = reactions.find_reaction(
+                pixel.material_id,
+                neighbor.material_id,
+                temp,
+                light_level,
+                pressure,
+                &neighbor_materials,
+            ) {
+                // Probability check
+                if rng.check_probability(reaction.probability) {
+                    // Apply reaction - get correct outputs based on material order
+                    let (output_a, output_b) =
+                        reactions.get_outputs(reaction, pixel.material_id, neighbor.material_id);
+
+                    // Set pixel at current position
+                    if let Some(chunk) = chunks.get_mut(&chunk_pos) {
+                        chunk.set_pixel(x, y, super::Pixel::new(output_a));
+                    }
+
+                    // Set pixel at neighbor position
+                    if let Some(neighbor_chunk) = chunks.get_mut(&neighbor_chunk_pos) {
+                        neighbor_chunk.set_pixel(
+                            neighbor_local_x,
+                            neighbor_local_y,
+                            super::Pixel::new(output_b),
+                        );
+                    }
+
+                    stats.record_reaction();
+                    return; // Only one reaction per pixel per frame
+                }
             }
         }
     }

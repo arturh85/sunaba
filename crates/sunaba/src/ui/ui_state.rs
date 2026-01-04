@@ -35,10 +35,7 @@ pub struct UiState {
     pub params_changed: bool,
 
     /// Multiplayer metrics collector (both native and WASM)
-    #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+    #[cfg(feature = "multiplayer")]
     pub metrics_collector: Option<crate::multiplayer::metrics::MetricsCollector>,
 }
 
@@ -58,7 +55,7 @@ impl UiState {
             toasts: ToastManager::new(),
             dock: DockManager::new(),
             params_changed: false,
-            #[cfg(feature = "multiplayer_native")]
+            #[cfg(feature = "multiplayer")]
             metrics_collector: None,
         }
     }
@@ -73,7 +70,7 @@ impl UiState {
             hud: Hud::new(),
             toasts: ToastManager::new(),
             dock: DockManager::new(),
-            #[cfg(feature = "multiplayer_wasm")]
+            #[cfg(feature = "multiplayer")]
             metrics_collector: None,
         }
     }
@@ -161,7 +158,7 @@ impl UiState {
             recipe_registry,
             params: config,
             params_changed: &mut self.params_changed,
-            #[cfg(feature = "multiplayer_native")]
+            #[cfg(feature = "multiplayer")]
             multiplayer_metrics: self.metrics_collector.as_ref().map(|c| c.metrics()),
         };
         super::dock::render_dock(ctx, &mut self.dock, dock_ctx);
@@ -213,7 +210,7 @@ impl UiState {
             player,
             tool_registry,
             recipe_registry,
-            #[cfg(feature = "multiplayer_wasm")]
+            #[cfg(feature = "multiplayer")]
             multiplayer_metrics: self.metrics_collector.as_ref().map(|c| c.metrics()),
         };
         super::dock::render_dock(ctx, &mut self.dock, dock_ctx);
