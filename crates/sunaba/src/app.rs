@@ -3,7 +3,6 @@
 use anyhow::Result;
 use glam::Vec2;
 use instant::{Duration, Instant};
-use rand::Rng;
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, MouseButton, WindowEvent},
@@ -222,16 +221,16 @@ impl App {
 
         // Initialize multiplayer client (WASM only, requires multiplayer feature)
         #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+            all(target_arch = "wasm32", feature = "multiplayer_wasm")
+        ))]
         let mut multiplayer_client = Some(crate::multiplayer::MultiplayerClient::new());
 
         // Connect to SpacetimeDB server (WASM multiplayer only)
         #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+            all(target_arch = "wasm32", feature = "multiplayer_wasm")
+        ))]
         {
             if let Some(ref mut client) = multiplayer_client {
                 // TODO: Get server URL from environment or config
@@ -268,9 +267,9 @@ impl App {
             config,
             hot_reload: crate::hot_reload::HotReloadManager::new(),
             #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+                all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+                all(target_arch = "wasm32", feature = "multiplayer_wasm")
+            ))]
             multiplayer_client,
         };
 
@@ -435,14 +434,22 @@ impl App {
             log::info!("Auto-saved world and player data");
         }
 
+        // Process SpacetimeDB messages (multiplayer only)
+        #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer_native"))]
+        {
+            if let Some(ref client) = self.multiplayer_client {
+                client.frame_tick();
+            }
+        }
+
         // Update player from input
         self.world.update_player(&self.input_state, 1.0 / 60.0);
 
         // Send player position to server (multiplayer only)
         #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+            all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+            all(target_arch = "wasm32", feature = "multiplayer_wasm")
+        ))]
         {
             if let Some(ref client) = self.multiplayer_client {
                 let pos = self.world.player.position;
@@ -496,9 +503,9 @@ impl App {
 
             // Send mining action to server (multiplayer only)
             #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+                all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+                all(target_arch = "wasm32", feature = "multiplayer_wasm")
+            ))]
             {
                 if let Some(ref client) = self.multiplayer_client {
                     if let Err(e) = client.mine(center_x, center_y) {
@@ -532,9 +539,9 @@ impl App {
 
             // Send material placement to server (multiplayer only)
             #[cfg(any(
-        all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
-        all(target_arch = "wasm32", feature = "multiplayer_wasm")
-    ))]
+                all(not(target_arch = "wasm32"), feature = "multiplayer_native"),
+                all(target_arch = "wasm32", feature = "multiplayer_wasm")
+            ))]
             {
                 if let Some(ref client) = self.multiplayer_client {
                     if let Err(e) = client.place_material(wx, wy, material_id) {
@@ -556,7 +563,11 @@ impl App {
         #[cfg(feature = "profiling")]
         puffin::profile_scope!("simulation");
         self.ui_state.stats.begin_sim();
-        self.world.update(1.0 / 60.0, &mut self.ui_state.stats, &mut rand::thread_rng());
+        self.world.update(
+            1.0 / 60.0,
+            &mut self.ui_state.stats,
+            &mut rand::thread_rng(),
+        );
         self.ui_state.stats.end_sim();
 
         // Collect world stats

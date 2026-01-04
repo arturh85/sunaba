@@ -54,7 +54,11 @@ impl MultiplayerClient {
         let host = host.into();
         let db_name = db_name.into();
 
-        log::info!("Connecting to SpacetimeDB at {}/{} (via JS SDK)", host, db_name);
+        log::info!(
+            "Connecting to SpacetimeDB at {}/{} (via JS SDK)",
+            host,
+            db_name
+        );
 
         js_connect(&host, &db_name)
             .await
@@ -109,8 +113,7 @@ impl MultiplayerClient {
             anyhow::bail!("Not connected to server");
         }
 
-        js_mine(x, y)
-            .map_err(|e| anyhow::anyhow!("Failed to mine: {:?}", e))?;
+        js_mine(x, y).map_err(|e| anyhow::anyhow!("Failed to mine: {:?}", e))?;
 
         Ok(())
     }
