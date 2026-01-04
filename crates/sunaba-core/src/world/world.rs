@@ -928,7 +928,7 @@ impl World {
     }
 
     /// Update simulation
-    pub fn update(&mut self, dt: f32, stats: &mut dyn crate::world::SimStats) {
+    pub fn update<R: crate::world::WorldRng>(&mut self, dt: f32, stats: &mut dyn crate::world::SimStats, rng: &mut R) {
         const FIXED_TIMESTEP: f32 = 1.0 / 60.0;
 
         // Update player (hunger, health, starvation damage)
@@ -953,7 +953,7 @@ impl World {
         let mut steps = 0;
 
         while self.time_accumulator >= FIXED_TIMESTEP && steps < MAX_STEPS_PER_FRAME {
-            self.step_simulation(stats);
+            self.step_simulation(stats, rng);
             self.time_accumulator -= FIXED_TIMESTEP;
             steps += 1;
         }
@@ -964,7 +964,7 @@ impl World {
         }
     }
 
-    fn step_simulation(&mut self, stats: &mut dyn crate::world::SimStats) {
+    fn step_simulation<R: crate::world::WorldRng>(&mut self, stats: &mut dyn crate::world::SimStats, rng: &mut R) {
         #[cfg(feature = "profiling")]
         puffin::profile_function!();
 
@@ -1015,7 +1015,7 @@ impl World {
             #[cfg(feature = "profiling")]
             puffin::profile_scope!("ca_updates");
             for pos in &chunks_to_update {
-                self.update_chunk_ca(*pos, stats);
+                self.update_chunk_ca(*pos, stats, rng);
             }
         }
 
@@ -1155,7 +1155,7 @@ impl World {
         false
     }
 
-    fn update_chunk_ca(&mut self, chunk_pos: IVec2, stats: &mut dyn crate::world::SimStats) {
+    fn update_chunk_ca<R: crate::world::WorldRng>(&mut self, chunk_pos: IVec2, stats: &mut dyn crate::world::SimStats, rng: &mut R) {
         // Update from bottom to top so falling works correctly
         for y in 0..CHUNK_SIZE {
             // Alternate direction each row for symmetry
@@ -1166,17 +1166,18 @@ impl World {
             };
 
             for x in x_iter {
-                self.update_pixel(chunk_pos, x, y, stats);
+                self.update_pixel(chunk_pos, x, y, stats, rng);
             }
         }
     }
 
-    fn update_pixel(
+    fn update_pixel<R: crate::world::WorldRng>(
         &mut self,
         chunk_pos: IVec2,
         x: usize,
         y: usize,
         stats: &mut dyn crate::world::SimStats,
+        rng: &mut R,
     ) {
         let chunk = match self.chunks.get(&chunk_pos) {
             Some(c) => c,
@@ -1190,7 +1191,7 @@ impl World {
 
         // Special handling for fire
         if pixel.material_id == MaterialId::FIRE {
-            self.update_fire(chunk_pos, x, y, stats);
+            self.update_fire(chunk_pos, x, y, stats, rng);
             return;
         }
 
@@ -1201,7 +1202,7 @@ impl World {
 
         // Update burning materials
         if pixel.flags & pixel_flags::BURNING != 0 {
-            self.update_burning_material(chunk_pos, x, y);
+            self.update_burning_material(chunk_pos, x, y, rng);
         }
 
         // Get material type for movement logic
@@ -1210,13 +1211,13 @@ impl World {
         // Normal CA movement
         match material_type {
             MaterialType::Powder => {
-                self.update_powder(chunk_pos, x, y, stats);
+                self.update_powder(chunk_pos, x, y, stats, rng);
             }
             MaterialType::Liquid => {
-                self.update_liquid(chunk_pos, x, y, stats);
+                self.update_liquid(chunk_pos, x, y, stats, rng);
             }
             MaterialType::Gas => {
-                self.update_gas(chunk_pos, x, y, stats);
+                self.update_gas(chunk_pos, x, y, stats, rng);
             }
             MaterialType::Solid => {
                 // Solids don't move
@@ -1224,15 +1225,16 @@ impl World {
         }
 
         // Check reactions with neighbors (after movement)
-        self.check_pixel_reactions(chunk_pos, x, y, stats);
+        self.check_pixel_reactions(chunk_pos, x, y, stats, rng);
     }
 
-    fn update_powder(
+    fn update_powder<R: crate::world::WorldRng>(
         &mut self,
         chunk_pos: IVec2,
         x: usize,
         y: usize,
         stats: &mut dyn crate::world::SimStats,
+        rng: &mut R,
     ) {
         // Convert to world coordinates
         let world_x = chunk_pos.x * CHUNK_SIZE as i32 + x as i32;
@@ -1243,8 +1245,8 @@ impl World {
             return;
         }
 
-        // Try to fall diagonally (alternating by position for symmetry)
-        let try_left_first = (world_x + world_y) % 2 == 0;
+        // Try to fall diagonally (randomized for natural distribution)
+        let try_left_first = rng.gen_bool();
 
         if try_left_first {
             if self.try_move_world(world_x, world_y, world_x - 1, world_y - 1, stats) {
@@ -1259,12 +1261,13 @@ impl World {
         }
     }
 
-    fn update_liquid(
+    fn update_liquid<R: crate::world::WorldRng>(
         &mut self,
         chunk_pos: IVec2,
         x: usize,
         y: usize,
         stats: &mut dyn crate::world::SimStats,
+        rng: &mut R,
     ) {
         // Convert to world coordinates
         let world_x = chunk_pos.x * CHUNK_SIZE as i32 + x as i32;
@@ -1275,8 +1278,8 @@ impl World {
             return;
         }
 
-        // Try to fall diagonally (alternating by position for symmetry)
-        let try_left_first = (world_x + world_y) % 2 == 0;
+        // Try to fall diagonally (randomized for natural distribution)
+        let try_left_first = rng.gen_bool();
 
         if try_left_first {
             if self.try_move_world(world_x, world_y, world_x - 1, world_y - 1, stats) {
@@ -1308,12 +1311,13 @@ impl World {
         }
     }
 
-    fn update_gas(
+    fn update_gas<R: crate::world::WorldRng>(
         &mut self,
         chunk_pos: IVec2,
         x: usize,
         y: usize,
         stats: &mut dyn crate::world::SimStats,
+        rng: &mut R,
     ) {
         // Convert to world coordinates
         let world_x = chunk_pos.x * CHUNK_SIZE as i32 + x as i32;
@@ -1324,8 +1328,8 @@ impl World {
             return;
         }
 
-        // Try to rise diagonally (alternating by position for symmetry)
-        let try_left_first = (world_x + world_y) % 2 == 0;
+        // Try to rise diagonally (randomized for natural distribution)
+        let try_left_first = rng.gen_bool();
 
         if try_left_first {
             if self.try_move_world(world_x, world_y, world_x - 1, world_y + 1, stats) {
@@ -1992,12 +1996,13 @@ impl World {
     }
 
     /// Update fire pixel behavior
-    fn update_fire(
+    fn update_fire<R: crate::world::WorldRng>(
         &mut self,
         chunk_pos: IVec2,
         x: usize,
         y: usize,
         stats: &mut dyn crate::world::SimStats,
+        rng: &mut R,
     ) {
         // 1. Add heat to temperature field
         if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
@@ -2005,15 +2010,12 @@ impl World {
         }
 
         // 2. Fire behaves like gas (rises)
-        self.update_gas(chunk_pos, x, y, stats);
+        self.update_gas(chunk_pos, x, y, stats, rng);
 
-        // 3. Fire has limited lifetime - deterministic chance to become smoke
-        // Use position hash for pseudo-random but deterministic behavior
-        let world_x = chunk_pos.x * CHUNK_SIZE as i32 + x as i32;
-        let world_y = chunk_pos.y * CHUNK_SIZE as i32 + y as i32;
-        let hash = ((world_x * 73856093) ^ (world_y * 19349663)) as u32;
-        let pseudo_rand = (hash % 100) as f32 / 100.0;
-        if pseudo_rand < 0.02 {
+        // 3. Fire has limited lifetime - random chance to become smoke
+        if rng.check_probability(0.02) {
+            let world_x = chunk_pos.x * CHUNK_SIZE as i32 + x as i32;
+            let world_y = chunk_pos.y * CHUNK_SIZE as i32 + y as i32;
             self.set_pixel(world_x, world_y, MaterialId::SMOKE);
         }
     }
@@ -2059,7 +2061,7 @@ impl World {
     }
 
     /// Update burning material (gradual consumption)
-    fn update_burning_material(&mut self, chunk_pos: IVec2, x: usize, y: usize) {
+    fn update_burning_material<R: crate::world::WorldRng>(&mut self, chunk_pos: IVec2, x: usize, y: usize, rng: &mut R) {
         let chunk = match self.chunks.get(&chunk_pos) {
             Some(c) => c,
             None => return,
@@ -2068,12 +2070,11 @@ impl World {
         let pixel = chunk.get_pixel(x, y);
         let material = self.materials.get(pixel.material_id);
 
-        // Probability check - material burns gradually (deterministic)
-        let world_x = chunk_pos.x * CHUNK_SIZE as i32 + x as i32;
-        let world_y = chunk_pos.y * CHUNK_SIZE as i32 + y as i32;
-        let hash = ((world_x * 73856093) ^ (world_y * 19349663)) as u32;
-        let pseudo_rand = (hash % 10000) as f32 / 10000.0;
-        if pseudo_rand < material.burn_rate {
+        // Probability check - material burns gradually
+        if rng.check_probability(material.burn_rate) {
+            let world_x = chunk_pos.x * CHUNK_SIZE as i32 + x as i32;
+            let world_y = chunk_pos.y * CHUNK_SIZE as i32 + y as i32;
+
             // Transform to burns_to material (or air if not specified)
             let new_material = material.burns_to.unwrap_or(MaterialId::AIR);
             self.set_pixel(world_x, world_y, new_material);
@@ -2086,12 +2087,13 @@ impl World {
     }
 
     /// Check for chemical reactions with neighboring pixels
-    fn check_pixel_reactions(
+    fn check_pixel_reactions<R: crate::world::WorldRng>(
         &mut self,
         chunk_pos: IVec2,
         x: usize,
         y: usize,
         stats: &mut dyn crate::world::SimStats,
+        rng: &mut R,
     ) {
         use crate::simulation::MaterialId;
 
@@ -2183,10 +2185,8 @@ impl World {
                 pressure,
                 &neighbor_materials,
             ) {
-                // Probability check (deterministic)
-                let hash = ((world_x * 73856093) ^ (world_y * 19349663)) as u32;
-                let pseudo_rand = (hash % 10000) as f32 / 10000.0;
-                if pseudo_rand < reaction.probability {
+                // Probability check
+                if rng.check_probability(reaction.probability) {
                     // Apply reaction - get correct outputs based on material order
                     let (output_a, output_b) = self.reactions.get_outputs(
                         reaction,

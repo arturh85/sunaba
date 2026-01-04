@@ -3,6 +3,7 @@
 use anyhow::Result;
 use glam::Vec2;
 use instant::{Duration, Instant};
+use rand::Rng;
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, MouseButton, WindowEvent},
@@ -472,7 +473,7 @@ impl App {
         #[cfg(feature = "profiling")]
         puffin::profile_scope!("simulation");
         self.ui_state.stats.begin_sim();
-        self.world.update(1.0 / 60.0, &mut self.ui_state.stats);
+        self.world.update(1.0 / 60.0, &mut self.ui_state.stats, &mut rand::rng());
         self.ui_state.stats.end_sim();
 
         // Collect world stats

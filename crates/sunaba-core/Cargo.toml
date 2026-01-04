@@ -20,9 +20,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde-big-array = "0.5"
 thiserror = "1.0"
 
-[dependencies.rand]
-version = "0.8"
-optional = true
+rand = "0.8"
 
 [dependencies.rand_xoshiro]
 version = "0.6"
@@ -35,6 +33,6 @@ puffin = { git = "https://github.com/blip-radar/puffin.git", branch = "egui-0.33
 
 [features]
 default = ["regeneration", "evolution"]
-regeneration = ["rand", "rand_xoshiro"]
+regeneration = ["rand_xoshiro"]
 evolution = ["sunaba-creature/evolution"]
 profiling = ["puffin", "sunaba-creature/profiling"]

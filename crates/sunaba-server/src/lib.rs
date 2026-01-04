@@ -23,6 +23,9 @@ use sunaba_simulation::{Pixel, CHUNK_SIZE};
 use crate::encoding::decode_chunk_pixels;
 use crate::world_access::SpacetimeWorldAccess;
 
+// Note: WorldRng is automatically implemented for any rand::Rng via blanket impl in sunaba-core
+// This includes SpacetimeDB's ctx.rng() which implements rand::Rng
+
 // ============================================================================
 // Tables
 // ============================================================================
