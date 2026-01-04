@@ -64,23 +64,10 @@ pub struct CppnConnection {
     pub innovation_number: u64,
 }
 
-/// Serializable edge representation (stores source/target node IDs)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SerializedEdge {
-    pub source_id: u64,
-    pub target_id: u64,
-    pub connection: CppnConnection,
-}
-
 /// CPPN network for morphology generation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CppnGenome {
-    #[serde(skip)]
     pub graph: DiGraph<CppnNode, CppnConnection>,
-
-    // Serializable graph representation (synced before save, used to rebuild after load)
-    pub serialized_nodes: Vec<CppnNode>,
-    pub serialized_edges: Vec<SerializedEdge>,
 
     pub input_node_ids: Vec<u64>,  // Node IDs for input nodes
     pub output_node_ids: Vec<u64>, // Node IDs for output nodes
@@ -165,45 +152,14 @@ impl CppnGenome {
             }
         }
 
-        let mut cppn = Self {
+        Self {
             graph,
-            serialized_nodes: Vec::new(),
-            serialized_edges: Vec::new(),
             input_node_ids,
             output_node_ids,
             innovation_numbers,
             next_node_id,
             next_innovation,
-        };
-        cppn.sync_to_serializable();
-        cppn
-    }
-
-    /// Sync graph structure to serializable fields (call before serialization)
-    pub fn sync_to_serializable(&mut self) {
-        // Collect all nodes
-        self.serialized_nodes = self
-            .graph
-            .node_indices()
-            .map(|idx| self.graph[idx].clone())
-            .collect();
-
-        // Collect all edges with their source/target node IDs
-        self.serialized_edges = self
-            .graph
-            .edge_indices()
-            .filter_map(|edge_idx| {
-                let (source_idx, target_idx) = self.graph.edge_endpoints(edge_idx)?;
-                let source_id = self.graph[source_idx].id;
-                let target_id = self.graph[target_idx].id;
-                let connection = self.graph[edge_idx].clone();
-                Some(SerializedEdge {
-                    source_id,
-                    target_id,
-                    connection,
-                })
-            })
-            .collect();
+        }
     }
 
     /// Query CPPN at spatial position (x, y, d)
@@ -263,39 +219,6 @@ impl CppnGenome {
             density: outputs[1].clamp(0.0, 1.0),     // Clamp to [0, 1]
             has_joint: outputs[2] > 0.5,             // Threshold
             joint_type: outputs[3].clamp(-1.0, 1.0), // Clamp to [-1, 1]
-        }
-    }
-
-    /// Rebuild graph from serialized data (called after deserialization)
-    pub fn rebuild_graph(&mut self) {
-        // If no serialized data, fall back to minimal
-        if self.serialized_nodes.is_empty() {
-            *self = Self::minimal();
-            return;
-        }
-
-        // Create new graph
-        self.graph = DiGraph::new();
-
-        // Map from node ID to NodeIndex for edge reconstruction
-        let mut id_to_idx: std::collections::HashMap<u64, NodeIndex> =
-            std::collections::HashMap::new();
-
-        // Add all nodes
-        for node in &self.serialized_nodes {
-            let idx = self.graph.add_node(node.clone());
-            id_to_idx.insert(node.id, idx);
-        }
-
-        // Add all edges
-        for edge in &self.serialized_edges {
-            if let (Some(&source_idx), Some(&target_idx)) = (
-                id_to_idx.get(&edge.source_id),
-                id_to_idx.get(&edge.target_id),
-            ) {
-                self.graph
-                    .add_edge(source_idx, target_idx, edge.connection.clone());
-            }
         }
     }
 
@@ -544,9 +467,6 @@ impl CppnGenome {
         if rng.r#gen::<f32>() < config.toggle_connection_rate {
             self.toggle_connection(0.5);
         }
-
-        // Sync graph changes to serializable fields
-        self.sync_to_serializable();
     }
 }
 
@@ -713,9 +633,6 @@ pub fn crossover_cppn(
     for (k, v) in &less_fit.innovation_numbers {
         offspring.innovation_numbers.entry(*k).or_insert(*v);
     }
-
-    // Sync to serializable before returning
-    offspring.sync_to_serializable();
 
     offspring
 }
@@ -1341,12 +1258,9 @@ mod tests {
                 .expect("Failed to serialize genome");
 
         // Deserialize
-        let (mut deserialized, _): (CreatureGenome, _) =
+        let (deserialized, _): (CreatureGenome, _) =
             bincode_next::serde::decode_from_slice(&serialized, bincode_next::config::standard())
                 .expect("Failed to deserialize genome");
-
-        // Graph needs to be rebuilt after deserialization
-        deserialized.cppn.rebuild_graph();
 
         // Check values match
         assert_eq!(deserialized.generation, genome.generation);
@@ -1392,11 +1306,9 @@ mod tests {
                 .expect("Failed to serialize mutated genome");
 
         // Deserialize
-        let (mut deserialized, _): (CreatureGenome, _) =
+        let (deserialized, _): (CreatureGenome, _) =
             bincode_next::serde::decode_from_slice(&serialized, bincode_next::config::standard())
                 .expect("Failed to deserialize genome");
-
-        deserialized.cppn.rebuild_graph();
 
         // Verify structure preserved (should have more nodes than minimal due to mutations)
         assert_eq!(deserialized.cppn.graph.node_count(), orig_node_count);

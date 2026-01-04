@@ -1,17 +1,22 @@
 //! Neighbor pixel collection utilities
 
 use super::chunk_manager::ChunkManager;
+use smallvec::SmallVec;
 
 /// Neighbor collection utilities - stateless methods for querying neighboring pixels
 pub struct NeighborQueries;
 
 impl NeighborQueries {
     /// Collect all 8 neighboring materials (cardinal + diagonal)
-    /// Returns Vec of neighbor material IDs (may be empty if neighbors are air or out of bounds)
+    /// Returns SmallVec of neighbor material IDs (may be empty if neighbors are air or out of bounds)
     ///
     /// Order: NW, N, NE, W, E, SW, S, SE
-    pub fn get_8_neighbors(chunk_manager: &ChunkManager, center_x: i32, center_y: i32) -> Vec<u16> {
-        let mut neighbors = Vec::with_capacity(8);
+    pub fn get_8_neighbors(
+        chunk_manager: &ChunkManager,
+        center_x: i32,
+        center_y: i32,
+    ) -> SmallVec<[u16; 8]> {
+        let mut neighbors = SmallVec::new();
 
         for (dx, dy) in [
             (-1, -1), // NW
@@ -61,16 +66,17 @@ impl NeighborQueries {
     }
 
     /// Get pixels in circular radius around center
-    /// Returns Vec of (x, y, material_id) for all pixels within radius
+    /// Returns SmallVec of (x, y, material_id) for all pixels within radius
     ///
     /// Useful for area effects, spreading, erosion, etc.
+    /// Stack-allocated up to 64 neighbors (typical radii: 5-10 pixels = 20-60 neighbors)
     pub fn get_pixels_in_radius(
         chunk_manager: &ChunkManager,
         center_x: i32,
         center_y: i32,
         radius: i32,
-    ) -> Vec<(i32, i32, u16)> {
-        let mut pixels = Vec::new();
+    ) -> SmallVec<[(i32, i32, u16); 64]> {
+        let mut pixels = SmallVec::new();
 
         // Iterate over square containing circle
         for dy in -radius..=radius {

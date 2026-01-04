@@ -181,26 +181,30 @@ pub fn raycast_vision(
     hits
 }
 
-/// DDA (Digital Differential Analyzer) raycasting
+/// Bresenham raycasting - exact pixel traversal for creature sensors
 fn raycast_dda(
     world: &impl crate::WorldAccess,
     origin: Vec2,
     direction: Vec2,
     max_distance: f32,
 ) -> RaycastHit {
-    let mut current_pos = origin;
-    let step_size = 1.0; // Step one pixel at a time
+    use bresenham::Bresenham;
 
-    let mut distance = 0.0;
+    // Calculate start and end points for Bresenham (uses isize)
+    let from_i = (origin.x.round() as isize, origin.y.round() as isize);
+    let to = origin + direction * max_distance;
+    let to_i = (to.x.round() as isize, to.y.round() as isize);
 
-    while distance < max_distance {
-        // Step forward
-        current_pos += direction * step_size;
-        distance += step_size;
+    // Calculate max distance for normalization (in pixels)
+    let max_dist = ((to_i.0 - from_i.0).pow(2) + (to_i.1 - from_i.1).pow(2)) as f32;
+    let max_dist_sqrt = max_dist.sqrt().max(1.0); // Avoid division by zero
 
-        // Check pixel at current position
-        let pixel_x = current_pos.x.round() as i32;
-        let pixel_y = current_pos.y.round() as i32;
+    // Use Bresenham line algorithm for exact pixel traversal
+    let mut pixel_count = 0.0;
+    for (x, y) in Bresenham::new(from_i, to_i) {
+        pixel_count += 1.0;
+        let pixel_x = x as i32;
+        let pixel_y = y as i32;
 
         if let Some(pixel) = world.get_pixel(pixel_x, pixel_y) {
             let material_id = pixel.material_id;
@@ -209,11 +213,10 @@ fn raycast_dda(
             if material_id != 0 {
                 // Get additional information about the hit
                 let temperature = world.get_temperature_at_pixel(pixel_x, pixel_y);
-
                 let light_level = world.get_light_at(pixel_x, pixel_y).unwrap_or(0);
 
                 return RaycastHit {
-                    distance: distance / max_distance, // Normalize
+                    distance: (pixel_count / max_dist_sqrt).min(1.0), // Normalize to 0-1
                     material_id,
                     temperature,
                     light_level,

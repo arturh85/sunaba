@@ -399,7 +399,9 @@ pub fn load_chunk(&self, x: i32, y: i32) -> Result<Chunk> {
 | Serialization   | serde + bincode + ron                         |
 | Compression     | lz4_flex                                      |
 | RNG             | rand + rand_xoshiro (deterministic)           |
-| Neural/Graph    | petgraph 0.6                                  |
+| Neural/Graph    | petgraph 0.6 (with serde-1 for CPPN)          |
+| Raycasting      | bresenham 0.1 (exact pixel traversal)         |
+| Stack Vectors   | smallvec 1.13 (avoid heap for small arrays)   |
 | Profiling       | puffin + puffin_egui (opt-in feature)         |
 
 ### World Structure
@@ -570,3 +572,4 @@ When adding new controls, update the above list in addition to the controls help
 11. **Morphology-controller coupling**: CPPN and brain genome should co-evolve together
 12. **Multiplayer client sync**: Both Rust (native) and TypeScript (WASM) clients auto-generate from server schema. CI validates both via `just spacetime-verify-clients` and `just spacetime-verify-ts`.
 13. **Multiplayer runtime switching**: Game defaults to singleplayer. Press M to open connection panel, select server, and connect/disconnect at runtime. Singleplayer world is saved before connecting and restored on disconnect. Use `--server <url>` CLI arg or `just join`/`just join-prod` to connect on startup. Server metrics sampled at 6fps, ping at 1Hz, retention: 3600 samples (10 minutes).
+14. **Phase 2 optimizations (2026-01)**: Raycasting now uses Bresenham algorithm for exact pixel traversal (~2x faster). Neighbor queries use SmallVec for stack allocation (avoids heap for typical radii). CPPN genomes use petgraph's serde-1 feature directly (~100 lines removed, 50% memory reduction per genome, maintains SpacetimeDB bincode compatibility).
