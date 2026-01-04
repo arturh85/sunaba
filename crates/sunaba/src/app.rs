@@ -20,6 +20,13 @@ use crate::simulation::MaterialType;
 use crate::ui::UiState;
 use crate::world::World;
 
+#[cfg(feature = "multiplayer")]
+use crate::multiplayer::generated;
+#[cfg(feature = "multiplayer")]
+use generated::player_table::PlayerTableAccess;
+#[cfg(feature = "multiplayer")]
+use spacetimedb_sdk::{DbContext, Table};
+
 /// Game mode: persistent world or demo level
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameMode {
@@ -90,6 +97,18 @@ fn world_to_screen(
     let screen_y = (1.0 - ndc_y) * window_height as f32 / 2.0; // Flip Y
 
     (screen_x, screen_y)
+}
+
+/// Remote player data for rendering
+/// Available in all builds for API consistency, but only populated when multiplayer is enabled
+#[derive(Clone, Debug)]
+pub struct RemotePlayerRenderData {
+    pub x: f32,
+    pub y: f32,
+    pub vel_x: f32,
+    pub vel_y: f32,
+    pub name: Option<String>,
+    pub identity: String,
 }
 
 pub struct App {
@@ -942,6 +961,36 @@ impl App {
             None
         };
 
+        // Collect multiplayer data before egui closure to avoid borrow checker issues
+        #[cfg(feature = "multiplayer")]
+        let multiplayer_overlay_data = {
+            let remote_players = self.collect_remote_players();
+            let local_player_name = if let Some(ref manager) = self.multiplayer_manager {
+                if let Some(ref conn_arc) = manager.client.get_connection() {
+                    if let Ok(conn_guard) = conn_arc.lock() {
+                        let identity = conn_guard.identity();
+                        conn_guard
+                            .db
+                            .player()
+                            .identity()
+                            .find(&identity)
+                            .and_then(|p| p.name.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let window_size = self.window.inner_size();
+            let camera_pos = glam::Vec2::from_array(self.renderer.camera.position);
+            let camera_zoom = self.renderer.camera.zoom;
+            let player_pos = self.world.player.position;
+            (remote_players, local_player_name, window_size, camera_pos, camera_zoom, player_pos)
+        };
+
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             // Get cursor position from egui context
             let cursor_pos = ctx.pointer_hover_pos().unwrap_or(egui::pos2(0.0, 0.0));
@@ -1001,6 +1050,21 @@ impl App {
                     *camera_pos,
                     *camera_zoom,
                     active_chunks,
+                );
+            }
+
+            // Draw player nicknames overlay (multiplayer only)
+            #[cfg(feature = "multiplayer")]
+            {
+                let (remote_players, local_player_name, window_size, camera_pos, camera_zoom, player_pos) = &multiplayer_overlay_data;
+                draw_player_nicknames_overlay(
+                    ctx,
+                    *window_size,
+                    *camera_pos,
+                    *camera_zoom,
+                    *player_pos,
+                    local_player_name.as_deref(),
+                    remote_players,
                 );
             }
 
@@ -1082,6 +1146,19 @@ impl App {
                     } else {
                         log::info!("Successfully connected");
                         self.ui_state.show_toast("Connected to server!");
+
+                        // Set pre-entered nickname if provided
+                        if !self.ui_state.multiplayer_panel.nickname_input.trim().is_empty() {
+                            let nickname =
+                                self.ui_state.multiplayer_panel.nickname_input.trim().to_string();
+                            if let Some(ref manager) = self.multiplayer_manager {
+                                if let Err(e) = manager.client.set_nickname(nickname.clone()) {
+                                    log::warn!("Failed to set pre-entered nickname: {}", e);
+                                } else {
+                                    log::info!("Set pre-entered nickname: {}", nickname);
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1152,6 +1229,23 @@ impl App {
                         mp_manager.client.oauth_logout();
                         self.ui_state.multiplayer_panel.oauth_claims = None;
                         self.ui_state.show_toast("Logged out");
+                    }
+                }
+
+                // Handle nickname change request
+                #[cfg(feature = "multiplayer")]
+                if let Some(nickname) = self.ui_state.multiplayer_panel.set_nickname_requested.take()
+                {
+                    if let Some(ref manager) = self.multiplayer_manager {
+                        if let Err(e) = manager.client.set_nickname(nickname.clone()) {
+                            log::error!("Failed to set nickname: {}", e);
+                            self.ui_state
+                                .show_toast_error(&format!("Failed to set nickname: {}", e));
+                        } else {
+                            log::info!("Nickname set to: {}", nickname);
+                            self.ui_state
+                                .show_toast(&format!("Nickname changed to: {}", nickname));
+                        }
                     }
                 }
 
@@ -1310,10 +1404,17 @@ impl App {
         self.renderer
             .update_camera_follow(self.world.player.position, 1.0 / 60.0);
 
+        // Extract remote players for renderer (already collected before egui closure)
+        #[cfg(feature = "multiplayer")]
+        let remote_players = &multiplayer_overlay_data.0;
+        #[cfg(not(feature = "multiplayer"))]
+        let remote_players: &[RemotePlayerRenderData] = &[];
+
         // Render world + UI
         match self.renderer.render(
             &mut self.world,
             &self.particle_system,
+            remote_players,
             &self.egui_ctx,
             full_output.textures_delta,
             full_output.shapes,
@@ -1342,6 +1443,43 @@ impl App {
         // Reset per-frame input state
         self.input_state.zoom_delta = 1.0;
         self.input_state.prev_right_mouse_pressed = self.input_state.right_mouse_pressed;
+    }
+
+    /// Collect remote player data from SpacetimeDB subscription (multiplayer only)
+    #[cfg(feature = "multiplayer")]
+    fn collect_remote_players(&self) -> Vec<RemotePlayerRenderData> {
+        let Some(ref manager) = self.multiplayer_manager else {
+            return Vec::new();
+        };
+
+        let Some(ref conn_arc) = manager.client.get_connection() else {
+            return Vec::new();
+        };
+
+        let conn = match conn_arc.lock() {
+            Ok(guard) => guard,
+            Err(_) => return Vec::new(),
+        };
+
+        // Get local identity to filter out
+        let local_identity = conn.identity();
+
+        conn.db
+            .player()
+            .iter()
+            .filter(|p| {
+                // Filter out local player
+                p.identity != local_identity
+            })
+            .map(|p| RemotePlayerRenderData {
+                x: p.x,
+                y: p.y,
+                vel_x: p.vel_x,
+                vel_y: p.vel_y,
+                name: p.name.clone(),
+                identity: p.identity.to_string(),
+            })
+            .collect()
     }
 }
 
@@ -1457,6 +1595,71 @@ fn draw_active_chunks_overlay(
                 egui::StrokeKind::Inside,
             );
         }
+    }
+}
+
+/// Draw player nicknames overlay using egui painter
+#[cfg(feature = "multiplayer")]
+fn draw_player_nicknames_overlay(
+    ctx: &egui::Context,
+    window_size: winit::dpi::PhysicalSize<u32>,
+    camera_pos: glam::Vec2,
+    camera_zoom: f32,
+    local_player_pos: glam::Vec2,
+    local_player_name: Option<&str>,
+    remote_players: &[RemotePlayerRenderData],
+) {
+    let painter = ctx.layer_painter(egui::LayerId::background());
+
+    // Font for nicknames
+    let font = egui::FontId::proportional(14.0);
+
+    // Local player nickname (yellow, 20px above sprite)
+    let local_name = local_player_name.unwrap_or("Player");
+    let (screen_x, screen_y) = world_to_screen(
+        local_player_pos.x,
+        local_player_pos.y - 20.0, // 20 pixels above player sprite
+        window_size.width,
+        window_size.height,
+        camera_pos,
+        camera_zoom,
+    );
+    painter.text(
+        egui::pos2(screen_x, screen_y),
+        egui::Align2::CENTER_CENTER,
+        local_name,
+        font.clone(),
+        egui::Color32::YELLOW,
+    );
+
+    // Remote player nicknames (white)
+    for player in remote_players {
+        let display_name = if let Some(ref name) = player.name {
+            name.as_str()
+        } else {
+            // Fallback to shortened identity (last 6 chars)
+            if player.identity.len() >= 6 {
+                &player.identity[player.identity.len() - 6..]
+            } else {
+                &player.identity
+            }
+        };
+
+        let (screen_x, screen_y) = world_to_screen(
+            player.x,
+            player.y - 20.0, // 20 pixels above sprite
+            window_size.width,
+            window_size.height,
+            camera_pos,
+            camera_zoom,
+        );
+        painter.text(
+            egui::pos2(screen_x, screen_y),
+            egui::Align2::CENTER_CENTER,
+            display_name,
+            font.clone(),
+            egui::Color32::WHITE,
+        );
     }
 }
 

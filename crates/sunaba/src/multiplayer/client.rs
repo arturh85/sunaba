@@ -13,6 +13,7 @@ use generated::player_table::PlayerTableAccess;
 use generated::rebuild_world_reducer::rebuild_world;
 use generated::request_ping_reducer::request_ping;
 use generated::server_metrics_table::ServerMetricsTableAccess;
+use generated::set_player_name_reducer::set_player_name;
 use generated::{player_mine, player_place_material, player_update_position};
 use spacetimedb_sdk::{DbContext, Table}; // Trait for connection and table methods
 
@@ -34,6 +35,18 @@ pub struct MultiplayerClient {
 
     /// Database name
     db_name: String,
+}
+
+/// Generate default nickname from Identity (format: "Player_abc123" using last 6 hex chars)
+fn generate_default_nickname(identity: &spacetimedb_sdk::Identity) -> String {
+    let identity_str = identity.to_string();
+    // Take last 6 characters of hex identity
+    let suffix = if identity_str.len() >= 6 {
+        &identity_str[identity_str.len() - 6..]
+    } else {
+        &identity_str
+    };
+    format!("Player_{}", suffix)
 }
 
 impl MultiplayerClient {
@@ -112,7 +125,7 @@ impl MultiplayerClient {
 
         log::info!("Subscribing to world state tables");
 
-        let conn_guard = conn.lock().unwrap();
+        let mut conn_guard = conn.lock().unwrap();
 
         // Subscribe to world config
         let _config_sub = conn_guard
@@ -147,6 +160,24 @@ impl MultiplayerClient {
                 );
             })
             .subscribe("SELECT * FROM player");
+
+        // Set default nickname if not already set
+        if let Some(identity) = conn_guard.try_identity() {
+            // Check if player has a name
+            if let Some(player) = conn_guard.db.player().identity().find(&identity) {
+                if player.name.is_none() {
+                    let default_name = generate_default_nickname(&identity);
+                    drop(conn_guard); // Release lock before calling reducer
+                    if let Err(e) = self.set_nickname(default_name.clone()) {
+                        log::warn!("Failed to set default nickname: {}", e);
+                    } else {
+                        log::info!("Set default nickname: {}", default_name);
+                    }
+                    // Re-acquire lock for remaining subscriptions
+                    conn_guard = conn.lock().unwrap();
+                }
+            }
+        }
 
         // Subscribe to creatures
         let _creature_sub = conn_guard
@@ -263,6 +294,28 @@ impl MultiplayerClient {
             .context("Failed to call rebuild_world reducer")?;
 
         Ok(())
+    }
+
+    /// Set player nickname (calls set_player_name reducer)
+    pub fn set_nickname(&self, name: String) -> anyhow::Result<()> {
+        let conn = self
+            .connection
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Not connected to server"))?;
+
+        let conn_guard = conn.lock().unwrap();
+        conn_guard
+            .reducers
+            .set_player_name(name.clone())
+            .context("Failed to call set_player_name reducer")?;
+
+        log::info!("Nickname set to: {}", name);
+        Ok(())
+    }
+
+    /// Get the SpacetimeDB connection (for reading player data)
+    pub fn get_connection(&self) -> Option<&Arc<Mutex<DbConnection>>> {
+        self.connection.as_ref()
     }
 
     /// Request player respawn from server

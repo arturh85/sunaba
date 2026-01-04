@@ -60,11 +60,11 @@ const QUAD_INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 /// Camera uniform data
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraUniform {
+pub struct CameraUniform {
     /// Camera position in world pixels
-    position: [f32; 2],
+    pub position: [f32; 2],
     /// Zoom level (pixels per screen unit)
-    zoom: f32,
+    pub zoom: f32,
     /// Aspect ratio (width / height)
     aspect: f32,
 }
@@ -111,7 +111,7 @@ pub struct Renderer {
     // Camera
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    camera: CameraUniform,
+    pub camera: CameraUniform,
     /// Animated camera for smooth follow and zoom
     animated_camera: AnimatedCamera,
 
@@ -712,10 +712,12 @@ impl Renderer {
         self.player_sprite.update(delta_time);
     }
 
+    #[allow(unused_variables)]
     pub fn render(
         &mut self,
         world: &mut World,
         particles: &ParticleSystem,
+        remote_players: &[crate::app::RemotePlayerRenderData],
         egui_ctx: &egui::Context,
         textures_delta: egui::TexturesDelta,
         shapes: Vec<egui::epaint::ClippedShape>,
@@ -752,7 +754,7 @@ impl Renderer {
         {
             #[cfg(feature = "profiling")]
             puffin::profile_scope!("pixel_buffer");
-            self.update_pixel_buffer(world, particles);
+            self.update_pixel_buffer(world, particles, remote_players);
         }
         timing.pixel_buffer_ms = t0.elapsed().as_secs_f32() * 1000.0;
 
@@ -905,7 +907,12 @@ impl Renderer {
         Ok(timing)
     }
 
-    fn update_pixel_buffer(&mut self, world: &mut World, particles: &ParticleSystem) {
+    fn update_pixel_buffer(
+        &mut self,
+        world: &mut World,
+        particles: &ParticleSystem,
+        remote_players: &[crate::app::RemotePlayerRenderData],
+    ) {
         // If texture origin changed, need to fully rebuffer
         if self.needs_full_rebuffer {
             // Clear entire buffer to background
@@ -1031,6 +1038,11 @@ impl Renderer {
             }
         }
 
+        // Render remote players (empty slice when multiplayer disabled)
+        for player in remote_players {
+            self.render_remote_player_to_buffer(player.x, player.y, player.vel_x, player.vel_y);
+        }
+
         // Draw player sprite
         // Convert world coordinates to texture coordinates using dynamic texture origin
         let player_world_x = world.player.position.x as i32;
@@ -1053,6 +1065,62 @@ impl Renderer {
                     // Calculate destination in texture buffer
                     let px = player_x + local_x - half_width;
                     let py = player_y + local_y - half_height;
+
+                    // Bounds check
+                    if px >= 0
+                        && px < Self::WORLD_TEXTURE_SIZE as i32
+                        && py >= 0
+                        && py < Self::WORLD_TEXTURE_SIZE as i32
+                    {
+                        let idx = ((py as u32 * Self::WORLD_TEXTURE_SIZE + px as u32) * 4) as usize;
+                        if idx + 3 < self.pixel_buffer.len() {
+                            self.pixel_buffer[idx..idx + 4].copy_from_slice(&pixel);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Render a remote player sprite to the pixel buffer
+    /// Similar to local player rendering but with a subtle tint for visual distinction
+    #[cfg(feature = "multiplayer")]
+    fn render_remote_player_to_buffer(
+        &mut self,
+        player_x: f32,
+        player_y: f32,
+        vel_x: f32,
+        _vel_y: f32,
+    ) {
+        // Convert world coordinates to texture coordinates
+        let player_tex_x = player_x as i32 - self.texture_origin.x as i32;
+        let player_tex_y = player_y as i32 - self.texture_origin.y as i32;
+
+        let half_width = (self.player_sprite.display_width / 2) as i32;
+        let half_height = (self.player_sprite.display_height / 2) as i32;
+
+        // Determine animation state and facing based on velocity
+        let is_moving_horizontal = vel_x.abs() > 0.1;
+        let flip_h = if is_moving_horizontal {
+            vel_x < 0.0 // Flip if moving left
+        } else {
+            !self.player_sprite.facing_right // Use last known direction from local player
+        };
+
+        // Draw sprite centered on player position
+        for local_y in 0..self.player_sprite.display_height as i32 {
+            for local_x in 0..self.player_sprite.display_width as i32 {
+                if let Some(mut pixel) = self.player_sprite.sample_pixel(local_x, local_y, flip_h)
+                {
+                    // Apply subtle cyan tint to distinguish remote players
+                    // Mix 90% original color + 10% cyan
+                    pixel[0] = ((pixel[0] as u16 * 90 + 0 * 10) / 100) as u8; // R: reduce slightly
+                    pixel[1] = ((pixel[1] as u16 * 90 + 200 * 10) / 100) as u8; // G: add cyan
+                    pixel[2] = ((pixel[2] as u16 * 90 + 200 * 10) / 100) as u8; // B: add cyan
+
+                    // Calculate destination in texture buffer
+                    let px = player_tex_x + local_x - half_width;
+                    let py = player_tex_y + local_y - half_height;
 
                     // Bounds check
                     if px >= 0

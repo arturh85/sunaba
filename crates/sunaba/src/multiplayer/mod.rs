@@ -6,7 +6,7 @@
 
 // Native client using Rust SDK
 #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer"))]
-mod generated;
+pub mod generated;
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer"))]
 mod client;

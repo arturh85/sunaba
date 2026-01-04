@@ -38,6 +38,12 @@ pub struct MultiplayerPanelState {
     // Admin actions
     /// Flag: rebuild world requested
     pub rebuild_world_requested: bool,
+
+    // Nickname editing
+    /// Nickname being edited (empty = use default)
+    pub nickname_input: String,
+    /// Flag: nickname change requested
+    pub set_nickname_requested: Option<String>,
 }
 
 #[cfg(feature = "multiplayer")]
@@ -54,6 +60,7 @@ impl MultiplayerPanelState {
         self.oauth_login_requested = false;
         self.oauth_logout_requested = false;
         self.rebuild_world_requested = false;
+        self.set_nickname_requested = None;
     }
 }
 
@@ -172,6 +179,16 @@ fn render_disconnected_ui(
 
     let can_connect = url_to_connect.is_some();
 
+    // Nickname input (optional)
+    ui.separator();
+    ui.heading("Nickname");
+    ui.horizontal(|ui| {
+        ui.label("Nickname (optional):");
+        ui.text_edit_singleline(&mut state.nickname_input);
+    });
+    ui.label("Leave empty for auto-generated nickname (Player_abc123)");
+    ui.add_space(10.0);
+
     ui.horizontal(|ui| {
         if ui
             .add_enabled(can_connect, egui::Button::new("Connect"))
@@ -264,6 +281,23 @@ fn render_connected_ui(
         ui.separator();
     }
 
+    ui.add_space(5.0);
+
+    // Nickname editing
+    ui.separator();
+    ui.heading("Nickname");
+    ui.horizontal(|ui| {
+        ui.label("Nickname:");
+        let response = ui.text_edit_singleline(&mut state.nickname_input);
+        if ui.button("Set").clicked()
+            || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+        {
+            if !state.nickname_input.trim().is_empty() {
+                state.set_nickname_requested = Some(state.nickname_input.trim().to_string());
+            }
+        }
+    });
+    ui.label("Leave empty to use auto-generated nickname");
     ui.add_space(5.0);
 
     if ui.button("Disconnect").clicked() {
