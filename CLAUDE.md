@@ -387,18 +387,20 @@ pub fn load_chunk(&self, x: i32, y: i32) -> Result<Chunk> {
 ## Architecture Overview
 
 ### Tech Stack
-| Component     | Crate                                         |
-|---------------|-----------------------------------------------|
-| Graphics      | wgpu 27.0                                     |
-| Windowing     | winit 0.30                                    |
-| UI            | egui 0.33                                     |
-| Physics       | Simple kinematic (no external physics engine) |
-| Math          | glam 0.25                                     |
-| Serialization | serde + bincode + ron                         |
-| Compression   | lz4_flex                                      |
-| RNG           | rand + rand_xoshiro (deterministic)           |
-| Neural/Graph  | petgraph 0.6                                  |
-| Profiling     | puffin + puffin_egui (opt-in feature)         |
+| Component       | Crate                                         |
+|-----------------|-----------------------------------------------|
+| Graphics        | wgpu 27.0                                     |
+| Windowing       | winit 0.30                                    |
+| UI              | egui 0.33                                     |
+| Physics         | Simple kinematic (no external physics engine) |
+| Math            | glam 0.25                                     |
+| Neural Networks | ndarray 0.16 (BLAS-accelerated)               |
+| Spatial Indexing| rstar 0.12 (R-tree for chunk queries)         |
+| Serialization   | serde + bincode + ron                         |
+| Compression     | lz4_flex                                      |
+| RNG             | rand + rand_xoshiro (deterministic)           |
+| Neural/Graph    | petgraph 0.6                                  |
+| Profiling       | puffin + puffin_egui (opt-in feature)         |
 
 ### World Structure
 ```

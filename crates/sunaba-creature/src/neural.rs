@@ -3,6 +3,7 @@
 //! Implements NerveNet-style GNN that adapts to variable morphologies.
 
 use glam::Vec2;
+use ndarray::{ArrayView1, ArrayView2};
 
 use super::genome::ControllerGenome;
 use super::morphology::CreatureMorphology;
@@ -146,39 +147,36 @@ impl SimpleNeuralController {
 
     /// Forward pass: features -> motor commands
     /// Simple 2-layer network: input -> hidden (tanh) -> output (tanh)
+    /// Uses ndarray for BLAS-accelerated matrix operations
     pub fn forward(&self, input: &[f32]) -> Vec<f32> {
         assert_eq!(input.len(), self.input_dim, "Input dimension mismatch");
 
-        // Layer 1: input -> hidden
-        let input_to_hidden_weights = &self.weights[0..self.input_dim * self.hidden_dim];
-        let mut hidden = vec![0.0; self.hidden_dim];
+        // Convert input to Array1
+        let input_array = ArrayView1::from(input);
 
-        #[allow(clippy::needless_range_loop)]
-        for h in 0..self.hidden_dim {
-            let mut sum = 0.0;
-            for i in 0..self.input_dim {
-                let weight_idx = h * self.input_dim + i;
-                sum += input[i] * input_to_hidden_weights[weight_idx];
-            }
-            hidden[h] = sum.tanh(); // Activation
-        }
+        // Layer 1: input -> hidden
+        // Weight matrix is stored as [hidden_dim, input_dim] in row-major order
+        let w1_slice = &self.weights[0..self.input_dim * self.hidden_dim];
+        let w1 = ArrayView2::from_shape((self.hidden_dim, self.input_dim), w1_slice)
+            .expect("Failed to reshape input->hidden weights");
+
+        // Matrix-vector multiplication: hidden = W1 * input
+        let hidden_pre = w1.dot(&input_array);
+        // Apply tanh activation
+        let hidden = hidden_pre.mapv(|x| x.tanh());
 
         // Layer 2: hidden -> output
         let hidden_to_output_start = self.input_dim * self.hidden_dim;
-        let hidden_to_output_weights = &self.weights[hidden_to_output_start..];
-        let mut output = vec![0.0; self.output_dim];
+        let w2_slice = &self.weights[hidden_to_output_start..];
+        let w2 = ArrayView2::from_shape((self.output_dim, self.hidden_dim), w2_slice)
+            .expect("Failed to reshape hidden->output weights");
 
-        #[allow(clippy::needless_range_loop)]
-        for o in 0..self.output_dim {
-            let mut sum = 0.0;
-            for h in 0..self.hidden_dim {
-                let weight_idx = o * self.hidden_dim + h;
-                sum += hidden[h] * hidden_to_output_weights[weight_idx];
-            }
-            output[o] = sum.tanh(); // Activation
-        }
+        // Matrix-vector multiplication: output = W2 * hidden
+        let output_pre = w2.dot(&hidden);
+        // Apply tanh activation
+        let output = output_pre.mapv(|x| x.tanh());
 
-        output
+        output.to_vec()
     }
 }
 
@@ -302,70 +300,63 @@ impl DeepNeuralController {
 
     /// Forward pass with two hidden layers and optional recurrence
     /// input -> hidden1 (tanh) -> hidden2 (tanh) -> output (tanh)
+    /// Uses ndarray for BLAS-accelerated matrix operations
     pub fn forward(&mut self, input: &[f32]) -> Vec<f32> {
         #[cfg(feature = "profiling")]
         puffin::profile_function!();
 
         assert_eq!(input.len(), self.input_dim, "Input dimension mismatch");
 
+        // Convert input to Array1
+        let input_array = ArrayView1::from(input);
+
         let mut offset = 0;
 
         // Layer 1: input -> hidden1
         let w1_end = self.input_dim * self.hidden1_dim;
-        let w1 = &self.weights[offset..w1_end];
+        let w1_slice = &self.weights[offset..w1_end];
+        let w1 = ArrayView2::from_shape((self.hidden1_dim, self.input_dim), w1_slice)
+            .expect("Failed to reshape input->hidden1 weights");
         offset = w1_end;
 
-        let mut hidden1 = vec![0.0; self.hidden1_dim];
-        #[allow(clippy::needless_range_loop)]
-        for h in 0..self.hidden1_dim {
-            let mut sum = 0.0;
-            for i in 0..self.input_dim {
-                sum += input[i] * w1[h * self.input_dim + i];
-            }
-            hidden1[h] = sum.tanh();
-        }
+        // Matrix-vector multiplication: hidden1 = W1 * input
+        let hidden1_pre = w1.dot(&input_array);
+        let hidden1 = hidden1_pre.mapv(|x| x.tanh());
 
         // Layer 2: hidden1 -> hidden2
         let w2_end = offset + self.hidden1_dim * self.hidden2_dim;
-        let w2 = &self.weights[offset..w2_end];
+        let w2_slice = &self.weights[offset..w2_end];
+        let w2 = ArrayView2::from_shape((self.hidden2_dim, self.hidden1_dim), w2_slice)
+            .expect("Failed to reshape hidden1->hidden2 weights");
         offset = w2_end;
 
-        let mut hidden2 = vec![0.0; self.hidden2_dim];
-        #[allow(clippy::needless_range_loop)]
-        for h in 0..self.hidden2_dim {
-            let mut sum = 0.0;
-            for i in 0..self.hidden1_dim {
-                sum += hidden1[i] * w2[h * self.hidden1_dim + i];
-            }
-            hidden2[h] = sum.tanh();
-        }
+        // Matrix-vector multiplication: hidden2 = W2 * hidden1
+        let hidden2_pre = w2.dot(&hidden1);
+        let mut hidden2 = hidden2_pre.mapv(|x| x.tanh());
 
         // Simple recurrence: blend with previous hidden state
         if let Some(ref prev) = self.prev_hidden {
             let blend = self.recurrence_factor;
-            for h in 0..self.hidden2_dim.min(prev.len()) {
-                hidden2[h] = (1.0 - blend) * hidden2[h] + blend * prev[h];
+            let prev_array = ArrayView1::from(prev);
+            let min_dim = self.hidden2_dim.min(prev.len());
+
+            // Blend current hidden2 with previous hidden state
+            for h in 0..min_dim {
+                hidden2[h] = (1.0 - blend) * hidden2[h] + blend * prev_array[h];
             }
         }
-        self.prev_hidden = Some(hidden2.clone());
+        self.prev_hidden = Some(hidden2.to_vec());
 
         // Layer 3: hidden2 -> output
-        let w3 = &self.weights[offset..];
-        let mut output = vec![0.0; self.output_dim];
+        let w3_slice = &self.weights[offset..];
+        let w3 = ArrayView2::from_shape((self.output_dim, self.hidden2_dim), w3_slice)
+            .expect("Failed to reshape hidden2->output weights");
 
-        #[allow(clippy::needless_range_loop)]
-        for o in 0..self.output_dim {
-            let mut sum = 0.0;
-            for h in 0..self.hidden2_dim {
-                let idx = o * self.hidden2_dim + h;
-                if idx < w3.len() {
-                    sum += hidden2[h] * w3[idx];
-                }
-            }
-            output[o] = sum.tanh();
-        }
+        // Matrix-vector multiplication: output = W3 * hidden2
+        let output_pre = w3.dot(&hidden2);
+        let output = output_pre.mapv(|x| x.tanh());
 
-        output
+        output.to_vec()
     }
 }
 

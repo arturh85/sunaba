@@ -649,7 +649,9 @@ impl App {
                     // Expand subscription to larger radius now that spawn is loaded
                     if let Some(manager) = self.multiplayer_manager.as_mut() {
                         if manager.state.is_connected() {
-                            if let Err(e) = manager.client.expand_chunk_subscription(IVec2::ZERO, 10) {
+                            if let Err(e) =
+                                manager.client.expand_chunk_subscription(IVec2::ZERO, 10)
+                            {
                                 log::error!("Failed to expand chunk subscription: {}", e);
                             } else {
                                 log::info!("Expanded chunk subscription to radius 10");

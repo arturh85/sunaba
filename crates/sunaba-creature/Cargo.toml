@@ -9,6 +9,8 @@ sunaba-simulation = { path = "../sunaba-simulation" }
 ahash = { version = "0.8", default-features = false, features = ["compile-time-rng", "std"] }
 glam = { version = "0.25", features = ["serde"] }
 log = "0.4"
+ndarray = { version = "0.16", features = ["serde"] }
+ndarray-linalg = { version = "0.17", optional = true }
 petgraph = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 

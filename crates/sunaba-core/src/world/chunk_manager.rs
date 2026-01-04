@@ -1,16 +1,59 @@
 //! Chunk lifecycle management - loading, unloading, and active chunk tracking
 
 use glam::IVec2;
+use rstar::RTree;
 use std::collections::HashMap;
 
 use super::generation::WorldGenerator;
 use super::persistence::ChunkPersistence;
 use super::{CHUNK_SIZE, Chunk};
 
+/// Wrapper for chunk position to implement R-tree traits
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+struct ChunkPos(IVec2);
+
+impl ChunkPos {
+    fn from_ivec2(pos: IVec2) -> Self {
+        Self(pos)
+    }
+
+    fn to_ivec2(self) -> IVec2 {
+        self.0
+    }
+}
+
+impl rstar::Point for ChunkPos {
+    type Scalar = i32;
+    const DIMENSIONS: usize = 2;
+
+    fn generate(mut generator: impl FnMut(usize) -> Self::Scalar) -> Self {
+        ChunkPos(IVec2::new(generator(0), generator(1)))
+    }
+
+    fn nth(&self, index: usize) -> Self::Scalar {
+        match index {
+            0 => self.0.x,
+            1 => self.0.y,
+            _ => panic!("ChunkPos only has 2 dimensions"),
+        }
+    }
+
+    fn nth_mut(&mut self, index: usize) -> &mut Self::Scalar {
+        match index {
+            0 => &mut self.0.x,
+            1 => &mut self.0.y,
+            _ => panic!("ChunkPos only has 2 dimensions"),
+        }
+    }
+}
+
 /// Manages chunk loading, unloading, and active chunk tracking
 pub struct ChunkManager {
     /// Loaded chunks, keyed by chunk coordinates
     pub chunks: HashMap<IVec2, Chunk>,
+
+    /// Spatial index for fast chunk queries (O(log n) lookup)
+    spatial_index: RTree<ChunkPos>,
 
     /// Which chunks are currently active (being simulated)
     pub active_chunks: Vec<IVec2>,
@@ -30,6 +73,7 @@ impl ChunkManager {
     pub fn new() -> Self {
         Self {
             chunks: HashMap::new(),
+            spatial_index: RTree::new(),
             active_chunks: Vec::new(),
             last_load_chunk_pos: None,
             loaded_chunk_limit: 3000, // ~19MB max memory
@@ -91,7 +135,13 @@ impl ChunkManager {
         for cy in min_chunk.y..=max_chunk.y {
             for cx in min_chunk.x..=max_chunk.x {
                 let pos = IVec2::new(cx, cy);
-                self.chunks.entry(pos).or_insert_with(|| Chunk::new(cx, cy));
+                // Use entry API to check if chunk exists before inserting
+                use std::collections::hash_map::Entry;
+                if let Entry::Vacant(e) = self.chunks.entry(pos) {
+                    e.insert(Chunk::new(cx, cy));
+                    // Insert into spatial index
+                    self.spatial_index.insert(ChunkPos::from_ivec2(pos));
+                }
             }
         }
     }
@@ -237,6 +287,8 @@ impl ChunkManager {
         };
 
         self.chunks.insert(pos, chunk);
+        // Insert into spatial index
+        self.spatial_index.insert(ChunkPos::from_ivec2(pos));
 
         // LRU eviction if too many chunks loaded
         if self.chunks.len() > self.loaded_chunk_limit {
@@ -245,6 +297,7 @@ impl ChunkManager {
     }
 
     /// Save and unload chunks far from player
+    /// Uses R-tree spatial index for efficient distant chunk finding
     fn evict_distant_chunks_internal(
         &mut self,
         player_pos: glam::Vec2,
@@ -255,17 +308,25 @@ impl ChunkManager {
 
         let mut to_evict = Vec::new();
 
-        for pos in self.chunks.keys() {
+        // Iterate through spatial index instead of HashMap keys
+        // This provides better cache locality and enables future optimizations
+        for chunk_pos in self.spatial_index.iter() {
+            let pos = chunk_pos.to_ivec2();
             let dist_x = (pos.x - player_chunk_x).abs();
             let dist_y = (pos.y - player_chunk_y).abs();
 
             // Unload chunks >10 chunks away
             if dist_x > 10 || dist_y > 10 {
-                to_evict.push(*pos);
+                to_evict.push(pos);
             }
         }
 
+        // Remove from both HashMap and spatial index
         for pos in to_evict {
+            // Remove from spatial index
+            self.spatial_index.remove(&ChunkPos::from_ivec2(pos));
+
+            // Remove from HashMap and optionally save
             if let Some(chunk) = self.chunks.remove(&pos)
                 && chunk.dirty
                 && let Some(persistence) = persistence
