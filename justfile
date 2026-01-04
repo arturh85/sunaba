@@ -179,31 +179,70 @@ spacetime-install:
 spacetime-version:
     spacetime version
 
-# Build the SpacetimeDB module (WASM)
+# Build the SpacetimeDB module (WASM) and regenerate clients
 [unix]
 spacetime-build:
     @echo "Building SpacetimeDB module..."
     spacetime build -p crates/sunaba-server
-    @echo "Build complete!"
+    @echo "Regenerating clients from schema..."
+    @just spacetime-generate-rust > /dev/null 2>&1
+    @just spacetime-generate-ts > /dev/null 2>&1
+    @echo "Build complete! (clients auto-generated)"
 
 [windows]
 spacetime-build:
     @echo "Building SpacetimeDB module..."
     spacetime build -p crates/sunaba-server
-    @echo "Build complete!"
+    @echo "Regenerating clients from schema..."
+    @just spacetime-generate-rust | Out-Null
+    @just spacetime-generate-ts | Out-Null
+    @echo "Build complete! (clients auto-generated)"
 
-# Start local SpacetimeDB instance
+# Check if SpacetimeDB server is running
+[unix]
+spacetime-check server="http://localhost:3000":
+    #!/usr/bin/env bash
+    if curl -s --connect-timeout 2 {{server}}/database/list > /dev/null 2>&1; then
+        echo "✅ SpacetimeDB server is running at {{server}}"
+        exit 0
+    else
+        echo "❌ SpacetimeDB server is not running at {{server}}"
+        exit 1
+    fi
+
+[windows]
+spacetime-check server="http://localhost:3000":
+    @try { \
+        Invoke-WebRequest -Uri "{{server}}/database/list" -TimeoutSec 2 -UseBasicParsing | Out-Null; \
+        Write-Host "✅ SpacetimeDB server is running at {{server}}"; \
+        exit 0; \
+    } catch { \
+        Write-Host "❌ SpacetimeDB server is not running at {{server}}"; \
+        exit 1; \
+    }
+
+# Start local SpacetimeDB instance (checks if already running)
 [unix]
 spacetime-start:
-    spacetime start &
-    @sleep 2
-    @echo "SpacetimeDB local instance started"
+    @if just spacetime-check > /dev/null 2>&1; then \
+        echo "SpacetimeDB server already running"; \
+    else \
+        echo "Starting SpacetimeDB server..."; \
+        spacetime start & \
+        sleep 2; \
+        echo "SpacetimeDB local instance started"; \
+    fi
 
 [windows]
 spacetime-start:
-    Start-Process spacetime -ArgumentList "start" -NoNewWindow
-    Start-Sleep -Seconds 2
-    @echo "SpacetimeDB local instance started"
+    @if (just spacetime-check) { \
+        Write-Host "SpacetimeDB server already running"; \
+    } else { \
+        Write-Host "Starting SpacetimeDB server..."; \
+        Start-Process spacetime -ArgumentList "start" -NoNewWindow; \
+        Start-Sleep -Seconds 2; \
+        Write-Host "SpacetimeDB local instance started"; \
+    }
 
 # Stop local SpacetimeDB instance
 spacetime-stop:

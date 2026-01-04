@@ -413,6 +413,92 @@ impl<'a> DockTabViewer<'a> {
                 )
                 .changed();
 
+            ui.separator();
+            ui.label("Water Animation:");
+            *self.ctx.params_changed |= ui
+                .add(
+                    egui::Slider::new(
+                        &mut self.ctx.params.rendering.water_noise_frequency,
+                        0.01..=0.2,
+                    )
+                    .text("Frequency"),
+                )
+                .changed();
+            *self.ctx.params_changed |= ui
+                .add(
+                    egui::Slider::new(&mut self.ctx.params.rendering.water_noise_speed, 0.5..=5.0)
+                        .text("Speed"),
+                )
+                .changed();
+            *self.ctx.params_changed |= ui
+                .add(
+                    egui::Slider::new(
+                        &mut self.ctx.params.rendering.water_noise_amplitude,
+                        0.0..=0.2,
+                    )
+                    .text("Amplitude"),
+                )
+                .changed();
+
+            ui.separator();
+            ui.label("Lava Animation:");
+            *self.ctx.params_changed |= ui
+                .add(
+                    egui::Slider::new(
+                        &mut self.ctx.params.rendering.lava_noise_frequency,
+                        0.01..=0.15,
+                    )
+                    .text("Frequency"),
+                )
+                .changed();
+            *self.ctx.params_changed |= ui
+                .add(
+                    egui::Slider::new(&mut self.ctx.params.rendering.lava_noise_speed, 0.5..=3.0)
+                        .text("Speed"),
+                )
+                .changed();
+            *self.ctx.params_changed |= ui
+                .add(
+                    egui::Slider::new(
+                        &mut self.ctx.params.rendering.lava_noise_amplitude,
+                        0.0..=0.3,
+                    )
+                    .text("Amplitude"),
+                )
+                .changed();
+
+            ui.separator();
+            ui.label("Multi-Pass Bloom:");
+            *self.ctx.params_changed |= ui
+                .checkbox(&mut self.ctx.params.rendering.bloom_enabled, "Enable Bloom")
+                .changed();
+            if self.ctx.params.rendering.bloom_enabled {
+                *self.ctx.params_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut self.ctx.params.rendering.bloom_quality, 3..=5)
+                            .text("Quality")
+                            .custom_formatter(|n, _| {
+                                match n as u32 {
+                                    3 => "Low (3 mips)",
+                                    4 => "Medium (4 mips)",
+                                    5 => "High (5 mips)",
+                                    _ => "Unknown",
+                                }
+                                .to_string()
+                            }),
+                    )
+                    .changed();
+                *self.ctx.params_changed |= ui
+                    .add(
+                        egui::Slider::new(
+                            &mut self.ctx.params.rendering.bloom_threshold,
+                            0.4..=0.8,
+                        )
+                        .text("Threshold"),
+                    )
+                    .changed();
+            }
+
             ui.add_space(8.0);
             ui.heading("Debug");
             *self.ctx.params_changed |= ui
@@ -425,6 +511,15 @@ impl<'a> DockTabViewer<'a> {
                 .checkbox(
                     &mut self.ctx.params.debug.verbose_logging,
                     "Verbose Logging",
+                )
+                .changed();
+            *self.ctx.params_changed |= ui
+                .add(
+                    egui::Slider::new(&mut self.ctx.params.debug.brush_size, 1..=10)
+                        .text("Brush Size"),
+                )
+                .on_hover_text(
+                    "Circular brush radius for material placement (1 = single pixel, 10 = large circle)",
                 )
                 .changed();
         });
