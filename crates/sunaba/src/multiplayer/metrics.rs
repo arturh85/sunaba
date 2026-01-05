@@ -4,7 +4,11 @@ use std::collections::VecDeque;
 use std::time::Duration;
 use web_time::Instant;
 
+#[cfg(not(target_arch = "wasm32"))]
 use super::generated::ServerMetrics;
+
+#[cfg(target_arch = "wasm32")]
+use super::js_client::ServerMetrics;
 
 /// Client-side multiplayer metrics
 #[derive(Clone, Debug)]
@@ -93,7 +97,7 @@ impl MetricsCollector {
     }
 
     /// Send ping request to server (if interval has elapsed)
-    pub fn send_ping(&mut self, client: &super::client::MultiplayerClient) {
+    pub fn send_ping(&mut self, client: &super::MultiplayerClient) {
         let now = Instant::now();
         if now.duration_since(self.last_ping_time) > self.ping_interval {
             self.ping_start_time = Some(now);

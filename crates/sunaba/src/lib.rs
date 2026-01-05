@@ -18,8 +18,8 @@ pub mod headless;
 #[cfg(feature = "multiplayer")]
 pub mod multiplayer;
 
-// Encoding module for chunk synchronization (multiplayer only)
-#[cfg(feature = "multiplayer")]
+// Encoding module for chunk synchronization (multiplayer native only - uses bincode_next)
+#[cfg(all(feature = "multiplayer", not(target_arch = "wasm32")))]
 pub mod encoding;
 
 // Re-export core modules for convenience

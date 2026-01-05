@@ -165,6 +165,7 @@ impl OAuthClaims {
 }
 
 /// SpacetimeDB client wrapper for WASM (uses TypeScript SDK via JavaScript)
+#[derive(Clone)]
 pub struct MultiplayerClient {
     connected: bool,
 }
@@ -173,6 +174,17 @@ impl MultiplayerClient {
     /// Create a new multiplayer client (not yet connected)
     pub fn new() -> Self {
         Self { connected: false }
+    }
+
+    /// Set player nickname (stub for WASM - handled by JS SDK)
+    pub fn set_nickname(&mut self, _nickname: impl Into<String>) -> anyhow::Result<()> {
+        log::warn!("set_nickname not yet implemented for WASM");
+        Ok(())
+    }
+
+    /// Get connection (stub for WASM - returns None for now)
+    pub fn get_connection(&self) -> Option<()> {
+        if self.connected { Some(()) } else { None }
     }
 
     /// Connect to SpacetimeDB server

@@ -101,6 +101,7 @@ web-sys = { version = "0.3", features = ["Window", "Document", "HtmlCanvasElemen
 console_error_panic_hook = "0.1"
 console_log = "1.0"
 lazy_static = "1.4"  # For WASM log buffer
+serde-wasm-bindgen = "0.6"  # For multiplayer TypeScript SDK interop
 getrandom_v02 = { package = "getrandom", version = "0.2", features = ["js"] }
 getrandom_v03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 egui-winit = { version = "0.33", default-features = false }

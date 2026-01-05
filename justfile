@@ -10,7 +10,7 @@ _ensure-generated:
     #!/usr/bin/env bash
     set -euo pipefail
     # Check if generated.rs exists
-    if [ ! -f "crates/sunaba/src/multiplayer/generated.rs" ]; then
+    if [ ! -f "crates/sunaba/src/multiplayer/generated/mod.rs" ]; then
         echo "⚠️  Generated files missing, setting up..."
         # Check if spacetime CLI is installed
         if ! command -v spacetime &> /dev/null; then
@@ -25,7 +25,7 @@ _ensure-generated:
 
 [windows]
 _ensure-generated:
-    @if (-not (Test-Path "crates/sunaba/src/multiplayer/generated.rs")) { \
+    @if (-not (Test-Path "crates/sunaba/src/multiplayer/generated/mod.rs")) { \
         Write-Host "⚠️  Generated files missing, setting up..."; \
         if (-not (Get-Command spacetime -ErrorAction SilentlyContinue)) { \
             Write-Host "Installing SpacetimeDB CLI..."; \

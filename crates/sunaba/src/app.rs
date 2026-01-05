@@ -19,7 +19,7 @@ use crate::simulation::MaterialType;
 use crate::ui::UiState;
 use crate::world::World;
 
-#[cfg(feature = "multiplayer")]
+#[cfg(all(feature = "multiplayer", not(target_arch = "wasm32")))]
 use crate::multiplayer::client::{
     DbContextTrait as _, PlayerTableAccessTrait as _, TableTrait as _,
 };
@@ -993,25 +993,7 @@ impl App {
         #[cfg(feature = "multiplayer")]
         let multiplayer_overlay_data = {
             let remote_players = self.collect_remote_players();
-            let local_player_name = if let Some(ref manager) = self.multiplayer_manager {
-                if let Some(ref conn_arc) = manager.client.get_connection() {
-                    if let Ok(conn_guard) = conn_arc.lock() {
-                        let identity = conn_guard.identity();
-                        conn_guard
-                            .db
-                            .player()
-                            .identity()
-                            .find(&identity)
-                            .and_then(|p| p.name.clone())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            let local_player_name = self.get_local_player_name();
             let window_size = self.window.inner_size();
             let camera_pos = self.renderer.camera_position();
             let camera_zoom = self.renderer.camera_zoom();
@@ -1203,7 +1185,7 @@ impl App {
                                 .nickname_input
                                 .trim()
                                 .to_string();
-                            if let Some(ref manager) = self.multiplayer_manager {
+                            if let Some(ref mut manager) = self.multiplayer_manager {
                                 if manager.state.is_connected() {
                                     if let Err(e) = manager.client.set_nickname(nickname.clone()) {
                                         log::warn!("Failed to set pre-entered nickname: {}", e);
@@ -1294,7 +1276,7 @@ impl App {
                     .set_nickname_requested
                     .take()
                 {
-                    if let Some(ref manager) = self.multiplayer_manager {
+                    if let Some(ref mut manager) = self.multiplayer_manager {
                         if manager.state.is_connected() {
                             if let Err(e) = manager.client.set_nickname(nickname.clone()) {
                                 log::error!("Failed to set nickname: {}", e);
@@ -1514,7 +1496,7 @@ impl App {
     }
 
     /// Collect remote player data from SpacetimeDB subscription (multiplayer only)
-    #[cfg(feature = "multiplayer")]
+    #[cfg(all(feature = "multiplayer", not(target_arch = "wasm32")))]
     fn collect_remote_players(&self) -> Vec<RemotePlayerRenderData> {
         let Some(ref manager) = self.multiplayer_manager else {
             return Vec::new();
@@ -1548,6 +1530,44 @@ impl App {
                 identity: p.identity.to_string(),
             })
             .collect()
+    }
+
+    /// WASM stub for remote players (JS SDK handles differently)
+    #[cfg(all(feature = "multiplayer", target_arch = "wasm32"))]
+    fn collect_remote_players(&self) -> Vec<RemotePlayerRenderData> {
+        // TODO: Implement via JS SDK callbacks
+        Vec::new()
+    }
+
+    /// Get local player name from multiplayer connection (native only)
+    #[cfg(all(feature = "multiplayer", not(target_arch = "wasm32")))]
+    fn get_local_player_name(&self) -> Option<String> {
+        let Some(ref manager) = self.multiplayer_manager else {
+            return None;
+        };
+
+        let Some(ref conn_arc) = manager.client.get_connection() else {
+            return None;
+        };
+
+        let Ok(conn_guard) = conn_arc.lock() else {
+            return None;
+        };
+
+        let identity = conn_guard.identity();
+        conn_guard
+            .db
+            .player()
+            .identity()
+            .find(&identity)
+            .and_then(|p| p.name.clone())
+    }
+
+    /// WASM stub for local player name (JS SDK handles differently)
+    #[cfg(all(feature = "multiplayer", target_arch = "wasm32"))]
+    fn get_local_player_name(&self) -> Option<String> {
+        // TODO: Implement via JS SDK callbacks
+        None
     }
 }
 

@@ -256,7 +256,10 @@ impl GameConfig {
                         Ok(config)
                     }
                     Err(e) => {
-                        log::warn!("Failed to parse config from localStorage: {}, using defaults", e);
+                        log::warn!(
+                            "Failed to parse config from localStorage: {}, using defaults",
+                            e
+                        );
                         Ok(Self::default())
                     }
                 }
