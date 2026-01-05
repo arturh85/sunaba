@@ -263,13 +263,13 @@ spacetime-logs-tail name="sunaba" server="http://localhost:3000":
 # Generate TypeScript client SDK from server module
 spacetime-generate-ts:
     @echo "Generating TypeScript client from server schema..."
-    spacetime generate --lang typescript --project-path crates/sunaba-server --out-dir web/src/spacetime
+    spacetime generate --lang typescript --project-path crates/sunaba-server --out-dir web/src/generated -y
     @echo "TypeScript client generated successfully"
 
 # Generate Rust client SDK from server module
 spacetime-generate-rust:
     @echo "Generating Rust client from server schema..."
-    spacetime generate --lang rust --project-path crates/sunaba-server --out-dir crates/sunaba/src/multiplayer/generated
+    spacetime generate --lang rust --project-path crates/sunaba-server --out-dir crates/sunaba/src/multiplayer/generated -y
     @echo "Formatting generated Rust code..."
     cargo fmt --manifest-path crates/sunaba/Cargo.toml
     @echo "Rust client generated successfully"

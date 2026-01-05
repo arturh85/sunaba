@@ -887,7 +887,10 @@ impl App {
                 let color = material_def.color;
                 let is_liquid = material_def.material_type == MaterialType::Liquid;
 
+                #[cfg(not(target_arch = "wasm32"))]
                 let brush_size = self.config.debug.brush_size;
+                #[cfg(target_arch = "wasm32")]
+                let brush_size = 1; // Default brush size for WASM builds
 
                 if self.debug_placement() {
                     self.world
