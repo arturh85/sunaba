@@ -11,7 +11,6 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
-#[cfg(not(target_arch = "wasm32"))]
 use crate::config::GameConfig;
 use crate::entity::InputState;
 use crate::levels::LevelManager;
@@ -200,7 +199,6 @@ impl App {
                 .with_canvas(Some(canvas))
         };
 
-        #[cfg(not(target_arch = "wasm32"))]
         let config = GameConfig::load()?;
 
         #[cfg(not(target_arch = "wasm32"))]

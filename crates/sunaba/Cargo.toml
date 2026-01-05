@@ -97,9 +97,10 @@ serde_json = { version = "1.0", optional = true }  # Used for manual JWT parsing
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"  # JavaScript interop for TypeScript SDK
-web-sys = { version = "0.3", features = ["Window", "Document", "HtmlCanvasElement"] }
+web-sys = { version = "0.3", features = ["Window", "Document", "HtmlCanvasElement", "Storage"] }
 console_error_panic_hook = "0.1"
 console_log = "1.0"
+lazy_static = "1.4"  # For WASM log buffer
 getrandom_v02 = { package = "getrandom", version = "0.2", features = ["js"] }
 getrandom_v03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 egui-winit = { version = "0.33", default-features = false }

@@ -274,11 +274,18 @@ impl ParamsPanel {
 
             ui.add_space(8.0);
 
-            // Reset to defaults button
-            if ui.button("Reset to Defaults").clicked() {
-                self.config = GameConfig::default();
-                self.changed = true;
-            }
+            // Save and Reset buttons
+            ui.horizontal(|ui| {
+                if ui.button("Save Config").clicked() {
+                    if let Err(e) = self.config.save() {
+                        log::error!("Failed to save config: {}", e);
+                    }
+                }
+                if ui.button("Reset to Defaults").clicked() {
+                    self.config = GameConfig::default();
+                    self.changed = true;
+                }
+            });
         });
     }
 }

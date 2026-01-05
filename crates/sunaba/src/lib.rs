@@ -5,7 +5,6 @@
 pub mod animation;
 pub mod app;
 pub mod assets;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod config;
 pub mod hot_reload;
 pub mod render;
@@ -44,13 +43,47 @@ pub mod prelude {
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
+struct WasmLogger;
+
+#[cfg(target_arch = "wasm32")]
+impl log::Log for WasmLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::Level::Info
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            // Log to console
+            let level_str = match record.level() {
+                log::Level::Error => "ERROR",
+                log::Level::Warn => "WARN",
+                log::Level::Info => "INFO",
+                log::Level::Debug => "DEBUG",
+                log::Level::Trace => "TRACE",
+            };
+
+            web_sys::console::log_1(&format!("[{}] {}", level_str, record.args()).into());
+
+            // Also log to our buffer
+            ui::logger_panel::wasm_log(record.level(), format!("{}", record.args()));
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+#[cfg(target_arch = "wasm32")]
+static WASM_LOGGER: WasmLogger = WasmLogger;
+
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 pub fn start() {
     // Set up panic hook for better error messages in the browser console
     console_error_panic_hook::set_once();
 
-    // Initialize logging for WASM
-    console_log::init_with_level(log::Level::Info).expect("Failed to initialize logger");
+    // Initialize our custom logger that writes to both console and buffer
+    log::set_logger(&WASM_LOGGER).expect("Failed to set logger");
+    log::set_max_level(log::LevelFilter::Info);
 
     log::info!("Sunaba WASM module initialized");
 }

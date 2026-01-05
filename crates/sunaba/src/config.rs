@@ -1,13 +1,12 @@
 //! Game configuration with layered loading
 //!
-//! Configuration is loaded from multiple sources (lowest to highest priority):
-//! 1. Compiled defaults
-//! 2. `config.ron` file (if exists)
-//! 3. Environment variables prefixed with `SUNABA_`
+//! Native: Loaded from multiple sources (1. defaults, 2. config.ron, 3. env vars)
+//! WASM: Loaded from localStorage with fallback to defaults
 //!
 //! Example environment variable: `SUNABA_CAMERA__ZOOM_SPEED=1.5`
 
 use anyhow::{Context, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
 
@@ -196,9 +195,9 @@ impl Default for RenderingConfig {
 
 impl GameConfig {
     /// Load configuration with layered priority:
-    /// 1. Compiled defaults (lowest priority)
-    /// 2. `config.ron` file (if exists)
-    /// 3. Environment variables prefixed with `SUNABA_` (highest priority)
+    /// Native: 1. Compiled defaults, 2. config.ron file, 3. Environment variables
+    /// WASM: 1. Compiled defaults, 2. localStorage
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load() -> Result<Self> {
         let builder = Config::builder()
             // Layer 1: Compiled defaults
@@ -235,6 +234,68 @@ impl GameConfig {
         config
             .try_deserialize()
             .context("Failed to deserialize configuration")
+    }
+
+    /// WASM: Load from localStorage, fall back to defaults
+    #[cfg(target_arch = "wasm32")]
+    pub fn load() -> Result<Self> {
+        // Try to get localStorage
+        let window = web_sys::window().ok_or_else(|| anyhow::anyhow!("No window"))?;
+        let storage = window
+            .local_storage()
+            .map_err(|e| anyhow::anyhow!("localStorage error: {:?}", e))?
+            .ok_or_else(|| anyhow::anyhow!("localStorage not available"))?;
+
+        // Try to load from localStorage
+        match storage.get_item("sunaba_config") {
+            Ok(Some(config_str)) => {
+                // Parse RON config
+                match ron::from_str(&config_str) {
+                    Ok(config) => {
+                        log::info!("Loaded config from localStorage");
+                        Ok(config)
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to parse config from localStorage: {}, using defaults", e);
+                        Ok(Self::default())
+                    }
+                }
+            }
+            _ => {
+                log::info!("No config in localStorage, using defaults");
+                Ok(Self::default())
+            }
+        }
+    }
+
+    /// Save configuration (native: to file, WASM: to localStorage)
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn save(&self) -> Result<()> {
+        let config_str = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+            .context("Failed to serialize config")?;
+        std::fs::write("config.ron", config_str).context("Failed to write config.ron")?;
+        log::info!("Saved config to config.ron");
+        Ok(())
+    }
+
+    /// WASM: Save to localStorage
+    #[cfg(target_arch = "wasm32")]
+    pub fn save(&self) -> Result<()> {
+        let config_str = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+            .context("Failed to serialize config")?;
+
+        let window = web_sys::window().ok_or_else(|| anyhow::anyhow!("No window"))?;
+        let storage = window
+            .local_storage()
+            .map_err(|e| anyhow::anyhow!("localStorage error: {:?}", e))?
+            .ok_or_else(|| anyhow::anyhow!("localStorage not available"))?;
+
+        storage
+            .set_item("sunaba_config", &config_str)
+            .map_err(|e| anyhow::anyhow!("Failed to save to localStorage: {:?}", e))?;
+
+        log::info!("Saved config to localStorage");
+        Ok(())
     }
 }
 

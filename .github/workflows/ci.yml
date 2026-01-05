@@ -241,6 +241,10 @@ jobs:
             echo "✅ No server schema changes in this commit"
           fi
 
+      - name: Authenticate with SpacetimeDB
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: spacetime login --server-issued-login https://sunaba.app42.blue --token "${{ secrets.SPACETIMEDB_TOKEN }}"
+
       - name: Publish to production (main branch only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: just spacetime-publish sunaba https://sunaba.app42.blue "${{ secrets.SPACETIMEDB_TOKEN }}"
+        run: just spacetime-publish sunaba https://sunaba.app42.blue

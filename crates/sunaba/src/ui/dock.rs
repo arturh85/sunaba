@@ -10,11 +10,9 @@ pub enum DockTab {
     LevelSelector,
     Inventory,
     Crafting,
-    #[cfg(not(target_arch = "wasm32"))]
     Logger,
     #[cfg(feature = "multiplayer")]
     MultiplayerStats,
-    #[cfg(not(target_arch = "wasm32"))]
     Parameters,
     #[cfg(feature = "profiling")]
     Profiler,
@@ -28,11 +26,9 @@ impl std::fmt::Display for DockTab {
             DockTab::LevelSelector => write!(f, "Levels"),
             DockTab::Inventory => write!(f, "Inventory"),
             DockTab::Crafting => write!(f, "Crafting"),
-            #[cfg(not(target_arch = "wasm32"))]
             DockTab::Logger => write!(f, "Log"),
             #[cfg(feature = "multiplayer")]
             DockTab::MultiplayerStats => write!(f, "Multiplayer"),
-            #[cfg(not(target_arch = "wasm32"))]
             DockTab::Parameters => write!(f, "Parameters"),
             #[cfg(feature = "profiling")]
             DockTab::Profiler => write!(f, "Profiler"),
@@ -66,12 +62,13 @@ impl DockManager {
 
     #[cfg(target_arch = "wasm32")]
     pub fn new() -> Self {
-        // WASM: Stats tab present from start (but can be closed)
-        #[cfg_attr(not(feature = "multiplayer"), allow(unused_mut))]
-        let mut tabs = vec![DockTab::Stats];
+        // WASM: All tabs present from start, grouped together - Logger is the active tab
+        let mut tabs = vec![DockTab::Logger, DockTab::Stats];
 
         #[cfg(feature = "multiplayer")]
         tabs.push(DockTab::MultiplayerStats);
+
+        tabs.push(DockTab::Parameters);
 
         let dock_state = DockState::new(tabs);
         Self { dock_state }
@@ -170,11 +167,9 @@ impl<'a> TabViewer for DockTabViewer<'a> {
             DockTab::LevelSelector => self.render_level_selector(ui),
             DockTab::Inventory => self.render_inventory(ui),
             DockTab::Crafting => self.render_crafting(ui),
-            #[cfg(not(target_arch = "wasm32"))]
             DockTab::Logger => self.render_logger(ui),
             #[cfg(feature = "multiplayer")]
             DockTab::MultiplayerStats => self.render_multiplayer_stats(ui),
-            #[cfg(not(target_arch = "wasm32"))]
             DockTab::Parameters => self.render_parameters(ui),
             #[cfg(feature = "profiling")]
             DockTab::Profiler => self.render_profiler(ui),
@@ -318,211 +313,15 @@ impl<'a> DockTabViewer<'a> {
         egui_logger::logger_ui().show(ui);
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(target_arch = "wasm32")]
+    fn render_logger(&self, ui: &mut egui::Ui) {
+        ui.label("See Logger panel in dock (press F6 to toggle)");
+    }
+
     fn render_parameters(&mut self, ui: &mut egui::Ui) {
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            // Player Physics
-            ui.heading("Player Physics");
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.player.move_speed, 50.0..=500.0)
-                        .text("Move Speed"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.player.gravity, 200.0..=1600.0)
-                        .text("Gravity"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.player.jump_velocity, 100.0..=600.0)
-                        .text("Jump"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.player.flight_thrust, 400.0..=2000.0)
-                        .text("Flight Thrust"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.player.max_fall_speed, 200.0..=1000.0)
-                        .text("Max Fall Speed"),
-                )
-                .changed();
-
-            ui.add_space(8.0);
-            ui.heading("World");
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.world.active_chunk_radius, 1..=8)
-                        .text("Active Chunk Radius"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.world.autosave_interval_secs, 10..=300)
-                        .text("Autosave (sec)"),
-                )
-                .changed();
-
-            ui.add_space(8.0);
-            ui.heading("Camera");
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.camera.zoom_speed, 1.01..=1.5)
-                        .text("Zoom Speed"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.camera.min_zoom, 0.001..=0.005)
-                        .text("Min Zoom")
-                        .logarithmic(true),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.camera.max_zoom, 0.005..=0.05)
-                        .text("Max Zoom")
-                        .logarithmic(true),
-                )
-                .changed();
-
-            ui.add_space(8.0);
-            ui.heading("Rendering");
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.rendering.scanline_intensity, 0.0..=0.5)
-                        .text("Scanlines"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.rendering.vignette_intensity, 0.0..=0.5)
-                        .text("Vignette"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.rendering.bloom_intensity, 0.0..=1.0)
-                        .text("Bloom"),
-                )
-                .changed();
-
-            ui.separator();
-            ui.label("Water Animation:");
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(
-                        &mut self.ctx.params.rendering.water_noise_frequency,
-                        0.01..=0.2,
-                    )
-                    .text("Frequency"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.rendering.water_noise_speed, 0.5..=5.0)
-                        .text("Speed"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(
-                        &mut self.ctx.params.rendering.water_noise_amplitude,
-                        0.0..=0.2,
-                    )
-                    .text("Amplitude"),
-                )
-                .changed();
-
-            ui.separator();
-            ui.label("Lava Animation:");
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(
-                        &mut self.ctx.params.rendering.lava_noise_frequency,
-                        0.01..=0.15,
-                    )
-                    .text("Frequency"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.rendering.lava_noise_speed, 0.5..=3.0)
-                        .text("Speed"),
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(
-                        &mut self.ctx.params.rendering.lava_noise_amplitude,
-                        0.0..=0.3,
-                    )
-                    .text("Amplitude"),
-                )
-                .changed();
-
-            ui.separator();
-            ui.label("Multi-Pass Bloom:");
-            *self.ctx.params_changed |= ui
-                .checkbox(&mut self.ctx.params.rendering.bloom_enabled, "Enable Bloom")
-                .changed();
-            if self.ctx.params.rendering.bloom_enabled {
-                *self.ctx.params_changed |= ui
-                    .add(
-                        egui::Slider::new(&mut self.ctx.params.rendering.bloom_quality, 3..=5)
-                            .text("Quality")
-                            .custom_formatter(|n, _| {
-                                match n as u32 {
-                                    3 => "Low (3 mips)",
-                                    4 => "Medium (4 mips)",
-                                    5 => "High (5 mips)",
-                                    _ => "Unknown",
-                                }
-                                .to_string()
-                            }),
-                    )
-                    .changed();
-                *self.ctx.params_changed |= ui
-                    .add(
-                        egui::Slider::new(
-                            &mut self.ctx.params.rendering.bloom_threshold,
-                            0.4..=0.8,
-                        )
-                        .text("Threshold"),
-                    )
-                    .changed();
-            }
-
-            ui.add_space(8.0);
-            ui.heading("Debug");
-            *self.ctx.params_changed |= ui
-                .checkbox(
-                    &mut self.ctx.params.debug.debug_placement,
-                    "Debug Placement",
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .checkbox(
-                    &mut self.ctx.params.debug.verbose_logging,
-                    "Verbose Logging",
-                )
-                .changed();
-            *self.ctx.params_changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.ctx.params.debug.brush_size, 1..=10)
-                        .text("Brush Size"),
-                )
-                .on_hover_text(
-                    "Circular brush radius for material placement (1 = single pixel, 10 = large circle)",
-                )
-                .changed();
-        });
+        ui.heading("Parameters");
+        ui.label("Press F4 to open the standalone Parameters panel");
+        ui.label("(This dock tab is a quick reference)");
     }
 
     #[cfg(feature = "multiplayer")]

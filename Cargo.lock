@@ -4379,6 +4379,7 @@ dependencies = [
  "indicatif",
  "js-sys",
  "keyframe",
+ "lazy_static",
  "log",
  "pollster",
  "puffin",
