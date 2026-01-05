@@ -350,7 +350,7 @@ spacetime-stop:
 
 # Publish to SpacetimeDB instance (default: local)
 spacetime-publish name="sunaba" server="http://localhost:3000":
-    cd crates/sunaba-server && spacetime publish {{name}} -s {{server}}
+    cd crates/sunaba-server && spacetime publish {{name}} -s {{server}} -y
 
 # View SpacetimeDB logs
 spacetime-logs name="sunaba" server="http://localhost:3000":
@@ -425,7 +425,7 @@ spacetime-dev name="sunaba":
 
 # Reset database (delete and republish)
 spacetime-reset name="sunaba" server="http://localhost:3000":
-    spacetime delete -s {{server}} {{name}} || true
+    spacetime delete -s {{server}} {{name}} -y || true
     just spacetime-publish {{name}} {{server}}
 
 # Show database status
