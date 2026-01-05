@@ -749,3 +749,257 @@ impl Default for Materials {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_material_id_constants() {
+        assert_eq!(MaterialId::AIR, 0);
+        assert_eq!(MaterialId::STONE, 1);
+        assert_eq!(MaterialId::SAND, 2);
+        assert_eq!(MaterialId::WATER, 3);
+        assert_eq!(MaterialId::WOOD, 4);
+        assert_eq!(MaterialId::FIRE, 5);
+        assert_eq!(MaterialId::SMOKE, 6);
+        assert_eq!(MaterialId::STEAM, 7);
+        assert_eq!(MaterialId::LAVA, 8);
+        assert_eq!(MaterialId::OIL, 9);
+        assert_eq!(MaterialId::ACID, 10);
+        assert_eq!(MaterialId::ICE, 11);
+        assert_eq!(MaterialId::GLASS, 12);
+        assert_eq!(MaterialId::METAL, 13);
+        assert_eq!(MaterialId::BEDROCK, 14);
+    }
+
+    #[test]
+    fn test_material_id_phase5() {
+        assert_eq!(MaterialId::DIRT, 15);
+        assert_eq!(MaterialId::PLANT_MATTER, 16);
+        assert_eq!(MaterialId::FRUIT, 17);
+        assert_eq!(MaterialId::FLESH, 18);
+        assert_eq!(MaterialId::BONE, 19);
+        assert_eq!(MaterialId::ASH, 20);
+        assert_eq!(MaterialId::COAL_ORE, 21);
+        assert_eq!(MaterialId::IRON_ORE, 22);
+        assert_eq!(MaterialId::COPPER_ORE, 23);
+        assert_eq!(MaterialId::GOLD_ORE, 24);
+        assert_eq!(MaterialId::COPPER_INGOT, 25);
+        assert_eq!(MaterialId::IRON_INGOT, 26);
+        assert_eq!(MaterialId::BRONZE_INGOT, 27);
+        assert_eq!(MaterialId::STEEL_INGOT, 28);
+        assert_eq!(MaterialId::GOLD_INGOT, 29);
+        assert_eq!(MaterialId::GUNPOWDER, 30);
+        assert_eq!(MaterialId::POISON_GAS, 31);
+        assert_eq!(MaterialId::FERTILIZER, 32);
+    }
+
+    #[test]
+    fn test_materials_new() {
+        let materials = Materials::new();
+        // Should have at least air registered
+        let air = materials.get(MaterialId::AIR);
+        assert_eq!(air.name, "air");
+    }
+
+    #[test]
+    fn test_materials_default() {
+        let materials = Materials::default();
+        let stone = materials.get(MaterialId::STONE);
+        assert_eq!(stone.name, "stone");
+    }
+
+    #[test]
+    fn test_materials_get_air() {
+        let materials = Materials::new();
+        let air = materials.get(MaterialId::AIR);
+        assert_eq!(air.id, MaterialId::AIR);
+        assert_eq!(air.name, "air");
+        assert_eq!(air.material_type, MaterialType::Gas);
+        assert_eq!(air.color[3], 0); // Transparent
+    }
+
+    #[test]
+    fn test_materials_get_stone() {
+        let materials = Materials::new();
+        let stone = materials.get(MaterialId::STONE);
+        assert_eq!(stone.id, MaterialId::STONE);
+        assert_eq!(stone.name, "stone");
+        assert_eq!(stone.material_type, MaterialType::Solid);
+        assert!(stone.structural);
+        assert_eq!(stone.melts_to, Some(MaterialId::LAVA));
+    }
+
+    #[test]
+    fn test_materials_get_sand() {
+        let materials = Materials::new();
+        let sand = materials.get(MaterialId::SAND);
+        assert_eq!(sand.id, MaterialId::SAND);
+        assert_eq!(sand.material_type, MaterialType::Powder);
+        assert_eq!(sand.melts_to, Some(MaterialId::GLASS));
+    }
+
+    #[test]
+    fn test_materials_get_water() {
+        let materials = Materials::new();
+        let water = materials.get(MaterialId::WATER);
+        assert_eq!(water.id, MaterialId::WATER);
+        assert_eq!(water.material_type, MaterialType::Liquid);
+        assert_eq!(water.boils_to, Some(MaterialId::STEAM));
+        assert_eq!(water.freezes_to, Some(MaterialId::ICE));
+    }
+
+    #[test]
+    fn test_materials_get_color() {
+        let materials = Materials::new();
+        let stone_color = materials.get_color(MaterialId::STONE);
+        assert_eq!(stone_color, [128, 128, 128, 255]);
+    }
+
+    #[test]
+    fn test_materials_get_invalid_id() {
+        let materials = Materials::new();
+        // Invalid ID should return air (first material)
+        let invalid = materials.get(9999);
+        assert_eq!(invalid.id, MaterialId::AIR);
+    }
+
+    #[test]
+    fn test_material_def_default() {
+        let def = MaterialDef::default();
+        assert_eq!(def.id, 0);
+        assert_eq!(def.name, "unknown");
+        assert_eq!(def.material_type, MaterialType::Solid);
+        assert_eq!(def.color, [255, 0, 255, 255]); // Magenta
+        assert_eq!(def.density, 1.0);
+    }
+
+    #[test]
+    fn test_material_types() {
+        let materials = Materials::new();
+
+        // Test solid
+        assert_eq!(materials.get(MaterialId::STONE).material_type, MaterialType::Solid);
+        assert_eq!(materials.get(MaterialId::WOOD).material_type, MaterialType::Solid);
+
+        // Test powder
+        assert_eq!(materials.get(MaterialId::SAND).material_type, MaterialType::Powder);
+        assert_eq!(materials.get(MaterialId::ASH).material_type, MaterialType::Powder);
+
+        // Test liquid
+        assert_eq!(materials.get(MaterialId::WATER).material_type, MaterialType::Liquid);
+        assert_eq!(materials.get(MaterialId::LAVA).material_type, MaterialType::Liquid);
+
+        // Test gas
+        assert_eq!(materials.get(MaterialId::AIR).material_type, MaterialType::Gas);
+        assert_eq!(materials.get(MaterialId::SMOKE).material_type, MaterialType::Gas);
+    }
+
+    #[test]
+    fn test_flammable_materials() {
+        let materials = Materials::new();
+
+        assert!(materials.get(MaterialId::WOOD).flammable);
+        assert!(materials.get(MaterialId::OIL).flammable);
+        assert!(materials.get(MaterialId::GUNPOWDER).flammable);
+
+        assert!(!materials.get(MaterialId::STONE).flammable);
+        assert!(!materials.get(MaterialId::WATER).flammable);
+    }
+
+    #[test]
+    fn test_structural_materials() {
+        let materials = Materials::new();
+
+        assert!(materials.get(MaterialId::STONE).structural);
+        assert!(materials.get(MaterialId::WOOD).structural);
+        assert!(materials.get(MaterialId::BEDROCK).structural);
+
+        assert!(!materials.get(MaterialId::SAND).structural);
+        assert!(!materials.get(MaterialId::WATER).structural);
+    }
+
+    #[test]
+    fn test_edible_materials() {
+        let materials = Materials::new();
+
+        let fruit = materials.get(MaterialId::FRUIT);
+        assert!(fruit.nutritional_value.is_some());
+        assert!(fruit.tags.contains(&MaterialTag::Edible));
+
+        let flesh = materials.get(MaterialId::FLESH);
+        assert!(flesh.nutritional_value.is_some());
+
+        let stone = materials.get(MaterialId::STONE);
+        assert!(stone.nutritional_value.is_none());
+    }
+
+    #[test]
+    fn test_ore_materials() {
+        let materials = Materials::new();
+
+        let iron_ore = materials.get(MaterialId::IRON_ORE);
+        assert!(iron_ore.tags.contains(&MaterialTag::Ore));
+        assert_eq!(iron_ore.melts_to, Some(MaterialId::IRON_INGOT));
+
+        let copper_ore = materials.get(MaterialId::COPPER_ORE);
+        assert!(copper_ore.tags.contains(&MaterialTag::Ore));
+        assert_eq!(copper_ore.melts_to, Some(MaterialId::COPPER_INGOT));
+    }
+
+    #[test]
+    fn test_density_ordering() {
+        let materials = Materials::new();
+
+        // Gas < Liquid < Powder < Solid (generally)
+        assert!(materials.get(MaterialId::AIR).density < materials.get(MaterialId::WATER).density);
+        assert!(materials.get(MaterialId::WATER).density < materials.get(MaterialId::STONE).density);
+
+        // Oil floats on water
+        assert!(materials.get(MaterialId::OIL).density < materials.get(MaterialId::WATER).density);
+    }
+
+    #[test]
+    fn test_state_transitions() {
+        let materials = Materials::new();
+
+        // Ice -> Water -> Steam cycle
+        let ice = materials.get(MaterialId::ICE);
+        assert_eq!(ice.melts_to, Some(MaterialId::WATER));
+
+        let water = materials.get(MaterialId::WATER);
+        assert_eq!(water.boils_to, Some(MaterialId::STEAM));
+        assert_eq!(water.freezes_to, Some(MaterialId::ICE));
+
+        let steam = materials.get(MaterialId::STEAM);
+        assert_eq!(steam.freezes_to, Some(MaterialId::WATER));
+    }
+
+    #[test]
+    fn test_bedrock_indestructible() {
+        let materials = Materials::new();
+        let bedrock = materials.get(MaterialId::BEDROCK);
+        assert!(bedrock.hardness.is_none()); // None = indestructible
+    }
+
+    #[test]
+    fn test_toxic_materials() {
+        let materials = Materials::new();
+        let poison = materials.get(MaterialId::POISON_GAS);
+        assert!(poison.toxicity.is_some());
+        assert!(poison.tags.contains(&MaterialTag::Toxic));
+    }
+
+    #[test]
+    fn test_conductive_materials() {
+        let materials = Materials::new();
+
+        assert!(materials.get(MaterialId::METAL).conducts_electricity);
+        assert!(materials.get(MaterialId::COPPER_ORE).conducts_electricity);
+        assert!(materials.get(MaterialId::COPPER_INGOT).conducts_electricity);
+
+        assert!(!materials.get(MaterialId::STONE).conducts_electricity);
+        assert!(!materials.get(MaterialId::WOOD).conducts_electricity);
+    }
+}

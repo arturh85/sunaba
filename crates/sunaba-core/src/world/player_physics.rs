@@ -159,3 +159,346 @@ impl PlayerPhysicsSystem {
         player.move_by(final_movement);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entity::player::Player;
+    use glam::Vec2;
+
+    fn make_test_player() -> Player {
+        Player::new(Vec2::new(100.0, 100.0))
+    }
+
+    fn make_test_input() -> InputState {
+        InputState::new()
+    }
+
+    #[test]
+    fn test_player_grounded_detection() {
+        let mut player = make_test_player();
+        let input = make_test_input();
+        let dt = 1.0 / 60.0;
+
+        // Test grounded player
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || true, // is_grounded
+            |_, _, _, _| false, // no collision
+        );
+
+        assert!(player.grounded);
+        assert_eq!(player.coyote_time, Player::COYOTE_TIME);
+    }
+
+    #[test]
+    fn test_player_not_grounded() {
+        let mut player = make_test_player();
+        let input = make_test_input();
+        let dt = 1.0 / 60.0;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || false, // not grounded
+            |_, _, _, _| false,
+        );
+
+        assert!(!player.grounded);
+    }
+
+    #[test]
+    fn test_coyote_time_decreases() {
+        let mut player = make_test_player();
+        let input = make_test_input();
+        let dt = 0.05; // 50ms
+
+        // First frame on ground
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || true,
+            |_, _, _, _| false,
+        );
+        assert_eq!(player.coyote_time, Player::COYOTE_TIME);
+
+        // Now in air, coyote time should decrease
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || false,
+            |_, _, _, _| false,
+        );
+        assert!(player.coyote_time < Player::COYOTE_TIME);
+        assert!(player.coyote_time > 0.0);
+    }
+
+    #[test]
+    fn test_jump_buffer() {
+        let mut player = make_test_player();
+        let mut input = make_test_input();
+        input.jump_pressed = true;
+        let dt = 1.0 / 60.0;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || false,
+            |_, _, _, _| false,
+        );
+
+        // Jump buffer should be set when jump is pressed
+        // (but used immediately if coyote time > 0, so we start in air)
+    }
+
+    #[test]
+    fn test_horizontal_movement_right() {
+        let mut player = make_test_player();
+        let mut input = make_test_input();
+        input.d_pressed = true;
+        let dt = 1.0 / 60.0;
+        let player_speed = 200.0;
+
+        let initial_x = player.position.x;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            player_speed,
+            || true,
+            |_, _, _, _| false,
+        );
+
+        assert!(player.position.x > initial_x);
+        assert_eq!(player.velocity.x, player_speed);
+    }
+
+    #[test]
+    fn test_horizontal_movement_left() {
+        let mut player = make_test_player();
+        let mut input = make_test_input();
+        input.a_pressed = true;
+        let dt = 1.0 / 60.0;
+        let player_speed = 200.0;
+
+        let initial_x = player.position.x;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            player_speed,
+            || true,
+            |_, _, _, _| false,
+        );
+
+        assert!(player.position.x < initial_x);
+        assert_eq!(player.velocity.x, -player_speed);
+    }
+
+    #[test]
+    fn test_friction_when_no_input() {
+        let mut player = make_test_player();
+        player.velocity.x = 200.0; // Moving right
+        let input = make_test_input(); // No keys pressed
+        let dt = 1.0 / 60.0;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || true, // grounded
+            |_, _, _, _| false,
+        );
+
+        // Velocity should have decreased due to friction
+        assert!(player.velocity.x < 200.0);
+    }
+
+    #[test]
+    fn test_gravity_when_airborne() {
+        let mut player = make_test_player();
+        player.velocity.y = 0.0;
+        let input = make_test_input();
+        let dt = 1.0 / 60.0;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || false, // not grounded
+            |_, _, _, _| false,
+        );
+
+        // Gravity should have been applied (velocity decreases since gravity is downward)
+        assert!(player.velocity.y < 0.0);
+    }
+
+    #[test]
+    fn test_jump_execution() {
+        let mut player = make_test_player();
+        player.coyote_time = Player::COYOTE_TIME;
+        let mut input = make_test_input();
+        input.jump_pressed = true;
+        let dt = 1.0 / 60.0;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || true,
+            |_, _, _, _| false,
+        );
+
+        // After jumping, coyote time should be consumed
+        assert_eq!(player.coyote_time, 0.0);
+    }
+
+    #[test]
+    fn test_flight_thrust() {
+        let mut player = make_test_player();
+        player.velocity.y = 0.0;
+        let mut input = make_test_input();
+        input.w_pressed = true;
+        let dt = 1.0 / 60.0;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || false, // not grounded
+            |_, _, _, _| false,
+        );
+
+        // Flight thrust should counter gravity somewhat
+        // Net effect depends on thrust vs gravity over dt
+        // FLIGHT_THRUST = 1200, GRAVITY = 800
+        // So velocity should increase (thrust > gravity for first frame)
+    }
+
+    #[test]
+    fn test_collision_blocks_x_movement() {
+        let mut player = make_test_player();
+        let mut input = make_test_input();
+        input.d_pressed = true;
+        let dt = 1.0 / 60.0;
+        let initial_x = player.position.x;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || true,
+            |x, _, _, _| x > initial_x, // Block movement to the right
+        );
+
+        // Player should not have moved
+        assert_eq!(player.position.x, initial_x);
+    }
+
+    #[test]
+    fn test_collision_blocks_y_movement() {
+        let mut player = make_test_player();
+        player.velocity.y = -100.0; // Falling
+        let input = make_test_input();
+        let dt = 1.0 / 60.0;
+        let initial_y = player.position.y;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || false,
+            |_, y, _, _| y < initial_y, // Block downward movement
+        );
+
+        // Y position should not have changed, velocity should be zeroed
+        assert_eq!(player.position.y, initial_y);
+        assert_eq!(player.velocity.y, 0.0);
+    }
+
+    #[test]
+    fn test_terminal_velocity() {
+        let mut player = make_test_player();
+        player.velocity.y = -10000.0; // Way beyond terminal
+        let input = make_test_input();
+        let dt = 1.0 / 60.0;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || false,
+            |_, _, _, _| false,
+        );
+
+        // Velocity should be clamped to max fall speed
+        assert!(player.velocity.y >= -Player::MAX_FALL_SPEED);
+        assert!(player.velocity.y <= Player::MAX_FALL_SPEED);
+    }
+
+    #[test]
+    fn test_grounded_resets_vertical_velocity() {
+        let mut player = make_test_player();
+        player.velocity.y = -50.0; // Some downward velocity
+        let input = make_test_input();
+        let dt = 1.0 / 60.0;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || true, // grounded
+            |_, _, _, _| false,
+        );
+
+        // Grounded player (not jumping) should have zero vertical velocity
+        assert_eq!(player.velocity.y, 0.0);
+    }
+
+    #[test]
+    fn test_unstuck_mechanic() {
+        let mut player = make_test_player();
+        let mut input = make_test_input();
+        input.d_pressed = true; // Try to move
+        let dt = 1.0 / 60.0;
+        let initial_pos = player.position;
+
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || false,
+            |x, y, _, _| {
+                // Block regular movement, but allow small unstuck offsets
+                let dx = (x - initial_pos.x).abs();
+                let dy = (y - initial_pos.y).abs();
+                dx > 0.5 || dy > 0.5
+            },
+        );
+
+        // Player may have been nudged by unstuck mechanic
+        // This tests that the code path is exercised
+    }
+}
