@@ -349,8 +349,24 @@ spacetime-stop:
     killall spacetime
 
 # Publish to SpacetimeDB instance (default: local)
-spacetime-publish name="sunaba" server="http://localhost:3000":
-    cd crates/sunaba-server && spacetime publish {{name}} -s {{server}} -y
+[unix]
+spacetime-publish name="sunaba" server="http://localhost:3000" token="":
+    #!/usr/bin/env bash
+    cd crates/sunaba-server
+    if [ -n "{{token}}" ]; then \
+        spacetime publish {{name}} -s {{server}} -y --token {{token}}; \
+    else \
+        spacetime publish {{name}} -s {{server}} -y; \
+    fi
+
+[windows]
+spacetime-publish name="sunaba" server="http://localhost:3000" token="":
+    @cd crates/sunaba-server; \
+    if ("{{token}}" -ne "") { \
+        spacetime publish {{name}} -s {{server}} -y --token {{token}}; \
+    } else { \
+        spacetime publish {{name}} -s {{server}} -y; \
+    }
 
 # View SpacetimeDB logs
 spacetime-logs name="sunaba" server="http://localhost:3000":

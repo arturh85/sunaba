@@ -240,3 +240,7 @@ jobs:
           else
             echo "✅ No server schema changes in this commit"
           fi
+
+      - name: Publish to production (main branch only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: just spacetime-publish sunaba https://sunaba.app42.blue "${{ secrets.SPACETIMEDB_TOKEN }}"
