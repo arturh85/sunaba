@@ -7,6 +7,7 @@ mod chunk;
 mod chunk_manager;
 mod chunk_status;
 mod collision;
+pub mod context_scanner;
 mod debris_system;
 pub mod generation;
 mod light_system;
@@ -27,6 +28,9 @@ pub use biome::{BiomeDefinition, BiomeRegistry, BiomeType};
 pub use chunk::{CHUNK_SIZE, Chunk, Pixel, pixel_flags};
 pub use chunk_manager::ChunkManager;
 pub use chunk_status::ChunkStatus;
+pub use context_scanner::{
+    ContextScanner, MAX_SCAN_DISTANCE, PlacementContext, PlacementPredicate,
+};
 pub use debris_system::DebrisSystem;
 pub use generation::WorldGenerator;
 pub use light_system::LightSystem;

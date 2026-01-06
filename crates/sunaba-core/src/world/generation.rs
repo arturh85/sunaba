@@ -365,6 +365,33 @@ impl WorldGenerator {
         // Default: stone
         MaterialId::STONE
     }
+
+    // Internal methods for ContextScanner access
+
+    /// Get material at a world coordinate (public access for ContextScanner)
+    pub(crate) fn get_material_at_internal(&self, world_x: i32, world_y: i32) -> u16 {
+        self.get_material_at(world_x, world_y)
+    }
+
+    /// Get biome type at an X coordinate (public access for ContextScanner)
+    pub(crate) fn get_biome_at_internal(&self, world_x: i32) -> BiomeType {
+        let temperature = self.temperature_noise.get_noise_2d(world_x as f32, 0.0) as f64;
+        let moisture = self.moisture_noise.get_noise_2d(world_x as f32, 0.0) as f64;
+        select_biome(temperature, moisture)
+    }
+
+    /// Get terrain height at an X coordinate
+    pub fn get_terrain_height(&self, world_x: i32) -> i32 {
+        let temperature = self.temperature_noise.get_noise_2d(world_x as f32, 0.0) as f64;
+        let moisture = self.moisture_noise.get_noise_2d(world_x as f32, 0.0) as f64;
+        let biome_type = select_biome(temperature, moisture);
+        let biome = self.biome_registry.get(biome_type);
+
+        let terrain_height_value =
+            self.terrain_height_noise.get_noise_2d(world_x as f32, 0.0) as f64;
+        let height_variation = (terrain_height_value * 100.0 * biome.height_variance as f64) as i32;
+        SURFACE_Y + biome.height_offset + height_variation
+    }
 }
 
 #[cfg(test)]

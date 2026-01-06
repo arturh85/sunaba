@@ -29,7 +29,22 @@ The core editor is fully functional:
 - `crates/sunaba/src/ui/ui_state.rs` - WorldGenEditor integration
 - `crates/sunaba/src/app.rs` - F7 shortcut + apply handling
 
-**Next Phase:** Phase 2 - Hytale-Inspired Features (context scanner, biome transitions, structures)
+**Phase 2: Context-Aware Generation - IN PROGRESS**
+
+Context scanner system implemented:
+- `ContextScanner` - Queries placement context from WorldGenerator
+- `PlacementContext` - Ground/ceiling distance, air above/below, enclosure detection, biome, light
+- `PlacementPredicate` - Composable rules (IsCaveInterior, IsSurface, MinAirAbove, DepthRange, etc.)
+- Builder methods for common patterns: `stalactite()`, `stalagmite()`, `surface_tree()`, `cave_mushroom()`
+
+**Files Created:**
+- `crates/sunaba-core/src/world/context_scanner.rs` (~750 lines) - Context scanning system
+
+**Files Modified:**
+- `crates/sunaba-core/src/world/generation.rs` - Added `get_terrain_height()`, internal methods for scanner
+- `crates/sunaba-core/src/world/mod.rs` - Export context_scanner types
+
+**Next:** Stalactite generation (proof of concept using context scanner)
 
 ---
 
@@ -390,8 +405,8 @@ pub struct TerrainSensoryInput {
 5. [x] F7 keyboard shortcut
 
 ### Sprint 3: Context-Aware Generation (5-6 days)
-1. [ ] `ContextScanner` + `PlacementContext`
-2. [ ] `PlacementPredicate` evaluation
+1. [x] `ContextScanner` + `PlacementContext`
+2. [x] `PlacementPredicate` evaluation
 3. [ ] Stalactite generation (proof of concept)
 4. [ ] Biome transition system (stability-aware)
 5. [ ] Structure template system
