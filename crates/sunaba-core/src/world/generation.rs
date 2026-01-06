@@ -169,6 +169,9 @@ impl WorldGenerator {
             }
         }
 
+        // Apply post-generation features (stalactites, etc.)
+        crate::world::features::apply_features(&mut chunk, chunk_x, chunk_y, self);
+
         // Mark fresh chunks as dirty so they get synced to database in multiplayer
         chunk.dirty = true;
         chunk

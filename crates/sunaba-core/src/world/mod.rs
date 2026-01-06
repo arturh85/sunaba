@@ -9,6 +9,7 @@ mod chunk_status;
 mod collision;
 pub mod context_scanner;
 mod debris_system;
+pub mod features;
 pub mod generation;
 mod light_system;
 mod mining_system;
@@ -46,6 +47,6 @@ pub use stats::{NoopStats, SimStats};
 pub use world::World;
 pub use worldgen_config::{
     BiomeConfig, BiomeParams, CaveParams, FeatureParams, FractalTypeConfig, LavaPoolConfig,
-    NoiseLayerConfig, NoiseTypeConfig, OreConfig, TerrainParams, UndergroundLayers,
-    VegetationParams, WorldGenConfig, WorldParams,
+    NoiseLayerConfig, NoiseTypeConfig, OreConfig, StalactiteConfig, TerrainParams,
+    UndergroundLayers, VegetationParams, WorldGenConfig, WorldParams,
 };

@@ -777,6 +777,78 @@ impl WorldGenEditor {
             }
         });
 
+        ui.add_space(8.0);
+        ui.collapsing("Stalactites", |ui| {
+            changed |= ui
+                .checkbox(
+                    &mut self.config.features.stalactites.enabled,
+                    "Enable Stalactites",
+                )
+                .changed();
+
+            if self.config.features.stalactites.enabled {
+                changed |= ui
+                    .add(
+                        egui::Slider::new(
+                            &mut self.config.features.stalactites.min_depth,
+                            -500..=0,
+                        )
+                        .text("Min Depth Below Surface"),
+                    )
+                    .on_hover_text("Shallowest depth where stalactites appear")
+                    .changed();
+
+                changed |= ui
+                    .add(
+                        egui::Slider::new(&mut self.config.features.stalactites.spacing, 4..=64)
+                            .text("Spacing (pixels)"),
+                    )
+                    .on_hover_text("Grid spacing for placement sampling")
+                    .changed();
+
+                changed |= ui
+                    .add(
+                        egui::Slider::new(&mut self.config.features.stalactites.min_length, 1..=10)
+                            .text("Min Length"),
+                    )
+                    .changed();
+
+                changed |= ui
+                    .add(
+                        egui::Slider::new(&mut self.config.features.stalactites.max_length, 3..=30)
+                            .text("Max Length"),
+                    )
+                    .changed();
+
+                changed |= ui
+                    .add(
+                        egui::Slider::new(&mut self.config.features.stalactites.base_width, 1..=7)
+                            .text("Base Width"),
+                    )
+                    .on_hover_text("Width at ceiling attachment point")
+                    .changed();
+
+                changed |= ui
+                    .add(
+                        egui::Slider::new(
+                            &mut self.config.features.stalactites.placement_chance,
+                            0.0..=1.0,
+                        )
+                        .text("Placement Chance"),
+                    )
+                    .on_hover_text("Probability of placing stalactite at valid position")
+                    .changed();
+
+                changed |= ui
+                    .checkbox(
+                        &mut self.config.features.stalactites.taper,
+                        "Taper to Point",
+                    )
+                    .on_hover_text("Gradually narrow from base to tip")
+                    .changed();
+            }
+        });
+
         changed
     }
 

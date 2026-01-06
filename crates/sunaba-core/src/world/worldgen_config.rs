@@ -187,6 +187,8 @@ pub struct VegetationParams {
 pub struct FeatureParams {
     /// Lava pool generation
     pub lava_pools: LavaPoolConfig,
+    /// Stalactite generation
+    pub stalactites: StalactiteConfig,
     // Future: structures, dungeons, etc.
 }
 
@@ -201,6 +203,34 @@ pub struct LavaPoolConfig {
     pub threshold: f32,
     /// Noise scale for lava distribution (default: 0.05)
     pub noise_scale: f32,
+}
+
+/// Stalactite generation in caves
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StalactiteConfig {
+    /// Enable stalactite generation
+    pub enabled: bool,
+    /// Minimum depth below surface for stalactites (default: -50)
+    /// Prevents stalactites near surface caves
+    pub min_depth: i32,
+    /// Spacing between stalactites (grid spacing in pixels, default: 16)
+    /// Higher = sparser stalactites
+    pub spacing: i32,
+    /// Minimum length of stalactites in pixels (default: 3)
+    pub min_length: i32,
+    /// Maximum length of stalactites in pixels (default: 12)
+    pub max_length: i32,
+    /// Base width at ceiling (default: 3)
+    pub base_width: i32,
+    /// Minimum air space required below ceiling (default: 5)
+    pub min_air_below: i32,
+    /// Noise seed offset for stalactite placement variation
+    pub seed_offset: i32,
+    /// Placement probability (0.0-1.0, default: 0.5)
+    /// After finding valid position, this determines if stalactite is placed
+    pub placement_chance: f32,
+    /// Whether stalactites should taper to a point (default: true)
+    pub taper: bool,
 }
 
 /// Reusable noise layer configuration
@@ -391,6 +421,23 @@ impl Default for LavaPoolConfig {
             min_depth: -2500,
             threshold: 0.6,
             noise_scale: 0.05,
+        }
+    }
+}
+
+impl Default for StalactiteConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_depth: -50,
+            spacing: 16,
+            min_length: 3,
+            max_length: 12,
+            base_width: 3,
+            min_air_below: 5,
+            seed_offset: 100,
+            placement_chance: 0.5,
+            taper: true,
         }
     }
 }

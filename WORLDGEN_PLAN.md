@@ -31,20 +31,24 @@ The core editor is fully functional:
 
 **Phase 2: Context-Aware Generation - IN PROGRESS**
 
-Context scanner system implemented:
+Context scanner system and stalactite generation implemented:
 - `ContextScanner` - Queries placement context from WorldGenerator
 - `PlacementContext` - Ground/ceiling distance, air above/below, enclosure detection, biome, light
 - `PlacementPredicate` - Composable rules (IsCaveInterior, IsSurface, MinAirAbove, DepthRange, etc.)
 - Builder methods for common patterns: `stalactite()`, `stalagmite()`, `surface_tree()`, `cave_mushroom()`
+- **Stalactite generation** - Proof-of-concept feature using context scanner, fully configurable via F7 editor
 
 **Files Created:**
 - `crates/sunaba-core/src/world/context_scanner.rs` (~750 lines) - Context scanning system
+- `crates/sunaba-core/src/world/features.rs` (~250 lines) - Post-generation feature placement, stalactite logic
 
 **Files Modified:**
-- `crates/sunaba-core/src/world/generation.rs` - Added `get_terrain_height()`, internal methods for scanner
-- `crates/sunaba-core/src/world/mod.rs` - Export context_scanner types
+- `crates/sunaba-core/src/world/generation.rs` - Added `get_terrain_height()`, internal methods for scanner, `apply_features()` call
+- `crates/sunaba-core/src/world/mod.rs` - Export context_scanner and StalactiteConfig types
+- `crates/sunaba-core/src/world/worldgen_config.rs` - Added `StalactiteConfig` with 9 parameters
+- `crates/sunaba/src/ui/worldgen_editor/mod.rs` - Added stalactite UI controls to Features tab
 
-**Next:** Stalactite generation (proof of concept using context scanner)
+**Next:** Biome transition system (stability-aware) and structure templates
 
 ---
 
@@ -357,34 +361,36 @@ pub struct TerrainSensoryInput {
 
 ### New Files
 
-| File | Purpose |
-|------|---------|
-| `crates/sunaba-core/src/world/worldgen_config.rs` | Configuration data structures |
-| `crates/sunaba-core/src/world/context_scanner.rs` | Context queries for placement |
-| `crates/sunaba-core/src/world/biome_transition.rs` | Physics-stable biome blending |
-| `crates/sunaba-core/src/world/biome_zones.rs` | Depth-based zone system |
-| `crates/sunaba-core/src/world/structures.rs` | Structure templates + placer |
-| `crates/sunaba-core/src/world/material_provider.rs` | Context-based material selection |
-| `crates/sunaba/src/ui/worldgen_editor/*.rs` | Editor UI (8 files) |
-| `crates/sunaba/src/headless/terrain_gen.rs` | Training terrain generation |
-| `crates/sunaba/src/headless/env_distribution.rs` | Environment sampling |
-| `crates/sunaba/src/headless/curriculum.rs` | Curriculum learning |
-| `crates/sunaba/src/headless/biome_scenarios.rs` | Biome-specific scenarios |
-| `crates/sunaba/src/headless/training_world.rs` | Optimized training world |
-| `crates/sunaba/src/headless/multi_env_eval.rs` | Multi-environment evaluation |
+| File | Purpose | Status |
+|------|---------|--------|
+| `crates/sunaba-core/src/world/worldgen_config.rs` | Configuration data structures | ✅ Complete |
+| `crates/sunaba-core/src/world/context_scanner.rs` | Context queries for placement | ✅ Complete |
+| `crates/sunaba-core/src/world/features.rs` | Post-generation features (stalactites, etc.) | ✅ Complete |
+| `crates/sunaba/src/ui/worldgen_editor/*.rs` | Editor UI (8 files) | ✅ Complete |
+| `crates/sunaba-core/src/world/biome_transition.rs` | Physics-stable biome blending | Planned |
+| `crates/sunaba-core/src/world/biome_zones.rs` | Depth-based zone system | Planned |
+| `crates/sunaba-core/src/world/structures.rs` | Structure templates + placer | Planned |
+| `crates/sunaba-core/src/world/material_provider.rs` | Context-based material selection | Planned |
+| `crates/sunaba/src/headless/terrain_gen.rs` | Training terrain generation | Planned |
+| `crates/sunaba/src/headless/env_distribution.rs` | Environment sampling | Planned |
+| `crates/sunaba/src/headless/curriculum.rs` | Curriculum learning | Planned |
+| `crates/sunaba/src/headless/biome_scenarios.rs` | Biome-specific scenarios | Planned |
+| `crates/sunaba/src/headless/training_world.rs` | Optimized training world | Planned |
+| `crates/sunaba/src/headless/multi_env_eval.rs` | Multi-environment evaluation | Planned |
 
 ### Modified Files
 
-| File | Changes |
-|------|---------|
-| `crates/sunaba-core/src/world/generation.rs` | Config-driven, `from_config()` |
-| `crates/sunaba-core/src/world/biome.rs` | Extend with transition rules |
-| `crates/sunaba-core/src/world/mod.rs` | Export new modules |
-| `crates/sunaba/src/ui/mod.rs` | Add worldgen_editor module |
-| `crates/sunaba/src/ui/dock.rs` | Add WorldGenEditor tab |
-| `crates/sunaba/src/app.rs` | F7 shortcut, editor integration |
-| `crates/sunaba/src/headless/training_env.rs` | Environment distribution |
-| `crates/sunaba-creature/src/sensors.rs` | Terrain-aware sensors |
+| File | Changes | Status |
+|------|---------|--------|
+| `crates/sunaba-core/src/world/generation.rs` | Config-driven, `from_config()`, `apply_features()` call | ✅ Complete |
+| `crates/sunaba-core/src/world/mod.rs` | Export new modules (features, context_scanner, StalactiteConfig) | ✅ Complete |
+| `crates/sunaba-core/src/world/worldgen_config.rs` | Added StalactiteConfig struct | ✅ Complete |
+| `crates/sunaba/src/ui/mod.rs` | Add worldgen_editor module | ✅ Complete |
+| `crates/sunaba/src/ui/dock.rs` | Add WorldGenEditor tab | ✅ Complete |
+| `crates/sunaba/src/app.rs` | F7 shortcut, editor integration | ✅ Complete |
+| `crates/sunaba-core/src/world/biome.rs` | Extend with transition rules | Planned |
+| `crates/sunaba/src/headless/training_env.rs` | Environment distribution | Planned |
+| `crates/sunaba-creature/src/sensors.rs` | Terrain-aware sensors | Planned |
 
 ---
 
@@ -407,7 +413,7 @@ pub struct TerrainSensoryInput {
 ### Sprint 3: Context-Aware Generation (5-6 days)
 1. [x] `ContextScanner` + `PlacementContext`
 2. [x] `PlacementPredicate` evaluation
-3. [ ] Stalactite generation (proof of concept)
+3. [x] Stalactite generation (proof of concept)
 4. [ ] Biome transition system (stability-aware)
 5. [ ] Structure template system
 
