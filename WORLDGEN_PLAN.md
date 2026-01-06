@@ -14,10 +14,11 @@ The core editor is fully functional:
 - Live 7x7 chunk preview with panning controls
 - "Apply to World" regenerates the world with new parameters
 - Builtin presets: Default, Cave Heavy, Flat, Desert World, Mountain World
+- **Custom preset save/load**: Save to `worlds/presets/` (native) or localStorage (WASM)
 
 **Files Created:**
 - `crates/sunaba-core/src/world/worldgen_config.rs` (~760 lines) - Configuration system
-- `crates/sunaba/src/ui/worldgen_editor/mod.rs` - Main editor with tabs
+- `crates/sunaba/src/ui/worldgen_editor/mod.rs` (~880 lines) - Main editor with tabs + preset persistence
 - `crates/sunaba/src/ui/worldgen_editor/noise_widget.rs` - Reusable noise editor
 - `crates/sunaba/src/ui/worldgen_editor/preview.rs` - Live preview system
 
@@ -27,9 +28,6 @@ The core editor is fully functional:
 - `crates/sunaba-core/src/world/world.rs` - `update_generator_config()`
 - `crates/sunaba/src/ui/ui_state.rs` - WorldGenEditor integration
 - `crates/sunaba/src/app.rs` - F7 shortcut + apply handling
-
-**Remaining for Phase 1:**
-- Preset save/load to disk (RON files)
 
 **Next Phase:** Phase 2 - Hytale-Inspired Features (context scanner, biome transitions, structures)
 
@@ -384,10 +382,10 @@ pub struct TerrainSensoryInput {
 4. [x] Basic editor UI with terrain tab
 5. [x] Live preview (throttled chunk generation)
 
-### Sprint 2: Editor Completion - MOSTLY COMPLETE ✅
+### Sprint 2: Editor Completion - COMPLETE ✅
 1. [x] All parameter tabs (caves, biomes, ores, vegetation)
 2. [x] Noise layer widget component
-3. [ ] Preset save/load system (builtin presets work, file save/load pending)
+3. [x] Preset save/load system (builtin presets + custom presets to disk/localStorage)
 4. [x] Apply to world functionality
 5. [x] F7 keyboard shortcut
 

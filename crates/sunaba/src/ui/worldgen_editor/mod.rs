@@ -86,11 +86,21 @@ pub struct WorldGenEditor {
 
     /// Request to apply config to world
     pub apply_requested: bool,
+
+    /// Input field for new preset name
+    preset_name_input: String,
+
+    /// List of saved preset names
+    saved_presets: Vec<String>,
+
+    /// Status message for preset operations (message, is_error)
+    preset_status: Option<(String, bool)>,
 }
 
 impl WorldGenEditor {
     pub fn new() -> Self {
         let config = WorldGenConfig::default();
+        let saved_presets = Self::list_saved_presets();
         Self {
             open: false,
             config: config.clone(),
@@ -102,7 +112,261 @@ impl WorldGenEditor {
             #[cfg(not(target_arch = "wasm32"))]
             last_preview_update: std::time::Instant::now(),
             apply_requested: false,
+            preset_name_input: String::new(),
+            saved_presets,
+            preset_status: None,
         }
+    }
+
+    // ========================================================================
+    // Preset persistence (native)
+    // ========================================================================
+
+    /// Get the presets directory path
+    #[cfg(not(target_arch = "wasm32"))]
+    fn presets_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from("worlds").join("presets")
+    }
+
+    /// List saved presets from disk
+    #[cfg(not(target_arch = "wasm32"))]
+    fn list_saved_presets() -> Vec<String> {
+        let dir = Self::presets_dir();
+        if !dir.exists() {
+            return Vec::new();
+        }
+
+        let mut presets = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().is_some_and(|ext| ext == "ron")
+                    && let Some(name) = path.file_stem()
+                {
+                    presets.push(name.to_string_lossy().to_string());
+                }
+            }
+        }
+        presets.sort();
+        presets
+    }
+
+    /// Save current config as a preset
+    #[cfg(not(target_arch = "wasm32"))]
+    fn save_preset(&mut self, name: &str) {
+        // Validate name
+        if name.is_empty() {
+            self.preset_status = Some(("Name cannot be empty".to_string(), true));
+            return;
+        }
+
+        if !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            self.preset_status = Some((
+                "Name can only contain letters, numbers, _ and -".to_string(),
+                true,
+            ));
+            return;
+        }
+
+        let dir = Self::presets_dir();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.preset_status = Some((format!("Failed to create directory: {}", e), true));
+            return;
+        }
+
+        let path = dir.join(format!("{}.ron", name));
+        match ron::ser::to_string_pretty(&self.config, ron::ser::PrettyConfig::default()) {
+            Ok(config_str) => {
+                if let Err(e) = std::fs::write(&path, config_str) {
+                    self.preset_status = Some((format!("Failed to write file: {}", e), true));
+                } else {
+                    self.preset_status = Some((format!("Saved '{}'", name), false));
+                    self.preset_name_input.clear();
+                    self.refresh_presets();
+                }
+            }
+            Err(e) => {
+                self.preset_status = Some((format!("Failed to serialize: {}", e), true));
+            }
+        }
+    }
+
+    /// Load a preset by name
+    #[cfg(not(target_arch = "wasm32"))]
+    fn load_preset(&mut self, name: &str) -> bool {
+        let path = Self::presets_dir().join(format!("{}.ron", name));
+        match std::fs::read_to_string(&path) {
+            Ok(config_str) => match ron::from_str::<WorldGenConfig>(&config_str) {
+                Ok(config) => {
+                    self.config = config;
+                    self.preset_status = Some((format!("Loaded '{}'", name), false));
+                    true
+                }
+                Err(e) => {
+                    self.preset_status = Some((format!("Failed to parse: {}", e), true));
+                    false
+                }
+            },
+            Err(e) => {
+                self.preset_status = Some((format!("Failed to read: {}", e), true));
+                false
+            }
+        }
+    }
+
+    /// Delete a preset by name
+    #[cfg(not(target_arch = "wasm32"))]
+    fn delete_preset(&mut self, name: &str) {
+        let path = Self::presets_dir().join(format!("{}.ron", name));
+        match std::fs::remove_file(&path) {
+            Ok(()) => {
+                self.preset_status = Some((format!("Deleted '{}'", name), false));
+                self.refresh_presets();
+            }
+            Err(e) => {
+                self.preset_status = Some((format!("Failed to delete: {}", e), true));
+            }
+        }
+    }
+
+    // ========================================================================
+    // Preset persistence (WASM)
+    // ========================================================================
+
+    /// List saved presets from localStorage
+    #[cfg(target_arch = "wasm32")]
+    fn list_saved_presets() -> Vec<String> {
+        let mut presets = Vec::new();
+
+        let Ok(Some(window)) = web_sys::window().ok_or(()) else {
+            return presets;
+        };
+        let Ok(Some(storage)) = window.local_storage() else {
+            return presets;
+        };
+        let Ok(len) = storage.length() else {
+            return presets;
+        };
+
+        for i in 0..len {
+            if let Ok(Some(key)) = storage.key(i) {
+                if let Some(name) = key.strip_prefix("sunaba_preset_") {
+                    presets.push(name.to_string());
+                }
+            }
+        }
+        presets.sort();
+        presets
+    }
+
+    /// Save current config as a preset
+    #[cfg(target_arch = "wasm32")]
+    fn save_preset(&mut self, name: &str) {
+        // Validate name
+        if name.is_empty() {
+            self.preset_status = Some(("Name cannot be empty".to_string(), true));
+            return;
+        }
+
+        if !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            self.preset_status = Some((
+                "Name can only contain letters, numbers, _ and -".to_string(),
+                true,
+            ));
+            return;
+        }
+
+        let key = format!("sunaba_preset_{}", name);
+        match ron::ser::to_string_pretty(&self.config, ron::ser::PrettyConfig::default()) {
+            Ok(config_str) => {
+                let Some(window) = web_sys::window() else {
+                    self.preset_status = Some(("No window available".to_string(), true));
+                    return;
+                };
+                let Ok(Some(storage)) = window.local_storage() else {
+                    self.preset_status = Some(("localStorage not available".to_string(), true));
+                    return;
+                };
+                if storage.set_item(&key, &config_str).is_err() {
+                    self.preset_status = Some(("Failed to save to localStorage".to_string(), true));
+                } else {
+                    self.preset_status = Some((format!("Saved '{}'", name), false));
+                    self.preset_name_input.clear();
+                    self.refresh_presets();
+                }
+            }
+            Err(e) => {
+                self.preset_status = Some((format!("Failed to serialize: {}", e), true));
+            }
+        }
+    }
+
+    /// Load a preset by name
+    #[cfg(target_arch = "wasm32")]
+    fn load_preset(&mut self, name: &str) -> bool {
+        let key = format!("sunaba_preset_{}", name);
+        let Some(window) = web_sys::window() else {
+            self.preset_status = Some(("No window available".to_string(), true));
+            return false;
+        };
+        let Ok(Some(storage)) = window.local_storage() else {
+            self.preset_status = Some(("localStorage not available".to_string(), true));
+            return false;
+        };
+
+        match storage.get_item(&key) {
+            Ok(Some(config_str)) => match ron::from_str::<WorldGenConfig>(&config_str) {
+                Ok(config) => {
+                    self.config = config;
+                    self.preset_status = Some((format!("Loaded '{}'", name), false));
+                    true
+                }
+                Err(e) => {
+                    self.preset_status = Some((format!("Failed to parse: {}", e), true));
+                    false
+                }
+            },
+            Ok(None) => {
+                self.preset_status = Some((format!("Preset '{}' not found", name), true));
+                false
+            }
+            Err(_) => {
+                self.preset_status = Some(("Failed to read from localStorage".to_string(), true));
+                false
+            }
+        }
+    }
+
+    /// Delete a preset by name
+    #[cfg(target_arch = "wasm32")]
+    fn delete_preset(&mut self, name: &str) {
+        let key = format!("sunaba_preset_{}", name);
+        let Some(window) = web_sys::window() else {
+            self.preset_status = Some(("No window available".to_string(), true));
+            return;
+        };
+        let Ok(Some(storage)) = window.local_storage() else {
+            self.preset_status = Some(("localStorage not available".to_string(), true));
+            return;
+        };
+
+        if storage.remove_item(&key).is_ok() {
+            self.preset_status = Some((format!("Deleted '{}'", name), false));
+            self.refresh_presets();
+        } else {
+            self.preset_status = Some(("Failed to delete".to_string(), true));
+        }
+    }
+
+    /// Refresh the saved presets list
+    fn refresh_presets(&mut self) {
+        self.saved_presets = Self::list_saved_presets();
     }
 
     /// Toggle editor visibility
@@ -519,19 +783,22 @@ impl WorldGenEditor {
     fn render_presets_tab(&mut self, ui: &mut egui::Ui) -> bool {
         let mut changed = false;
 
-        ui.heading("Presets");
+        ui.heading("Builtin Presets");
 
         ui.horizontal(|ui| {
             if ui.button("Default").clicked() {
                 self.config = WorldGenConfig::default();
+                self.preset_status = Some(("Applied 'Default'".to_string(), false));
                 changed = true;
             }
             if ui.button("Cave Heavy").clicked() {
                 self.config = WorldGenConfig::preset_cave_heavy();
+                self.preset_status = Some(("Applied 'Cave Heavy'".to_string(), false));
                 changed = true;
             }
             if ui.button("Flat").clicked() {
                 self.config = WorldGenConfig::preset_flat();
+                self.preset_status = Some(("Applied 'Flat'".to_string(), false));
                 changed = true;
             }
         });
@@ -539,10 +806,12 @@ impl WorldGenEditor {
         ui.horizontal(|ui| {
             if ui.button("Desert World").clicked() {
                 self.config = WorldGenConfig::preset_desert_world();
+                self.preset_status = Some(("Applied 'Desert World'".to_string(), false));
                 changed = true;
             }
             if ui.button("Mountain World").clicked() {
                 self.config = WorldGenConfig::preset_mountain_world();
+                self.preset_status = Some(("Applied 'Mountain World'".to_string(), false));
                 changed = true;
             }
         });
@@ -550,14 +819,60 @@ impl WorldGenEditor {
         ui.add_space(16.0);
         ui.separator();
 
-        ui.heading("Save/Load");
-        ui.label("(Coming soon - save custom presets to disk)");
+        ui.heading("Custom Presets");
 
-        // TODO: Implement preset save/load
-        // - Text input for preset name
-        // - Save button -> serialize to RON
-        // - List of saved presets
-        // - Load/Delete buttons per preset
+        // Save section
+        ui.horizontal(|ui| {
+            ui.label("Name:");
+            ui.text_edit_singleline(&mut self.preset_name_input);
+            if ui.button("Save").clicked() {
+                let name = self.preset_name_input.clone();
+                self.save_preset(&name);
+            }
+        });
+
+        // Status message
+        if let Some((message, is_error)) = &self.preset_status {
+            let color = if *is_error {
+                egui::Color32::from_rgb(255, 100, 100)
+            } else {
+                egui::Color32::from_rgb(100, 255, 100)
+            };
+            ui.colored_label(color, message);
+        }
+
+        ui.add_space(8.0);
+
+        // Saved presets list
+        if self.saved_presets.is_empty() {
+            ui.label("No saved presets yet.");
+        } else {
+            ui.label("Saved Presets:");
+            egui::ScrollArea::vertical()
+                .max_height(150.0)
+                .show(ui, |ui| {
+                    // Clone the list to avoid borrow issues
+                    let presets = self.saved_presets.clone();
+                    for preset_name in presets {
+                        ui.horizontal(|ui| {
+                            ui.label(&preset_name);
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.small_button("Delete").clicked() {
+                                        self.delete_preset(&preset_name);
+                                    }
+                                    if ui.small_button("Load").clicked()
+                                        && self.load_preset(&preset_name)
+                                    {
+                                        changed = true;
+                                    }
+                                },
+                            );
+                        });
+                    }
+                });
+        }
 
         changed
     }
