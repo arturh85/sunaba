@@ -5,6 +5,7 @@ use super::hud::Hud;
 use super::stats::{SimulationStats, StatsCollector};
 use super::toasts::ToastManager;
 use super::tooltip::TooltipState;
+use super::worldgen_editor::WorldGenEditor;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::config::GameConfig;
 use web_time::Instant;
@@ -55,6 +56,9 @@ pub struct UiState {
 
     /// Game over panel state (death screen)
     pub game_over_panel: super::game_over_panel::GameOverPanelState,
+
+    /// World generation editor (F7)
+    pub worldgen_editor: WorldGenEditor,
 }
 
 impl UiState {
@@ -78,6 +82,7 @@ impl UiState {
             #[cfg(feature = "multiplayer")]
             multiplayer_panel: super::multiplayer_panel::MultiplayerPanelState::new(),
             game_over_panel: super::game_over_panel::GameOverPanelState::new(),
+            worldgen_editor: WorldGenEditor::new(),
         }
     }
 
@@ -96,6 +101,7 @@ impl UiState {
             #[cfg(feature = "multiplayer")]
             multiplayer_panel: super::multiplayer_panel::MultiplayerPanelState::new(),
             game_over_panel: super::game_over_panel::GameOverPanelState::new(),
+            worldgen_editor: WorldGenEditor::new(),
         }
     }
 
@@ -208,6 +214,9 @@ impl UiState {
         self.tooltip.render_creature(ctx, Some(cursor_screen_pos));
         self.tooltip.render(ctx, cursor_screen_pos);
 
+        // Render worldgen editor (F7)
+        self.worldgen_editor.render(ctx, materials);
+
         // Render game over screen (if player is dead)
         if show_game_over {
             self.game_over_panel.render(ctx);
@@ -272,6 +281,9 @@ impl UiState {
         self.toasts.render(ctx);
         self.tooltip.render_creature(ctx, Some(cursor_screen_pos));
         self.tooltip.render(ctx, cursor_screen_pos);
+
+        // Render worldgen editor (F7)
+        self.worldgen_editor.render(ctx, materials);
 
         // Render game over screen (if player is dead)
         if show_game_over {

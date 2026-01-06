@@ -1,9 +1,11 @@
 use crate::simulation::MaterialId;
 use crate::world::biome::{BiomeRegistry, BiomeType, select_biome};
 use crate::world::chunk::{CHUNK_SIZE, Chunk};
-use fastnoise_lite::{FastNoiseLite, FractalType, NoiseType};
+use crate::world::worldgen_config::WorldGenConfig;
+use fastnoise_lite::{FastNoiseLite, NoiseType};
+use std::collections::HashMap;
 
-// World dimension constants
+// World dimension constants (defaults, can be overridden by config)
 pub const SURFACE_Y: i32 = 0; // Sea level baseline
 pub const SKY_HEIGHT: i32 = 1000; // Top of atmosphere
 pub const BEDROCK_Y: i32 = -3500; // Bedrock layer starts here
@@ -15,10 +17,16 @@ pub const DEEP_UNDERGROUND: i32 = -1500; // Better ores, larger caves
 pub const CAVERN_LAYER: i32 = -2500; // Rare ores, huge caverns, lava
 
 /// World generator using multi-octave Perlin noise for biome-based generation
+///
+/// Can be created with default hardcoded parameters via `new(seed)` or
+/// with a full configuration via `from_config(seed, config)`.
 pub struct WorldGenerator {
     pub seed: u64,
 
-    // Biome definitions
+    // Configuration (stored for update_config)
+    config: WorldGenConfig,
+
+    // Biome definitions (legacy, for backward compatibility)
     biome_registry: BiomeRegistry,
 
     // Large-scale (biome selection) - very low frequency
@@ -32,7 +40,10 @@ pub struct WorldGenerator {
     cave_noise_large: FastNoiseLite, // 3 octaves, freq=0.005 (big caverns)
     cave_noise_small: FastNoiseLite, // 4 octaves, freq=0.008 (tunnels)
 
-    // Per-ore noise layers
+    // Per-ore noise layers (keyed by material ID for config-driven generation)
+    ore_noises: HashMap<u16, FastNoiseLite>,
+
+    // Legacy ore noise fields (for backward compatibility)
     coal_noise: FastNoiseLite,
     iron_noise: FastNoiseLite,
     copper_noise: FastNoiseLite,
@@ -44,81 +55,65 @@ pub struct WorldGenerator {
 }
 
 impl WorldGenerator {
+    /// Create a new WorldGenerator with default configuration
+    ///
+    /// This maintains backward compatibility with existing code.
     pub fn new(seed: u64) -> Self {
-        // Large-scale biome selection noise (very low frequency for large regions)
-        let mut temperature_noise = FastNoiseLite::with_seed(seed as i32);
-        temperature_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
-        temperature_noise.set_frequency(Some(0.0003)); // Very large biome regions (~3000 pixel wavelength)
-        temperature_noise.set_fractal_type(Some(FractalType::FBm));
-        temperature_noise.set_fractal_octaves(Some(2));
-        temperature_noise.set_fractal_lacunarity(Some(2.0));
-        temperature_noise.set_fractal_gain(Some(0.5)); // persistence
+        Self::from_config(seed, WorldGenConfig::default())
+    }
 
-        let mut moisture_noise = FastNoiseLite::with_seed((seed + 1) as i32);
-        moisture_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
-        moisture_noise.set_frequency(Some(0.0003));
-        moisture_noise.set_fractal_type(Some(FractalType::FBm));
-        moisture_noise.set_fractal_octaves(Some(2));
-        moisture_noise.set_fractal_lacunarity(Some(2.0));
-        moisture_noise.set_fractal_gain(Some(0.5));
+    /// Create a WorldGenerator from a configuration
+    ///
+    /// This allows full control over generation parameters via the config.
+    pub fn from_config(seed: u64, config: WorldGenConfig) -> Self {
+        // Build all noise layers from config
+        let temperature_noise = config.biomes.temperature_noise.to_fastnoise(seed);
+        let moisture_noise = config.biomes.moisture_noise.to_fastnoise(seed);
+        let terrain_height_noise = config.terrain.height_noise.to_fastnoise(seed);
+        let cave_noise_large = config.caves.large_caves.to_fastnoise(seed);
+        let cave_noise_small = config.caves.tunnels.to_fastnoise(seed);
 
-        // Medium-scale terrain height variation (hills and valleys)
-        let mut terrain_height_noise = FastNoiseLite::with_seed((seed + 2) as i32);
-        terrain_height_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
-        terrain_height_noise.set_frequency(Some(0.001)); // ~1000 pixel wavelength for rolling hills
-        terrain_height_noise.set_fractal_type(Some(FractalType::FBm));
-        terrain_height_noise.set_fractal_octaves(Some(4));
-        terrain_height_noise.set_fractal_lacunarity(Some(2.0));
-        terrain_height_noise.set_fractal_gain(Some(0.5));
+        // Build ore noise map from config
+        let mut ore_noises = HashMap::new();
+        for ore_config in &config.ores {
+            let noise = ore_config.noise.to_fastnoise(seed);
+            ore_noises.insert(ore_config.material_id, noise);
+        }
 
-        // Large cave systems (big caverns) - reduced frequency for Noita-like scale
-        // Target: 60-80px tall caverns (5-6x player height of 12px)
-        let mut cave_noise_large = FastNoiseLite::with_seed((seed + 3) as i32);
-        cave_noise_large.set_noise_type(Some(NoiseType::OpenSimplex2));
-        cave_noise_large.set_frequency(Some(0.005)); // ~200 pixel wavelength
-        cave_noise_large.set_fractal_type(Some(FractalType::FBm));
-        cave_noise_large.set_fractal_octaves(Some(3));
-        cave_noise_large.set_fractal_lacunarity(Some(2.0));
-        cave_noise_large.set_fractal_gain(Some(0.5));
+        // Helper to create ore noise from config or default
+        let create_ore_noise = |material_id: u16, default_seed_offset: i32| -> FastNoiseLite {
+            config
+                .ores
+                .iter()
+                .find(|o| o.material_id == material_id)
+                .map(|o| o.noise.to_fastnoise(seed))
+                .unwrap_or_else(|| {
+                    let mut noise = FastNoiseLite::with_seed((seed as i32) + default_seed_offset);
+                    noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+                    noise
+                })
+        };
 
-        // Small cave tunnels - reduced frequency for wider passages
-        // Target: 36-48px wide tunnels (3-4x player height)
-        let mut cave_noise_small = FastNoiseLite::with_seed((seed + 4) as i32);
-        cave_noise_small.set_noise_type(Some(NoiseType::OpenSimplex2));
-        cave_noise_small.set_frequency(Some(0.008)); // ~125 pixel wavelength
-        cave_noise_small.set_fractal_type(Some(FractalType::FBm));
-        cave_noise_small.set_fractal_octaves(Some(4));
-        cave_noise_small.set_fractal_lacunarity(Some(2.0));
-        cave_noise_small.set_fractal_gain(Some(0.5));
+        // Legacy ore noise fields (for backward compatibility with existing code paths)
+        let coal_noise = create_ore_noise(MaterialId::COAL_ORE, 5);
+        let iron_noise = create_ore_noise(MaterialId::IRON_ORE, 6);
+        let copper_noise = create_ore_noise(MaterialId::COPPER_ORE, 7);
+        let gold_noise = create_ore_noise(MaterialId::GOLD_ORE, 8);
 
-        // Ore placement noise (different seeds for variety)
-        let mut coal_noise = FastNoiseLite::with_seed((seed + 5) as i32);
-        coal_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
-
-        let mut iron_noise = FastNoiseLite::with_seed((seed + 6) as i32);
-        iron_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
-
-        let mut copper_noise = FastNoiseLite::with_seed((seed + 7) as i32);
-        copper_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
-
-        let mut gold_noise = FastNoiseLite::with_seed((seed + 8) as i32);
-        gold_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
-
-        // Vegetation placement
-        let mut tree_noise = FastNoiseLite::with_seed((seed + 9) as i32);
-        tree_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
-
-        let mut plant_noise = FastNoiseLite::with_seed((seed + 10) as i32);
-        plant_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+        // Vegetation noise
+        let tree_noise = config.vegetation.tree_noise.to_fastnoise(seed);
+        let plant_noise = config.vegetation.plant_noise.to_fastnoise(seed);
 
         Self {
             seed,
+            config,
             biome_registry: BiomeRegistry::new(),
             temperature_noise,
             moisture_noise,
             terrain_height_noise,
             cave_noise_large,
             cave_noise_small,
+            ore_noises,
             coal_noise,
             iron_noise,
             copper_noise,
@@ -126,6 +121,34 @@ impl WorldGenerator {
             tree_noise,
             plant_noise,
         }
+    }
+
+    /// Update the configuration and rebuild noise layers
+    ///
+    /// Used for live preview in the editor. Maintains the same seed.
+    pub fn update_config(&mut self, config: WorldGenConfig) {
+        let seed = self.seed;
+        *self = Self::from_config(seed, config);
+    }
+
+    /// Get the current configuration
+    pub fn config(&self) -> &WorldGenConfig {
+        &self.config
+    }
+
+    /// Get world parameters from config
+    pub fn surface_y(&self) -> i32 {
+        self.config.world.surface_y
+    }
+
+    /// Get bedrock depth from config
+    pub fn bedrock_y(&self) -> i32 {
+        self.config.world.bedrock_y
+    }
+
+    /// Get cavern layer depth from config
+    pub fn cavern_layer(&self) -> i32 {
+        self.config.world.underground_layers.cavern
     }
 
     /// Generate a complete chunk at the given chunk coordinates
@@ -413,5 +436,61 @@ mod tests {
             "Expected mostly air above surface, got {} air pixels",
             air_count
         );
+    }
+
+    #[test]
+    fn test_from_config_produces_same_as_default() {
+        // WorldGenerator::new(seed) should produce same results as from_config(seed, default)
+        let gen_new = WorldGenerator::new(42);
+        let gen_config = WorldGenerator::from_config(42, WorldGenConfig::default());
+
+        let chunk_new = gen_new.generate_chunk(0, 0);
+        let chunk_config = gen_config.generate_chunk(0, 0);
+
+        // Same config should produce identical chunks
+        for y in 0..CHUNK_SIZE {
+            for x in 0..CHUNK_SIZE {
+                assert_eq!(
+                    chunk_new.get_material(x, y),
+                    chunk_config.get_material(x, y),
+                    "Mismatch at ({}, {})",
+                    x,
+                    y
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_update_config() {
+        let mut generator = WorldGenerator::new(42);
+        let _chunk_before = generator.generate_chunk(0, 0);
+
+        // Update with different terrain height scale
+        let mut config = WorldGenConfig::default();
+        config.terrain.height_scale = 50.0; // Different from default 100.0
+        generator.update_config(config);
+
+        // Seed should be preserved
+        assert_eq!(generator.seed, 42);
+
+        // Config should be updated
+        assert_eq!(generator.config().terrain.height_scale, 50.0);
+
+        // New chunk should still be deterministic with same seed+config
+        let chunk_after1 = generator.generate_chunk(0, 0);
+        let chunk_after2 = generator.generate_chunk(0, 0);
+
+        for y in 0..CHUNK_SIZE {
+            for x in 0..CHUNK_SIZE {
+                assert_eq!(
+                    chunk_after1.get_material(x, y),
+                    chunk_after2.get_material(x, y),
+                    "Non-deterministic after config update at ({}, {})",
+                    x,
+                    y
+                );
+            }
+        }
     }
 }

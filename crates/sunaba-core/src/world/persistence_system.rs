@@ -34,6 +34,16 @@ impl PersistenceSystem {
         self.generator.seed
     }
 
+    /// Update the generator config (keeps the same seed)
+    pub fn update_generator_config(&mut self, config: super::worldgen_config::WorldGenConfig) {
+        self.generator.update_config(config);
+    }
+
+    /// Get the current generator config
+    pub fn generator_config(&self) -> &super::worldgen_config::WorldGenConfig {
+        self.generator.config()
+    }
+
     /// Clear all chunks from the chunk manager
     pub fn clear_all_chunks(&mut self, chunk_manager: &mut ChunkManager) {
         chunk_manager.chunks.clear();

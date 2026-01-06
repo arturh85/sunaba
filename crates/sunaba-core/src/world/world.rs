@@ -142,6 +142,28 @@ impl World {
         self.persistence_system.set_seed(seed);
     }
 
+    /// Update the world generator config and regenerate all chunks
+    pub fn update_generator_config(&mut self, config: super::worldgen_config::WorldGenConfig) {
+        // Update the generator config
+        self.persistence_system.update_generator_config(config);
+
+        // Clear all chunks so they regenerate with new config
+        self.persistence_system
+            .clear_all_chunks(&mut self.chunk_manager);
+
+        // Reload chunks around player
+        let player_pos = self.player.position;
+        self.persistence_system
+            .load_chunks_around_player(&mut self.chunk_manager, player_pos);
+
+        log::info!("World regenerated with new config");
+    }
+
+    /// Get the current generator config
+    pub fn generator_config(&self) -> &super::worldgen_config::WorldGenConfig {
+        self.persistence_system.generator_config()
+    }
+
     /// Generate a simple test world for development
     /// Kept for testing and debugging purposes
     #[allow(dead_code)]

@@ -1424,6 +1424,15 @@ impl App {
             }
         }
 
+        // Handle worldgen editor apply request
+        if self.ui_state.worldgen_editor.apply_requested {
+            let config = self.ui_state.worldgen_editor.config.clone();
+            self.world.update_generator_config(config);
+            self.ui_state
+                .show_toast("World regenerated with new config!");
+            self.ui_state.worldgen_editor.apply_requested = false;
+        }
+
         // Future: Level selector in dock is currently read-only
         // Interactive level switching could be added via dock callback system
         // (would require architecture for dock -> app communication)
@@ -1916,6 +1925,11 @@ impl ApplicationHandler for App {
                         KeyCode::F6 => {
                             if pressed {
                                 self.ui_state.toggle_tab(crate::ui::DockTab::Logger);
+                            }
+                        }
+                        KeyCode::F7 => {
+                            if pressed {
+                                self.ui_state.worldgen_editor.toggle();
                             }
                         }
                         KeyCode::KeyH => {

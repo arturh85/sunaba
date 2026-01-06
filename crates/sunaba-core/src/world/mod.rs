@@ -21,6 +21,7 @@ pub mod rng_trait;
 pub mod stats;
 #[allow(clippy::module_inception)]
 mod world;
+pub mod worldgen_config;
 
 pub use biome::{BiomeDefinition, BiomeRegistry, BiomeType};
 pub use chunk::{CHUNK_SIZE, Chunk, Pixel, pixel_flags};
@@ -39,3 +40,8 @@ pub use raycasting::Raycasting;
 pub use rng_trait::WorldRng;
 pub use stats::{NoopStats, SimStats};
 pub use world::World;
+pub use worldgen_config::{
+    BiomeConfig, BiomeParams, CaveParams, FeatureParams, FractalTypeConfig, LavaPoolConfig,
+    NoiseLayerConfig, NoiseTypeConfig, OreConfig, TerrainParams, UndergroundLayers,
+    VegetationParams, WorldGenConfig, WorldParams,
+};

@@ -97,7 +97,7 @@ impl ControlsHelpState {
                 ui.label("F2 - Toggle active chunks");
                 ui.label("F4 - Toggle parameters (native)");
                 ui.label("F6 - Toggle log (native)");
-                ui.label("F7 - Toggle dock mode");
+                ui.label("F7 - World Gen Editor");
                 ui.label("H - Toggle this help");
 
                 ui.add_space(8.0);
@@ -198,7 +198,7 @@ impl ControlsHelpState {
                 ui.label("F2 - Toggle active chunks");
                 ui.label("F4 - Toggle parameters (native)");
                 ui.label("F6 - Toggle log (native)");
-                ui.label("F7 - Toggle dock mode");
+                ui.label("F7 - World Gen Editor");
                 ui.label("H - Toggle this help");
 
                 ui.add_space(8.0);

@@ -15,6 +15,7 @@ pub mod stats;
 pub mod toasts;
 pub mod tooltip;
 pub mod ui_state;
+pub mod worldgen_editor;
 
 pub use controls_help::ControlsHelpState;
 pub use crafting_ui::CraftingUI;
@@ -31,3 +32,4 @@ pub use stats::{SimulationStats, StatsCollector};
 pub use toasts::ToastManager;
 pub use tooltip::TooltipState;
 pub use ui_state::UiState;
+pub use worldgen_editor::WorldGenEditor;
