@@ -17,6 +17,7 @@ use crate::simulation::Materials;
 use super::fitness::BehaviorDescriptor;
 use super::gif_capture::GifCapture;
 use super::map_elites::MapElitesGrid;
+use super::multi_env_eval::MultiEnvironmentEvaluator;
 use super::pixel_renderer::PixelRenderer;
 use super::report::{CapturedGif, ReportGenerator};
 use super::scenario::Scenario;
@@ -52,6 +53,8 @@ pub struct TrainingConfig {
     pub archetype: CreatureArchetype,
     /// Multiple creature archetypes to train together (empty = use single archetype)
     pub archetypes: Vec<CreatureArchetype>,
+    /// Multi-environment evaluation (None = single environment, backward compatible)
+    pub multi_env: Option<MultiEnvironmentEvaluator>,
 }
 
 impl Default for TrainingConfig {
@@ -71,6 +74,7 @@ impl Default for TrainingConfig {
             min_viability: 0.3,
             archetype: CreatureArchetype::default(),
             archetypes: Vec::new(), // Empty = use single archetype field
+            multi_env: None, // None = single environment (backward compatible)
         }
     }
 }
@@ -393,7 +397,8 @@ impl TrainingEnv {
                 0.0
             };
 
-            let result = self.evaluate_single(best.genome.clone(), champion_archetype);
+            // Evaluate champion (use idx=0 for deterministic multi-env sampling)
+            let result = self.evaluate_single(best.genome.clone(), champion_archetype, 0);
             let eval_info = format!(
                 "Fitness from evaluate_single: {:.2}\n\
                  Displacement from evaluate_single: {:.1}px",
@@ -588,8 +593,9 @@ impl TrainingEnv {
     ) -> Result<Vec<EvalResult>> {
         let results: Vec<EvalResult> = archetype_genomes
             .par_iter()
-            .map(|(archetype, genome)| {
-                let result = self.evaluate_single(genome.clone(), *archetype);
+            .enumerate()
+            .map(|(idx, (archetype, genome))| {
+                let result = self.evaluate_single(genome.clone(), *archetype, idx);
                 pb.inc(1);
                 result
             })
@@ -598,8 +604,24 @@ impl TrainingEnv {
         Ok(results)
     }
 
-    /// Evaluate a single creature
-    fn evaluate_single(&self, genome: CreatureGenome, archetype: CreatureArchetype) -> EvalResult {
+    /// Evaluate a single creature (with optional multi-environment support)
+    fn evaluate_single(
+        &self,
+        genome: CreatureGenome,
+        archetype: CreatureArchetype,
+        creature_idx: usize,
+    ) -> EvalResult {
+        // Check if multi-environment evaluation is enabled
+        if let Some(ref multi_env) = self.config.multi_env {
+            return self.evaluate_single_multi_env(genome, archetype, creature_idx, multi_env);
+        }
+
+        // Legacy single-environment evaluation
+        self.evaluate_single_legacy(genome, archetype)
+    }
+
+    /// Legacy single-environment evaluation (backward compatible)
+    fn evaluate_single_legacy(&self, genome: CreatureGenome, archetype: CreatureArchetype) -> EvalResult {
         // Set up world with cached food positions
         let (mut world, food_positions) = self.scenario.setup_world();
         let mut creature_manager = CreatureManager::new(1);
@@ -672,6 +694,145 @@ impl TrainingEnv {
         EvalResult {
             archetype,
             genome,
+            fitness,
+            behavior,
+            displacement,
+        }
+    }
+
+    /// Multi-environment evaluation (NEW)
+    fn evaluate_single_multi_env(
+        &self,
+        genome: CreatureGenome,
+        archetype: CreatureArchetype,
+        creature_idx: usize,
+        multi_env: &MultiEnvironmentEvaluator,
+    ) -> EvalResult {
+        // Compute deterministic eval_id for this creature
+        let eval_id = (self.generation as u64) * (self.config.population_size as u64)
+            + (creature_idx as u64);
+
+        // Sample terrain configurations for this evaluation
+        let terrains = multi_env
+            .sample_terrains(eval_id)
+            .expect("Failed to sample terrains");
+
+        // Evaluate on each environment
+        let mut individual_scores = Vec::new();
+        let mut behavior_sum = BehaviorDescriptor {
+            locomotion_efficiency: 0.0,
+            foraging_efficiency: 0.0,
+            exploration: 0.0,
+            activity: 0.0,
+        };
+        let mut displacement_sum = 0.0;
+
+        for terrain in &terrains {
+            let result = self.evaluate_on_terrain(&genome, archetype, terrain);
+            individual_scores.push(result.fitness);
+            behavior_sum.locomotion_efficiency += result.behavior.locomotion_efficiency;
+            behavior_sum.foraging_efficiency += result.behavior.foraging_efficiency;
+            behavior_sum.exploration += result.behavior.exploration;
+            behavior_sum.activity += result.behavior.activity;
+            displacement_sum += result.displacement;
+        }
+
+        // Aggregate fitness across environments
+        let aggregated_fitness = multi_env.aggregate_fitness(&individual_scores);
+
+        // Average behavior across environments
+        let n = terrains.len() as f32;
+        let avg_behavior = BehaviorDescriptor {
+            locomotion_efficiency: behavior_sum.locomotion_efficiency / n,
+            foraging_efficiency: behavior_sum.foraging_efficiency / n,
+            exploration: behavior_sum.exploration / n,
+            activity: behavior_sum.activity / n,
+        };
+        let avg_displacement = displacement_sum / n;
+
+        EvalResult {
+            archetype,
+            genome,
+            fitness: aggregated_fitness,
+            behavior: avg_behavior,
+            displacement: avg_displacement,
+        }
+    }
+
+    /// Evaluate creature on a specific terrain (helper for multi-env)
+    fn evaluate_on_terrain(
+        &self,
+        genome: &CreatureGenome,
+        archetype: CreatureArchetype,
+        terrain: &super::terrain_config::TrainingTerrainConfig,
+    ) -> EvalResult {
+        // Set up world with custom terrain
+        let (mut world, food_positions) = self.scenario.setup_world_with_terrain(terrain);
+        let mut creature_manager = CreatureManager::new(1);
+
+        // Spawn creature
+        let spawn_pos = self.scenario.config.spawn_position;
+        let initial_hunger = if self.scenario.config.name == "Parcour" {
+            0.5
+        } else {
+            1.0
+        };
+        let creature_id = creature_manager.spawn_creature_with_archetype_and_hunger(
+            genome.clone(),
+            spawn_pos,
+            initial_hunger,
+            &self.morphology_config,
+            archetype,
+        );
+
+        // Run simulation
+        let dt = 1.0 / 60.0;
+        let steps = (self.config.eval_duration / dt) as usize;
+        const SENSORY_SKIP: usize = 6;
+
+        for step in 0..steps {
+            if step % SENSORY_SKIP == 0 {
+                creature_manager.update_with_cache(
+                    dt * SENSORY_SKIP as f32,
+                    &mut world,
+                    &food_positions,
+                );
+            }
+        }
+
+        // Evaluate creature
+        let creature = creature_manager.get(creature_id);
+        let (fitness, behavior, displacement) = if let Some(creature) = creature {
+            let displacement = (creature.position - spawn_pos).length();
+            let fitness = self.scenario.fitness.evaluate(
+                creature,
+                &world,
+                spawn_pos,
+                self.config.eval_duration,
+            );
+            let behavior = BehaviorDescriptor::from_evaluation(
+                creature,
+                spawn_pos,
+                self.config.eval_duration,
+                &world,
+            );
+            (fitness, behavior, displacement)
+        } else {
+            (
+                0.0,
+                BehaviorDescriptor {
+                    locomotion_efficiency: 0.0,
+                    foraging_efficiency: 0.0,
+                    exploration: 0.0,
+                    activity: 0.0,
+                },
+                0.0,
+            )
+        };
+
+        EvalResult {
+            archetype,
+            genome: genome.clone(),
             fitness,
             behavior,
             displacement,

@@ -91,7 +91,26 @@ Successfully integrated procedural world generation into creature training syste
 - `crates/sunaba/src/headless/scenario.rs` (+80 lines) - Procedural world generation support
 - `crates/sunaba/src/headless/mod.rs` (+2 lines) - Module exports
 
-**Next:** Multi-environment evaluation + curriculum learning system
+**Sprint 4, Week 2: Multi-Environment Evaluation - COMPLETE ✅ (January 2026)**
+
+Implemented multi-environment evaluation system for creature generalization:
+- **Environment Distribution** - Deterministic seeded sampling with 3 strategies (Uniform, Discrete, Presets)
+- **Multi-Environment Evaluator** - Evaluate creatures on N terrains with 5 aggregation methods
+- **TrainingEnv Integration** - Optional multi-env via `TrainingConfig.multi_env`
+- **100% Backward Compatible** - None = single environment (existing behavior)
+- **Reproducibility** - Same creature sees same terrains each evaluation (deterministic eval_id)
+- **Test Coverage** - 18 unit tests passing, all core functionality verified
+
+**Files Created:**
+- `crates/sunaba/src/headless/env_distribution.rs` (~346 lines) - Environment sampling system
+- `crates/sunaba/src/headless/multi_env_eval.rs` (~315 lines) - Multi-env evaluator + aggregation
+
+**Files Modified:**
+- `crates/sunaba/src/headless/training_env.rs` (+140 lines) - Multi-env integration, refactored evaluate_single
+- `crates/sunaba/src/headless/scenario.rs` (+5 lines) - Added setup_world_with_terrain() method
+- `crates/sunaba/src/headless/mod.rs` (+2 lines) - Module exports
+
+**Next:** Curriculum learning system
 
 ---
 

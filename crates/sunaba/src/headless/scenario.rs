@@ -180,6 +180,12 @@ impl Scenario {
         }
     }
 
+    /// Set up world with a custom terrain configuration (for multi-environment evaluation)
+    /// Returns the world and a list of food positions for optimized sensing
+    pub fn setup_world_with_terrain(&self, terrain_config: &TrainingTerrainConfig) -> (World, Vec<Vec2>) {
+        self.setup_procedural_world(terrain_config)
+    }
+
     /// Set up world using procedural generation (NEW)
     fn setup_procedural_world(&self, config: &TrainingTerrainConfig) -> (World, Vec<Vec2>) {
         let mut world = World::new(false);
