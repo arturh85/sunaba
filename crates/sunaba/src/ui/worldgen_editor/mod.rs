@@ -386,8 +386,8 @@ impl WorldGenEditor {
         }
 
         egui::Window::new("World Generation Editor")
-            .default_pos(egui::pos2(100.0, 100.0))
-            .default_size(egui::vec2(800.0, 600.0))
+            .default_pos(egui::pos2(0.0, 0.0))
+            .default_size([1400.0, 900.0])
             .resizable(true)
             .collapsible(true)
             .show(ctx, |ui| {
@@ -427,6 +427,7 @@ impl WorldGenEditor {
             ui.vertical(|ui| {
                 ui.set_min_width(350.0);
                 ui.set_max_width(400.0);
+                ui.set_min_height(800.0);
 
                 // Tab bar
                 ui.horizontal(|ui| {
@@ -444,7 +445,7 @@ impl WorldGenEditor {
 
                 // Tab content in scroll area
                 egui::ScrollArea::vertical()
-                    .max_height(450.0)
+                    .max_height(700.0)
                     .show(ui, |ui| {
                         let changed = match self.active_tab {
                             EditorTab::World => self.render_world_tab(ui),
@@ -467,6 +468,7 @@ impl WorldGenEditor {
 
             // Right panel: preview
             ui.vertical(|ui| {
+                ui.set_min_height(800.0);
                 ui.heading("Preview");
 
                 // Update preview if dirty (throttled)
@@ -490,7 +492,10 @@ impl WorldGenEditor {
                 }
 
                 // Render preview
-                self.preview.render(ui, materials);
+                let camera_changed = self.preview.render(ui, materials);
+                if camera_changed {
+                    self.mark_dirty();
+                }
             });
         });
     }

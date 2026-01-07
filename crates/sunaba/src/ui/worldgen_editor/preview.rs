@@ -112,7 +112,10 @@ impl PreviewState {
     }
 
     /// Render the preview in egui
-    pub fn render(&mut self, ui: &mut egui::Ui, _materials: &Materials) {
+    /// Returns true if camera position changed (needs regeneration)
+    pub fn render(&mut self, ui: &mut egui::Ui, _materials: &Materials) -> bool {
+        let mut camera_changed = false;
+
         // Create texture if needed
         if self.texture_handle.is_none() {
             let color_image = egui::ColorImage::from_rgba_unmultiplied(
@@ -130,21 +133,26 @@ impl PreviewState {
         // Preview controls
         ui.horizontal(|ui| {
             ui.label("Pan:");
-            if ui.button("◀").clicked() {
+            if ui.button("Left").clicked() {
                 self.camera_x -= CHUNK_SIZE as i32;
+                camera_changed = true;
             }
-            if ui.button("▶").clicked() {
+            if ui.button("Right").clicked() {
                 self.camera_x += CHUNK_SIZE as i32;
+                camera_changed = true;
             }
-            if ui.button("▲").clicked() {
+            if ui.button("Up").clicked() {
                 self.camera_y += CHUNK_SIZE as i32;
+                camera_changed = true;
             }
-            if ui.button("▼").clicked() {
+            if ui.button("Down").clicked() {
                 self.camera_y -= CHUNK_SIZE as i32;
+                camera_changed = true;
             }
-            if ui.button("⟳ Reset").clicked() {
+            if ui.button("Reset").clicked() {
                 self.camera_x = 0;
                 self.camera_y = PREVIEW_CENTER_Y;
+                camera_changed = true;
             }
         });
 
@@ -168,11 +176,13 @@ impl PreviewState {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.label("Legend:");
-            ui.colored_label(egui::Color32::from_rgb(139, 90, 43), "● Dirt");
-            ui.colored_label(egui::Color32::from_rgb(194, 178, 128), "● Sand");
-            ui.colored_label(egui::Color32::from_rgb(128, 128, 128), "● Stone");
-            ui.colored_label(egui::Color32::from_rgb(64, 164, 223), "● Water");
+            ui.colored_label(egui::Color32::from_rgb(139, 90, 43), "■ Dirt");
+            ui.colored_label(egui::Color32::from_rgb(194, 178, 128), "■ Sand");
+            ui.colored_label(egui::Color32::from_rgb(128, 128, 128), "■ Stone");
+            ui.colored_label(egui::Color32::from_rgb(64, 164, 223), "■ Water");
         });
+
+        camera_changed
     }
 }
 
