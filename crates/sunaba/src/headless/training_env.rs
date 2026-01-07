@@ -14,6 +14,7 @@ use crate::creature::spawning::CreatureManager;
 use crate::creature::viability::analyze_viability;
 use crate::simulation::Materials;
 
+use super::curriculum::{CurriculumConfig, CurriculumTracker};
 use super::fitness::BehaviorDescriptor;
 use super::gif_capture::GifCapture;
 use super::map_elites::MapElitesGrid;
@@ -55,6 +56,8 @@ pub struct TrainingConfig {
     pub archetypes: Vec<CreatureArchetype>,
     /// Multi-environment evaluation (None = single environment, backward compatible)
     pub multi_env: Option<MultiEnvironmentEvaluator>,
+    /// Curriculum learning (None = no curriculum, backward compatible)
+    pub curriculum: Option<CurriculumConfig>,
 }
 
 impl Default for TrainingConfig {
@@ -75,6 +78,7 @@ impl Default for TrainingConfig {
             archetype: CreatureArchetype::default(),
             archetypes: Vec::new(), // Empty = use single archetype field
             multi_env: None,        // None = single environment (backward compatible)
+            curriculum: None,       // None = no curriculum (backward compatible)
         }
     }
 }
@@ -140,6 +144,8 @@ pub struct TrainingEnv {
     morphology_config: MorphologyConfig,
     /// Archetypes being trained
     archetypes: Vec<CreatureArchetype>,
+    /// Curriculum tracker (tracks progress through stages)
+    curriculum_tracker: Option<CurriculumTracker>,
 }
 
 impl TrainingEnv {
@@ -159,6 +165,13 @@ impl TrainingEnv {
             grids.insert(*archetype, MapElitesGrid::default_grid());
         }
 
+        // Initialize curriculum tracker if curriculum is enabled
+        let curriculum_tracker = if config.curriculum.is_some() {
+            Some(CurriculumTracker::new())
+        } else {
+            None
+        };
+
         Self {
             config,
             scenario,
@@ -168,6 +181,7 @@ impl TrainingEnv {
             report_gen,
             morphology_config,
             archetypes,
+            curriculum_tracker,
         }
     }
 
@@ -241,6 +255,63 @@ impl TrainingEnv {
             .progress_chars("█▓░")
     }
 
+    /// Check and advance curriculum stage if conditions are met
+    ///
+    /// Returns true if stage was advanced, along with optional message
+    fn check_curriculum_advancement(
+        &mut self,
+        stats: &TrainingStats,
+        pb: &ProgressBar,
+    ) -> (bool, Option<String>) {
+        // No curriculum = no advancement
+        let Some(ref mut curriculum) = self.config.curriculum else {
+            return (false, None);
+        };
+
+        let Some(ref mut tracker) = self.curriculum_tracker else {
+            return (false, None);
+        };
+
+        // Check if we should advance
+        let generations_in_stage = tracker.generations_in_stage(self.generation);
+        let (should_advance, reason) = curriculum.should_advance(
+            generations_in_stage,
+            stats.best_fitness,
+            stats.grid_coverage,
+        );
+
+        if should_advance {
+            let old_stage = curriculum.current_stage().name.clone();
+
+            // Advance curriculum
+            if curriculum.advance() {
+                tracker.on_stage_advance(self.generation);
+                let new_stage = curriculum.current_stage().name.clone();
+
+                let msg = format!(
+                    "🎓 Curriculum advanced: {} → {} ({})",
+                    old_stage,
+                    new_stage,
+                    reason.unwrap_or_else(|| "criteria met".to_string())
+                );
+                pb.println(&msg);
+
+                // Update multi_env distribution if enabled
+                if let Some(ref mut multi_env) = self.config.multi_env {
+                    multi_env.distribution = curriculum.current_stage().distribution.clone();
+                    pb.println(format!(
+                        "   Updated environment distribution for {}",
+                        new_stage
+                    ));
+                }
+
+                return (true, Some(msg));
+            }
+        }
+
+        (false, None)
+    }
+
     /// Run the full training loop
     pub fn run(&mut self) -> Result<()> {
         // Calculate total evaluations: init population + generations * population
@@ -259,6 +330,24 @@ impl TrainingEnv {
             self.archetypes.len(),
             archetype_names
         ));
+
+        // Log curriculum information if enabled
+        if let Some(ref curriculum) = self.config.curriculum {
+            pb.println(format!(
+                "📚 Curriculum learning enabled: {} stages",
+                curriculum.num_stages()
+            ));
+            pb.println(format!(
+                "   Starting with: {}",
+                curriculum.current_stage().name
+            ));
+
+            // Initialize multi_env with curriculum's first stage distribution
+            if let Some(ref mut multi_env) = self.config.multi_env {
+                multi_env.distribution = curriculum.current_stage().distribution.clone();
+                pb.println("   Multi-environment evaluation configured from curriculum");
+            }
+        }
 
         // Initialize with random population
         self.initialize_population_with_progress(&pb)?;
@@ -284,6 +373,9 @@ impl TrainingEnv {
             // Update grid and collect stats
             let stats = self.update_grid(results);
             self.stats_history.push(stats.clone());
+
+            // Check curriculum advancement
+            self.check_curriculum_advancement(&stats, &pb);
 
             // Log progress
             if generation_num % 5 == 0 {

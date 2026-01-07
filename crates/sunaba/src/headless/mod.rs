@@ -8,6 +8,7 @@
 //! - HTML report generation with animated visualizations
 //! - Procedural terrain generation for curriculum learning
 
+mod curriculum;
 mod env_distribution;
 mod fitness;
 mod gif_capture;
@@ -19,6 +20,7 @@ mod scenario;
 mod terrain_config;
 mod training_env;
 
+pub use curriculum::{AdvancementCriteria, CurriculumConfig, CurriculumStage, CurriculumTracker};
 pub use env_distribution::{DifficultySampling, EnvironmentDistribution};
 pub use fitness::{
     CompositeFitness, DistanceFitness, FitnessFunction, ForagingFitness, SurvivalFitness,
