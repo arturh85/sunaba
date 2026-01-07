@@ -43,6 +43,7 @@ pub struct WorldGenerator {
     cave_noise_small: FastNoiseLite, // 4 octaves, freq=0.008 (tunnels)
 
     // Per-ore noise layers (keyed by material ID for config-driven generation)
+    #[allow(unused)]
     ore_noises: HashMap<u16, FastNoiseLite>,
 
     // Legacy ore noise fields (for backward compatibility)
@@ -308,7 +309,7 @@ impl WorldGenerator {
 
         // Step 5: Underground caves (apply biome cave density multiplier)
         // Thresholds lowered to create larger, more open caves like Noita
-        if world_y < terrain_y - 10 {
+        if world_y < terrain_y - self.config.caves.min_cave_depth {
             let cave_large = self
                 .cave_noise_large
                 .get_noise_2d(world_x as f32, world_y as f32) as f64;
@@ -317,9 +318,10 @@ impl WorldGenerator {
                 .get_noise_2d(world_x as f32, world_y as f32) as f64;
 
             // Apply biome cave density - lower thresholds = more cave space
-            // Original: 0.3/0.4, now 0.15/0.25 for larger openings
-            let cave_threshold_large = 0.15 / biome.cave_density_multiplier as f64;
-            let cave_threshold_small = 0.25 / biome.cave_density_multiplier as f64;
+            let cave_threshold_large =
+                self.config.caves.large_threshold as f64 / biome.cave_density_multiplier as f64;
+            let cave_threshold_small =
+                self.config.caves.tunnel_threshold as f64 / biome.cave_density_multiplier as f64;
 
             if cave_large > cave_threshold_large || cave_small > cave_threshold_small {
                 return MaterialId::AIR;
