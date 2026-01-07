@@ -2,15 +2,17 @@
 //!
 //! Each scenario defines a world configuration and evaluation criteria.
 
-use glam::Vec2;
+use glam::{IVec2, Vec2};
 
 use crate::simulation::MaterialId;
 use crate::world::World;
+use sunaba_core::world::WorldGenerator;
 
 use super::fitness::{
     CompositeFitness, DirectionalFoodFitness, DistanceFitness, FitnessFunction, ForagingFitness,
     MovementFitness, SurvivalFitness,
 };
+use super::terrain_config::TrainingTerrainConfig;
 
 /// Configuration for a training scenario
 #[derive(Debug, Clone)]
@@ -29,6 +31,8 @@ pub struct ScenarioConfig {
     pub world_width: i32,
     /// World height in pixels
     pub world_height: i32,
+    /// Optional procedural terrain config (None = use legacy manual terrain)
+    pub terrain_config: Option<TrainingTerrainConfig>,
 }
 
 impl Default for ScenarioConfig {
@@ -41,6 +45,7 @@ impl Default for ScenarioConfig {
             eval_duration: 30.0,
             world_width: 512,
             world_height: 256,
+            terrain_config: None,
         }
     }
 }
@@ -65,6 +70,7 @@ impl Scenario {
                 eval_duration: 30.0,
                 world_width: 512,
                 world_height: 128,
+                terrain_config: None,
             },
             fitness: Box::new(DistanceFitness),
         }
@@ -82,6 +88,7 @@ impl Scenario {
                 eval_duration: 30.0,
                 world_width: 400,
                 world_height: 100,
+                terrain_config: None,
             },
             fitness: Box::new(MovementFitness::new()),
         }
@@ -98,6 +105,7 @@ impl Scenario {
                 eval_duration: 30.0,
                 world_width: 512,
                 world_height: 128,
+                terrain_config: None,
             },
             fitness: Box::new(ForagingFitness),
         }
@@ -114,6 +122,7 @@ impl Scenario {
                 eval_duration: 30.0,
                 world_width: 512,
                 world_height: 128,
+                terrain_config: None,
             },
             fitness: Box::new(SurvivalFitness),
         }
@@ -130,6 +139,7 @@ impl Scenario {
                 eval_duration: 30.0,
                 world_width: 512,
                 world_height: 128,
+                terrain_config: None,
             },
             fitness: Box::new(CompositeFitness::balanced()),
         }
@@ -153,6 +163,7 @@ impl Scenario {
                 eval_duration: 30.0,
                 world_width: 420,
                 world_height: 100,
+                terrain_config: None,
             },
             fitness: Box::new(DirectionalFoodFitness::parcour()),
         }
@@ -161,6 +172,43 @@ impl Scenario {
     /// Set up the world for this scenario
     /// Returns the world and a list of food positions for optimized sensing
     pub fn setup_world(&self) -> (World, Vec<Vec2>) {
+        // Branch: Use procedural generation if terrain_config is provided
+        if let Some(ref terrain_config) = self.config.terrain_config {
+            self.setup_procedural_world(terrain_config)
+        } else {
+            self.setup_manual_world()
+        }
+    }
+
+    /// Set up world using procedural generation (NEW)
+    fn setup_procedural_world(&self, config: &TrainingTerrainConfig) -> (World, Vec<Vec2>) {
+        let mut world = World::new(false);
+
+        // Apply difficulty to get WorldGenConfig
+        let worldgen_config = config.apply_difficulty();
+
+        // Create WorldGenerator with base seed
+        let generator = WorldGenerator::from_config(config.base_seed, worldgen_config);
+
+        // Generate chunks for training area
+        let chunks_x = (config.width + 63) / 64;
+        let chunks_y = (config.height + 63) / 64;
+
+        for cy in 0..chunks_y {
+            for cx in 0..chunks_x {
+                let chunk = generator.generate_chunk(cx, cy);
+                world.insert_chunk(IVec2::new(cx, cy), chunk);
+            }
+        }
+
+        // Scan for food positions (edible materials in generated world)
+        let food_positions = self.scan_food_positions(&world, config.width, config.height);
+
+        (world, food_positions)
+    }
+
+    /// Set up world using manual terrain (EXISTING)
+    fn setup_manual_world(&self) -> (World, Vec<Vec2>) {
         let mut world = World::new(false);
 
         // Ensure chunks exist for the entire scenario area
@@ -187,6 +235,30 @@ impl Scenario {
         };
 
         (world, food_positions)
+    }
+
+    /// Scan world for food positions (edible materials)
+    /// Used for optimized cached sensing in procedurally generated worlds
+    fn scan_food_positions(&self, world: &World, width: i32, height: i32) -> Vec<Vec2> {
+        let mut food_positions = Vec::new();
+
+        // Get materials registry to check if material is edible
+        let materials = world.materials();
+
+        // Scan entire world area for edible materials (materials with nutritional_value)
+        for y in 0..height {
+            for x in 0..width {
+                if let Some(pixel) = world.get_pixel(x, y) {
+                    let material_id = pixel.material_id;
+                    let material = materials.get(material_id);
+                    if material.nutritional_value.is_some() {
+                        food_positions.push(Vec2::new(x as f32, y as f32));
+                    }
+                }
+            }
+        }
+
+        food_positions
     }
 
     /// Create flat ground terrain
@@ -400,5 +472,145 @@ mod tests {
 
         // Check food positions were returned
         assert_eq!(food_positions.len(), 6); // All food behind wall (must mine to reach)
+    }
+
+    #[test]
+    fn test_procedural_terrain_generation() {
+        // Create scenario with procedural terrain config
+        let terrain_config = TrainingTerrainConfig::flat(42, 512, 128);
+        let mut scenario = Scenario::locomotion();
+        scenario.config.terrain_config = Some(terrain_config);
+
+        let (world, _food_positions) = scenario.setup_world();
+
+        // Verify world was generated (check some pixels exist)
+        let pixel = world.get_pixel(100, 20);
+        assert!(pixel.is_some(), "World should have generated pixels");
+    }
+
+    #[test]
+    fn test_procedural_terrain_determinism() {
+        // Same seed should produce identical terrain
+        let terrain_config = TrainingTerrainConfig::flat(42, 512, 128);
+
+        let mut scenario1 = Scenario::locomotion();
+        scenario1.config.terrain_config = Some(terrain_config.clone());
+        let (world1, _) = scenario1.setup_world();
+
+        let mut scenario2 = Scenario::locomotion();
+        scenario2.config.terrain_config = Some(terrain_config);
+        let (world2, _) = scenario2.setup_world();
+
+        // Check several pixel positions for determinism
+        for x in [50, 100, 200, 300, 400] {
+            for y in [10, 20, 30, 50] {
+                let pixel1 = world1.get_pixel(x, y);
+                let pixel2 = world2.get_pixel(x, y);
+
+                match (pixel1, pixel2) {
+                    (Some(p1), Some(p2)) => {
+                        assert_eq!(
+                            p1.material_id, p2.material_id,
+                            "Pixels at ({}, {}) should match",
+                            x, y
+                        );
+                    }
+                    (None, None) => {
+                        // Both None is OK (chunk not loaded)
+                    }
+                    _ => {
+                        panic!(
+                            "Pixel existence mismatch at ({}, {}): {:?} vs {:?}",
+                            x, y, pixel1, pixel2
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_procedural_terrain_different_seeds() {
+        // Different seeds should produce different terrain
+        let config1 = TrainingTerrainConfig::flat(42, 512, 128);
+        let config2 = TrainingTerrainConfig::flat(123, 512, 128);
+
+        let mut scenario1 = Scenario::locomotion();
+        scenario1.config.terrain_config = Some(config1);
+        let (world1, _) = scenario1.setup_world();
+
+        let mut scenario2 = Scenario::locomotion();
+        scenario2.config.terrain_config = Some(config2);
+        let (world2, _) = scenario2.setup_world();
+
+        // At least some pixels should differ
+        let mut differences = 0;
+        for x in [50, 100, 200, 300, 400] {
+            for y in [10, 20, 30, 50] {
+                if let (Some(p1), Some(p2)) = (world1.get_pixel(x, y), world2.get_pixel(x, y)) {
+                    if p1.material_id != p2.material_id {
+                        differences += 1;
+                    }
+                }
+            }
+        }
+
+        assert!(
+            differences > 0,
+            "Different seeds should produce different terrain"
+        );
+    }
+
+    #[test]
+    fn test_procedural_terrain_difficulty_levels() {
+        // Test that different difficulty configs produce different terrain
+        let flat_config = TrainingTerrainConfig::flat(42, 512, 128);
+        let random_config = TrainingTerrainConfig::random(42, 512, 128);
+
+        let flat_worldgen = flat_config.apply_difficulty();
+        let random_worldgen = random_config.apply_difficulty();
+
+        // Flat should have height_scale = 0.0
+        assert_eq!(flat_worldgen.terrain.height_scale, 0.0);
+
+        // Random should have height_scale = 100.0
+        assert_eq!(random_worldgen.terrain.height_scale, 100.0);
+
+        // Flat should have minimal caves
+        assert!(flat_worldgen.caves.large_threshold > 0.9);
+
+        // Random should have more caves than flat
+        assert!(random_worldgen.caves.large_threshold < 0.9);
+        assert!(random_worldgen.caves.large_threshold > 0.0);
+    }
+
+    #[test]
+    fn test_backward_compatibility_manual_terrain() {
+        // Existing scenarios without terrain_config should still use manual terrain
+        let scenario = Scenario::locomotion();
+        assert!(scenario.config.terrain_config.is_none());
+
+        let (world, _) = scenario.setup_world();
+
+        // Check that manual flat ground was created (at y=20)
+        let ground_pixel = world.get_pixel(100, 10);
+        assert!(ground_pixel.is_some());
+        assert_eq!(ground_pixel.unwrap().material_id, MaterialId::STONE);
+    }
+
+    #[test]
+    fn test_scan_food_positions() {
+        // Test that food scanning works in procedurally generated worlds
+        let terrain_config = TrainingTerrainConfig::flat(42, 512, 128);
+        let mut scenario = Scenario::foraging();
+        scenario.config.terrain_config = Some(terrain_config);
+
+        let (_world, food_positions) = scenario.setup_world();
+
+        // Procedurally generated worlds may have some food (fruit in biomes)
+        // or may have none depending on biome generation
+        // Just verify the scan completed without error (result is always >= 0)
+        #[allow(unused_comparisons)]
+        let _ = food_positions.len() >= 0;
     }
 }

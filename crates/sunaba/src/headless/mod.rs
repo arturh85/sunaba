@@ -6,6 +6,7 @@
 //! - Fitness functions to evaluate creature performance
 //! - MAP-Elites for maintaining diverse populations
 //! - HTML report generation with animated visualizations
+//! - Procedural terrain generation for curriculum learning
 
 mod fitness;
 mod gif_capture;
@@ -13,6 +14,7 @@ mod map_elites;
 mod pixel_renderer;
 mod report;
 mod scenario;
+mod terrain_config;
 mod training_env;
 
 pub use fitness::{
@@ -23,4 +25,5 @@ pub use map_elites::{DiverseElite, Elite, MapElitesGrid};
 pub use pixel_renderer::PixelRenderer;
 pub use report::ReportGenerator;
 pub use scenario::{Scenario, ScenarioConfig};
+pub use terrain_config::{DifficultyConfig, TrainingTerrainConfig};
 pub use training_env::{TrainingConfig, TrainingEnv, TrainingStats};
