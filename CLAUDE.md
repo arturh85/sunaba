@@ -33,6 +33,7 @@ just web     # Build and serve WASM (localhost:8080)
 just watch         # Auto-build on save
 just watch-check   # Auto-compile with clippy
 just watch-test    # Auto-compile and run tests
+just watch-all     # Watch build AND tests in parallel (split tmux session)
 
 # INSTANT LAUNCH (~100ms, no Cargo overhead) - use with `just watch`
 just run           # Execute release binary directly (truly instant!)

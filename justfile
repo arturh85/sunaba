@@ -58,6 +58,14 @@ watch-check:
 watch-test:
     bacon test
 
+# Watch both build AND tests in parallel (split tmux session)
+watch-all:
+    #!/usr/bin/env bash
+    tmux new-session -d -s sunaba-watch 'bacon build' \; \
+        split-window -v 'bacon test' \; \
+        select-layout even-vertical \; \
+        attach-session -d
+
 # Direct binary execution (instant launch, ~100ms, bypasses Cargo overhead)
 # Use with `just watch` for truly instant hot-reload
 run *args='--regenerate':
