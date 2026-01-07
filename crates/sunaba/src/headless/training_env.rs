@@ -444,13 +444,12 @@ impl TrainingEnv {
                 }
 
                 // Sample position every 5 seconds
-                if step % (60 * 5) == 0 {
-                    if let Some(creature) = creature_manager.get(creature_id) {
+                if step % (60 * 5) == 0
+                    && let Some(creature) = creature_manager.get(creature_id) {
                         pos_samples.push(creature.position);
                         min_x = min_x.min(creature.position.x);
                         max_x = max_x.max(creature.position.x);
                     }
-                }
             }
 
             // Get final position
@@ -943,8 +942,8 @@ impl TrainingEnv {
         let mut max_displacement = 0.0f32;
 
         for result in &results {
-            if let Some(grid) = self.grids.get_mut(&result.archetype) {
-                if grid.try_insert(
+            if let Some(grid) = self.grids.get_mut(&result.archetype)
+                && grid.try_insert(
                     result.genome.clone(),
                     result.fitness,
                     &result.behavior,
@@ -953,7 +952,6 @@ impl TrainingEnv {
                 ) {
                     new_elites += 1;
                 }
-            }
             total_fitness += result.fitness;
             total_displacement += result.displacement;
             max_displacement = max_displacement.max(result.displacement);
@@ -1084,8 +1082,8 @@ impl TrainingEnv {
             }
 
             // Capture frame at intervals
-            if step % capture_interval == 0 {
-                if let Some(creature) = creature_manager.get(creature_id) {
+            if step % capture_interval == 0
+                && let Some(creature) = creature_manager.get(creature_id) {
                     let render_data = creature.get_render_data();
                     let creatures: Vec<_> = render_data.into_iter().collect();
 
@@ -1158,7 +1156,6 @@ impl TrainingEnv {
 
                     gif.capture_frame(&renderer);
                 }
-            }
         }
 
         // Encode GIF to bytes
@@ -1183,8 +1180,8 @@ impl TrainingEnv {
 
         // Capture best elite from each archetype
         for &archetype in &self.archetypes {
-            if let Some(grid) = self.grids.get(&archetype) {
-                if let Some(best) = grid.best_elite() {
+            if let Some(grid) = self.grids.get(&archetype)
+                && let Some(best) = grid.best_elite() {
                     let label = format!("Best {}", archetype.name());
                     pb.println(format!(
                         "  Capturing: {} (fitness: {:.2})",
@@ -1201,12 +1198,11 @@ impl TrainingEnv {
                         Err(e) => log::warn!("Failed to capture {} GIF: {}", label, e),
                     }
                 }
-            }
         }
 
         // Also capture overall champion if there are multiple archetypes
-        if self.archetypes.len() > 1 {
-            if let Some((champion_archetype, best)) = self.best_elite() {
+        if self.archetypes.len() > 1
+            && let Some((champion_archetype, best)) = self.best_elite() {
                 // Only add if not already captured (i.e., if it's different from individual archetype bests)
                 let overall_label = format!("Champion ({})", champion_archetype.name());
                 let already_have_champion = gifs.iter().any(|g| {
@@ -1231,7 +1227,6 @@ impl TrainingEnv {
                     }
                 }
             }
-        }
 
         pb.println(format!("Captured {} GIFs", gifs.len()));
         gifs

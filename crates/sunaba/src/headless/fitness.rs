@@ -89,8 +89,8 @@ impl FitnessFunction for DistanceFitness {
         spawn_pos: Vec2,
         _duration: f32,
     ) -> f32 {
-        let distance = (creature.position - spawn_pos).length();
-        distance
+        
+        (creature.position - spawn_pos).length()
     }
 
     fn name(&self) -> &str {

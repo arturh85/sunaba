@@ -74,19 +74,41 @@ just spacetime-logs-tail  # Follow logs
 
 **Screenshots (Visual Iteration):**
 ```bash
+# List available levels and UI panels
 just list-levels             # List all available demo levels with IDs
+cargo run --release --features headless -- --list-ui-panels  # List UI panels
+
+# Headless screenshots (world/materials only, no UI)
 just screenshot <level_id>   # Capture screenshot of level (1920x1080)
 just screenshot 3 800 600    # Custom resolution (800x600)
 just screenshot-all          # Capture all demo levels at once
 ```
 
-> **Visual Iteration Workflow**: When working on visual features (UI, materials, rendering), use screenshots for rapid feedback:
+> **Visual Iteration Workflow**:
+>
+> **For world/material screenshots (headless)**:
 > 1. Make changes to your code
 > 2. `just screenshot <level_id>` to capture the result
-> 3. Use the Read tool to view the screenshot: `screenshots/level_<id>.png`
+> 3. Use the Read tool to view: `screenshots/level_<id>.png`
 > 4. Iterate based on visual feedback
 >
-> **Examples**:
+> **For UI screenshots** (requires manual capture):
+> 1. Claude requests a UI screenshot: "Please capture a screenshot of the Parameters panel"
+> 2. User launches the game: `just start` or `just load`
+> 3. User opens the requested panel (see keybindings below)
+> 4. User captures screenshot with OS tool (Shift+Cmd+5 on Mac, PrintScreen on Windows/Linux)
+> 5. User saves to `screenshots/ui_<panel_name>.png`
+> 6. Claude uses Read tool to view and provide feedback
+>
+> **UI Panel Keybindings**:
+> - **P** - Toggle Parameters/settings panel
+> - **I** - Toggle Inventory panel
+> - **C** - Toggle Crafting panel
+> - **L** - Toggle Logger panel
+> - **Tab** - Toggle dock (includes worldgen editor, level selector)
+> - **Esc** - Close current panel/menu
+>
+> **Level Screenshot Examples**:
 > - `just screenshot 0` - Basic Physics Playground
 > - `just screenshot 3` - Material Showcase
 > - `just screenshot 17` - Phase 5 Materials
@@ -95,7 +117,7 @@ just screenshot-all          # Capture all demo levels at once
 >
 > **Custom scenarios**: To add custom screenshot scenarios, create new level generators in `crates/sunaba-core/src/levels/demo_levels.rs` and register them in `level_def.rs`.
 >
-> Screenshots are saved to `screenshots/` directory (gitignored). The screenshot command simulates 60 frames (1 second) before capturing to let physics settle.
+> Screenshots are saved to `screenshots/` directory (gitignored). Headless screenshots simulate 60 frames (1 second) before capturing to let physics settle.
 
 > **Note:** All commands support optional `<crate>` parameter for targeted operations.
 

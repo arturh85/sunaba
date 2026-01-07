@@ -4,11 +4,11 @@
 //! increasing environmental difficulty, improving sample efficiency and final
 //! performance.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use super::env_distribution::EnvironmentDistribution;
-use super::terrain_config::{DifficultyConfig, TrainingTerrainConfig};
+use super::terrain_config::DifficultyConfig;
 
 /// Curriculum learning configuration with progressive difficulty stages
 #[derive(Debug, Clone, Serialize, Deserialize)]

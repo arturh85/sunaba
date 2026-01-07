@@ -24,6 +24,26 @@ pub struct ScreenshotConfig {
     pub camera_center: Option<Vec2>,
 }
 
+/// UI panels that can be shown in screenshots
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiPanel {
+    /// Parameters/settings panel
+    Params,
+    /// Multiplayer status panel
+    #[cfg(feature = "multiplayer")]
+    Multiplayer,
+    /// Inventory panel
+    Inventory,
+    /// Crafting panel
+    Crafting,
+    /// Logger panel
+    Logger,
+    /// World generation editor
+    WorldGen,
+    /// Level selector
+    LevelSelector,
+}
+
 impl Default for ScreenshotConfig {
     fn default() -> Self {
         Self {
@@ -99,6 +119,36 @@ pub fn capture_level_screenshot(
 //     Ok(())
 // }
 
+/// Parse UI panel from string
+impl UiPanel {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "params" | "parameters" | "settings" => Some(UiPanel::Params),
+            #[cfg(feature = "multiplayer")]
+            "multiplayer" | "mp" | "multi" => Some(UiPanel::Multiplayer),
+            "inventory" | "inv" => Some(UiPanel::Inventory),
+            "crafting" | "craft" => Some(UiPanel::Crafting),
+            "logger" | "log" | "logs" => Some(UiPanel::Logger),
+            "worldgen" | "world-gen" | "wg" => Some(UiPanel::WorldGen),
+            "levels" | "level-selector" => Some(UiPanel::LevelSelector),
+            _ => None,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            UiPanel::Params => "Parameters",
+            #[cfg(feature = "multiplayer")]
+            UiPanel::Multiplayer => "Multiplayer",
+            UiPanel::Inventory => "Inventory",
+            UiPanel::Crafting => "Crafting",
+            UiPanel::Logger => "Logger",
+            UiPanel::WorldGen => "World Generation",
+            UiPanel::LevelSelector => "Level Selector",
+        }
+    }
+}
+
 /// List all available demo levels
 pub fn list_levels() {
     let level_manager = LevelManager::new();
@@ -110,6 +160,23 @@ pub fn list_levels() {
     }
     println!();
     println!("Total: {} levels", level_manager.levels().len());
+}
+
+/// List all available UI panels
+pub fn list_ui_panels() {
+    println!("Available UI panels:");
+    println!();
+    println!("  params          - Parameters/settings panel");
+    #[cfg(feature = "multiplayer")]
+    println!("  multiplayer     - Multiplayer status panel");
+    println!("  inventory       - Inventory panel");
+    println!("  crafting        - Crafting panel");
+    println!("  logger          - Log viewer panel");
+    println!("  worldgen        - World generation editor");
+    println!("  levels          - Level selector");
+    println!();
+    println!("Note: UI screenshots require running the full game with GPU rendering");
+    println!("Use: just screenshot-ui <level_id> <panel_name>");
 }
 
 /// Save RGBA buffer as PNG

@@ -243,12 +243,11 @@ impl MapElitesGrid {
         let actual_size = self.tournament_size.min(keys.len());
         for _ in 0..actual_size {
             let idx = rng.gen_range(0..keys.len());
-            if let Some(elite) = self.cells.get(keys[idx]) {
-                if elite.fitness > best_fitness {
+            if let Some(elite) = self.cells.get(keys[idx])
+                && elite.fitness > best_fitness {
                     best_fitness = elite.fitness;
                     best = Some(elite);
                 }
-            }
         }
 
         best
@@ -267,11 +266,10 @@ impl MapElitesGrid {
         // Try a few times with selection method, then fallback to random
         let mut attempts = 0;
         loop {
-            if let Some(parent2) = self.sample_elite() {
-                if !std::ptr::eq(parent1, parent2) {
+            if let Some(parent2) = self.sample_elite()
+                && !std::ptr::eq(parent1, parent2) {
                     return Some((parent1, parent2));
                 }
-            }
             attempts += 1;
             if attempts >= 10 {
                 break;
@@ -283,11 +281,10 @@ impl MapElitesGrid {
         let keys: Vec<_> = self.cells.keys().collect();
         for _ in 0..keys.len() {
             let idx = rng.gen_range(0..keys.len());
-            if let Some(parent2) = self.cells.get(keys[idx]) {
-                if !std::ptr::eq(parent1, parent2) {
+            if let Some(parent2) = self.cells.get(keys[idx])
+                && !std::ptr::eq(parent1, parent2) {
                     return Some((parent1, parent2));
                 }
-            }
         }
 
         None
@@ -368,8 +365,7 @@ impl MapElitesGrid {
         let center_end = (mid + 1).min(high);
         if let Some(elite) =
             self.find_elite_in_region(center_start..=center_end, center_start..=center_end)
-        {
-            if !results.iter().any(|r| {
+            && !results.iter().any(|r| {
                 (r.elite.behavior[0] - elite.behavior[0]).abs() < 0.01
                     && (r.elite.behavior[1] - elite.behavior[1]).abs() < 0.01
             }) {
@@ -378,7 +374,6 @@ impl MapElitesGrid {
                     label: "Balanced".to_string(),
                 });
             }
-        }
 
         // Strategy 4: Random alternative (any cell not already picked)
         let stats = self.stats();

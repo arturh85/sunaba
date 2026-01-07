@@ -65,6 +65,18 @@ struct Args {
     /// List available demo levels
     #[arg(long)]
     list_levels: bool,
+
+    /// Capture UI screenshot (requires full game initialization)
+    #[arg(long)]
+    screenshot_ui: bool,
+
+    /// UI panel to show in screenshot (params, inventory, crafting, logger, worldgen, levels)
+    #[arg(long)]
+    ui_panel: Option<String>,
+
+    /// List available UI panels
+    #[arg(long)]
+    list_ui_panels: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -89,8 +101,21 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Handle --screenshot flag
+    // Handle --list-ui-panels flag
+    if args.list_ui_panels {
+        sunaba::screenshot::list_ui_panels();
+        return Ok(());
+    }
+
+    // Handle --screenshot flag (headless mode)
     if let Some(level_id) = args.screenshot {
+        if args.screenshot_ui || args.ui_panel.is_some() {
+            eprintln!("Error: --screenshot-ui and --ui-panel require running without --screenshot");
+            eprintln!("For UI screenshots, use the game's built-in screenshot feature (F12)");
+            eprintln!("Or launch the game with --screenshot <level> for headless capture");
+            std::process::exit(1);
+        }
+
         let output_path = args.screenshot_output.unwrap_or_else(|| {
             std::fs::create_dir_all("screenshots").ok();
             format!("screenshots/level_{}.png", level_id)
@@ -104,6 +129,21 @@ fn main() -> anyhow::Result<()> {
         };
 
         return sunaba::screenshot::capture_level_screenshot(level_id, output_path, config);
+    }
+
+    // Handle --screenshot-ui flag
+    if args.screenshot_ui || args.ui_panel.is_some() {
+        eprintln!("UI screenshot mode is currently for documentation purposes.");
+        eprintln!("To capture UI screenshots:");
+        eprintln!("  1. Launch the game normally");
+        eprintln!("  2. Press 'P' to toggle the Parameters panel");
+        eprintln!("  3. Press 'I' to toggle the Inventory panel");
+        eprintln!("  4. Press 'C' to toggle the Crafting panel");
+        eprintln!("  5. Press 'L' to toggle the Logger panel");
+        eprintln!("  6. Press F12 to capture a screenshot (saved to screenshots/)");
+        eprintln!();
+        eprintln!("For headless screenshots without UI, use: --screenshot <level_id>");
+        std::process::exit(1);
     }
 
     // Validate flag combinations
