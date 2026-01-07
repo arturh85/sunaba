@@ -110,7 +110,26 @@ Implemented multi-environment evaluation system for creature generalization:
 - `crates/sunaba/src/headless/scenario.rs` (+5 lines) - Added setup_world_with_terrain() method
 - `crates/sunaba/src/headless/mod.rs` (+2 lines) - Module exports
 
-**Next:** Curriculum learning system
+**Sprint 4, Week 3: Curriculum Learning System - COMPLETE ✅ (January 2026)**
+
+Implemented curriculum learning for progressive difficulty training:
+- **CurriculumConfig** - Multi-stage training with configurable advancement criteria
+- **Advancement Strategies** - Automatic, fitness-based, coverage-based, and combined criteria
+- **Standard Curriculum** - 5-stage preset (Flat → Hills → Obstacles → Hazards → Random)
+- **Multiple Presets** - Standard, Fast (3 stages), Aggressive (fitness-gated)
+- **TrainingEnv Integration** - Automatic stage progression during training with logging
+- **Multi-Env Sync** - Updates environment distribution when advancing stages
+- **100% Backward Compatible** - None = no curriculum (existing behavior)
+- **Test Coverage** - 17 unit tests, comprehensive advancement logic validation
+
+**Files Created:**
+- `crates/sunaba/src/headless/curriculum.rs` (~580 lines) - Full curriculum system with tests
+
+**Files Modified:**
+- `crates/sunaba/src/headless/training_env.rs` (+90 lines) - Curriculum integration, advancement checking
+- `crates/sunaba/src/headless/mod.rs` (+1 line) - Module exports
+
+**Next:** Extended terrain sensors
 
 ---
 
@@ -435,12 +454,12 @@ pub struct TerrainSensoryInput {
 | `crates/sunaba-core/src/world/structure_placement.rs` | Placement engine + physics validation                                   | ✅ Complete |
 | `crates/sunaba-core/src/world/biome_zones.rs`         | Depth-based zone system                                                 | ✅ Complete |
 | `crates/sunaba-core/src/world/material_provider.rs`   | Context-based material selection                                        | Planned    |
-| `crates/sunaba/src/headless/terrain_gen.rs`           | Training terrain generation                                             | Planned    |
-| `crates/sunaba/src/headless/env_distribution.rs`      | Environment sampling                                                    | Planned    |
-| `crates/sunaba/src/headless/curriculum.rs`            | Curriculum learning                                                     | Planned    |
+| `crates/sunaba/src/headless/terrain_config.rs`        | Training terrain generation (config types + difficulty presets)         | ✅ Complete |
+| `crates/sunaba/src/headless/env_distribution.rs`      | Environment sampling (deterministic seeded sampling)                    | ✅ Complete |
+| `crates/sunaba/src/headless/multi_env_eval.rs`        | Multi-environment evaluation (aggregation strategies)                   | ✅ Complete |
+| `crates/sunaba/src/headless/curriculum.rs`            | Curriculum learning (progressive difficulty stages)                     | ✅ Complete |
 | `crates/sunaba/src/headless/biome_scenarios.rs`       | Biome-specific scenarios                                                | Planned    |
 | `crates/sunaba/src/headless/training_world.rs`        | Optimized training world                                                | Planned    |
-| `crates/sunaba/src/headless/multi_env_eval.rs`        | Multi-environment evaluation                                            | Planned    |
 
 ### Modified Files
 
@@ -452,8 +471,10 @@ pub struct TerrainSensoryInput {
 | `crates/sunaba/src/ui/mod.rs`                     | Add worldgen_editor module                                       | ✅ Complete |
 | `crates/sunaba/src/ui/dock.rs`                    | Add WorldGenEditor tab                                           | ✅ Complete |
 | `crates/sunaba/src/app.rs`                        | F7 shortcut, editor integration                                  | ✅ Complete |
+| `crates/sunaba/src/headless/training_env.rs`      | Multi-env + curriculum integration (~230 lines added)            | ✅ Complete |
+| `crates/sunaba/src/headless/scenario.rs`          | Added setup_world_with_terrain() method                          | ✅ Complete |
+| `crates/sunaba/src/headless/mod.rs`               | Export curriculum, multi_env_eval, env_distribution              | ✅ Complete |
 | `crates/sunaba-core/src/world/biome.rs`           | Extend with transition rules                                     | Planned    |
-| `crates/sunaba/src/headless/training_env.rs`      | Environment distribution                                         | Planned    |
 | `crates/sunaba-creature/src/sensors.rs`           | Terrain-aware sensors                                            | Planned    |
 
 ---
@@ -482,10 +503,10 @@ pub struct TerrainSensoryInput {
 5. [x] Structure template system (bridges, trees, ruins)
 
 ### Sprint 4: Training Integration (5-6 days)
-1. [ ] `TrainingTerrainConfig` + `TrainingWorld`
-2. [ ] `EnvironmentDistribution` with seeded sampling
-3. [ ] Multi-environment evaluation
-4. [ ] Curriculum learning system
+1. [x] `TrainingTerrainConfig` + `TrainingWorld`
+2. [x] `EnvironmentDistribution` with seeded sampling
+3. [x] Multi-environment evaluation
+4. [x] Curriculum learning system
 5. [ ] Extended terrain sensors
 
 ### Sprint 5: Polish & Biome Content (4-5 days)
