@@ -79,6 +79,10 @@ just screenshot-all          # Capture all demo levels at once
 just screenshot-ui inventory         # Screenshot single panel with sample data
 just screenshot-ui crafting 1280 720 # Custom resolution
 just screenshot-ui-all               # Screenshot all panels at once
+
+# Composite screenshots (world + UI panels, automated)
+just screenshot-composite 3 inventory           # Level 3 + inventory panel
+just screenshot-composite 5 inventory,crafting  # Level 5 + multiple panels (comma-separated)
 ```
 
 > **Visual Iteration Workflows**:
@@ -102,8 +106,17 @@ just screenshot-ui-all               # Screenshot all panels at once
 > 3. Panel shows realistic sample data (10+ materials, 3 tools with varying durability)
 > 4. Iterate on UI changes quickly without launching the game
 >
+> **3. Composite Screenshots (World + UI Panels)** ⭐ **IMPLEMENTED**:
+> - Use for: Testing UI panels with realistic world backgrounds
+> - Automated, no game launch required
+> - Combines CPU-rendered world (PixelRenderer) with GPU-rendered UI
+> - Supports multiple panels (comma-separated)
+> 1. `just screenshot-composite 3 inventory` to capture level 3 with inventory panel
+> 2. Use the Read tool to view: `screenshots/composite_level3_inventory.png`
+> 3. Panel shows sample data overlaid on actual game world
+> 4. Iterate on UI positioning and world interaction
+>
 > **Future Enhancements (Planned)**:
-> - ⏳ World + UI composite screenshots (world background with UI panels overlaid)
 > - ⏳ Full layout screenshots (multiple panels + HUD + overlays arranged as in-game)
 >
 > **3. Manual Full UI Screenshots** (for complex layouts):

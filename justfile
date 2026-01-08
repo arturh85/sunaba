@@ -160,6 +160,21 @@ screenshot-ui-all width="1920" height="1080":
     }
     @Write-Host "✅ All UI screenshots captured in screenshots/"
 
+# Capture composite screenshot (world + UI panels)
+# Usage: just screenshot-composite 3 inventory
+# Format: just screenshot-composite <level_id> <panel1,panel2,...>
+[unix]
+screenshot-composite level_id panels width="1920" height="1080" settle="60":
+    @mkdir -p screenshots
+    cargo run -p sunaba --bin sunaba --release --features headless -- --screenshot composite:{{level_id}}:{{panels}} --screenshot-width {{width}} --screenshot-height {{height}} --screenshot-settle {{settle}}
+    @echo "Composite screenshot captured!"
+
+[windows]
+screenshot-composite level_id panels width="1920" height="1080" settle="60":
+    @if (-not (Test-Path screenshots)) { New-Item -ItemType Directory -Path screenshots | Out-Null }
+    cargo run -p sunaba --bin sunaba --release --features headless -- --screenshot composite:{{level_id}}:{{panels}} --screenshot-width {{width}} --screenshot-height {{height}} --screenshot-settle {{settle}}
+    @Write-Host "Composite screenshot captured!"
+
 # ============================================================================
 # End Screenshot Commands
 # ============================================================================

@@ -18,6 +18,13 @@ pub enum ScreenshotScenario {
         with_sample_data: bool,
     },
 
+    /// Render world background with UI panels overlaid
+    Composite {
+        level_id: usize,
+        panels: Vec<super::UiPanel>,
+        settle_frames: usize,
+    },
+
     /// Future: Interactive scenario with setup steps
     #[allow(dead_code)]
     Interactive {
@@ -45,7 +52,7 @@ pub enum ScenarioAction {
 }
 
 impl ScreenshotScenario {
-    /// Parse a scenario string like "level:3", "ui:params", "scenario:name"
+    /// Parse a scenario string like "level:3", "ui:params", "composite:3:inventory", "scenario:name"
     pub fn parse(s: &str, settle_frames: usize) -> Result<Self> {
         if let Some(rest) = s.strip_prefix("level:") {
             let id = rest
@@ -64,6 +71,40 @@ impl ScreenshotScenario {
             });
         }
 
+        if let Some(rest) = s.strip_prefix("composite:") {
+            // Format: composite:LEVEL_ID:panel1,panel2,panel3
+            // Example: composite:3:inventory,crafting
+            let parts: Vec<&str> = rest.split(':').collect();
+            if parts.len() != 2 {
+                anyhow::bail!(
+                    "Invalid composite format: '{}'. Expected 'composite:LEVEL_ID:panel1,panel2'",
+                    s
+                );
+            }
+
+            let level_id = parts[0]
+                .parse::<usize>()
+                .map_err(|_| anyhow::anyhow!("Invalid level ID: {}", parts[0]))?;
+
+            let panel_names: Vec<&str> = parts[1].split(',').collect();
+            let mut panels = Vec::new();
+            for name in panel_names {
+                let panel = super::UiPanel::from_str(name.trim())
+                    .ok_or_else(|| anyhow::anyhow!("Unknown UI panel: {}", name))?;
+                panels.push(panel);
+            }
+
+            if panels.is_empty() {
+                anyhow::bail!("Composite screenshot requires at least one panel");
+            }
+
+            return Ok(ScreenshotScenario::Composite {
+                level_id,
+                panels,
+                settle_frames,
+            });
+        }
+
         if s.strip_prefix("scenario:").is_some() {
             anyhow::bail!("Interactive scenarios not yet implemented");
         }
@@ -74,7 +115,7 @@ impl ScreenshotScenario {
         }
 
         anyhow::bail!(
-            "Invalid scenario format: '{}'. Expected 'level:N', 'ui:panel', or just 'N'",
+            "Invalid scenario format: '{}'. Expected 'level:N', 'ui:panel', 'composite:N:panels', or just 'N'",
             s
         )
     }
@@ -84,6 +125,14 @@ impl ScreenshotScenario {
         match self {
             ScreenshotScenario::Level { id, .. } => format!("level_{}", id),
             ScreenshotScenario::UiPanel { panel, .. } => format!("ui_{}", panel.as_str()),
+            ScreenshotScenario::Composite { level_id, panels, .. } => {
+                let panel_str = panels
+                    .iter()
+                    .map(|p| p.as_str())
+                    .collect::<Vec<_>>()
+                    .join("_");
+                format!("composite_level{}_{}", level_id, panel_str)
+            }
             ScreenshotScenario::Interactive { name, .. } => format!("scenario_{}", name),
         }
     }

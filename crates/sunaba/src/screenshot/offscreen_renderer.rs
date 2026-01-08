@@ -62,7 +62,9 @@ impl OffscreenRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST, // Allow writing world pixels
             view_formats: &[],
         });
 
@@ -99,11 +101,40 @@ impl OffscreenRenderer {
         })
     }
 
+    /// Render UI to offscreen texture with optional world background
+    ///
+    /// If `world_pixels` is provided, it will be rendered as the background before UI.
+    /// The `ui_fn` closure receives an egui::Context and should render the desired UI.
+    /// Returns RGBA pixel data (width × height × 4 bytes).
+    pub fn render_ui_with_background<F>(
+        &mut self,
+        world_pixels: Option<&[u8]>,
+        ui_fn: F,
+    ) -> Result<Vec<u8>>
+    where
+        F: FnMut(&egui::Context),
+    {
+        // If world background is provided, render it first
+        if let Some(pixels) = world_pixels {
+            self.render_world_background(pixels)?;
+        }
+
+        self.render_ui_internal(ui_fn)
+    }
+
     /// Render UI to offscreen texture and return pixel data
     ///
     /// The `ui_fn` closure receives an egui::Context and should render the desired UI.
     /// Returns RGBA pixel data (width × height × 4 bytes).
     pub fn render_ui<F>(&mut self, ui_fn: F) -> Result<Vec<u8>>
+    where
+        F: FnMut(&egui::Context),
+    {
+        self.render_ui_internal(ui_fn)
+    }
+
+    /// Internal UI rendering implementation
+    fn render_ui_internal<F>(&mut self, mut ui_fn: F) -> Result<Vec<u8>>
     where
         F: FnMut(&egui::Context),
     {
@@ -240,5 +271,44 @@ impl OffscreenRenderer {
         }
 
         Ok(pixels)
+    }
+
+    /// Render world background pixels to the offscreen texture
+    ///
+    /// This method copies CPU-rendered world pixels directly to the GPU texture
+    /// as a background layer before UI rendering.
+    fn render_world_background(&mut self, pixels: &[u8]) -> Result<()> {
+        // Validate pixel buffer size
+        let expected_size = (self.width * self.height * 4) as usize;
+        if pixels.len() != expected_size {
+            anyhow::bail!(
+                "World pixel buffer size mismatch: expected {} bytes, got {}",
+                expected_size,
+                pixels.len()
+            );
+        }
+
+        // Write pixels directly to texture
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.width * 4),
+                rows_per_image: Some(self.height),
+            },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        Ok(())
     }
 }

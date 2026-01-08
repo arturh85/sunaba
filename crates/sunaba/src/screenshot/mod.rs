@@ -219,6 +219,86 @@ pub fn list_ui_panels() {
     println!("Use: just screenshot-ui <level_id> <panel_name>");
 }
 
+/// Capture a composite screenshot (world + UI)
+#[cfg(not(target_arch = "wasm32"))]
+fn capture_composite_screenshot(
+    level_id: usize,
+    panels: Vec<UiPanel>,
+    output_path: impl AsRef<Path>,
+    width: usize,
+    height: usize,
+    settle_frames: usize,
+) -> Result<()> {
+    log::info!("Capturing composite screenshot: level {} with {:?}", level_id, panels);
+    log::info!("  Resolution: {}x{}", width, height);
+
+    // 1. Render world background using CPU PixelRenderer
+    let mut world = World::new(true);
+    let materials = Materials::new();
+    let mut level_manager = LevelManager::new();
+
+    if level_id >= level_manager.levels().len() {
+        anyhow::bail!(
+            "Invalid level ID: {} (max: {})",
+            level_id,
+            level_manager.levels().len() - 1
+        );
+    }
+
+    level_manager.load_level(level_id, &mut world);
+
+    // Let physics settle
+    log::info!("Simulating {} frames...", settle_frames);
+    let mut stats = NoopStats;
+    let mut rng = thread_rng();
+    for _ in 0..settle_frames {
+        world.update(1.0 / 60.0, &mut stats, &mut rng, false);
+    }
+
+    // Render world to pixel buffer
+    let camera_center = Vec2::new(0.0, 32.0);
+    let mut pixel_renderer = PixelRenderer::new(width, height);
+    pixel_renderer.render(&world, &materials, camera_center, &[]);
+    let world_pixels = &pixel_renderer.buffer;
+
+    // 2. Create sample data for UI
+    let player = sample_data::create_sample_player_with_inventory();
+    let tool_registry = ToolRegistry::default();
+    let recipe_registry = RecipeRegistry::new();
+
+    // 3. Render UI on top of world using OffscreenRenderer
+    let mut renderer = OffscreenRenderer::new(width as u32, height as u32)?;
+
+    let pixels = renderer.render_ui_with_background(Some(world_pixels), |ctx| {
+        // Apply theme
+        ctx.style_mut(|style| {
+            style.visuals.window_fill = egui::Color32::from_rgba_unmultiplied(45, 45, 48, 240); // Semi-transparent
+        });
+
+        // Render each panel in sequence (for now, just render all in right side panel)
+        // TODO: Support multiple panels with proper layout
+        if let Some(panel) = panels.first() {
+            render_panel_fullscreen(
+                *panel,
+                ctx,
+                &materials,
+                &player,
+                &tool_registry,
+                &recipe_registry,
+                &level_manager,
+                &format!("Level {}", level_id),
+            );
+        }
+    })?;
+
+    // 4. Save as PNG
+    log::info!("Saving to {:?}...", output_path.as_ref());
+    save_buffer_as_png(&pixels, width, height, output_path)?;
+
+    log::info!("Composite screenshot saved successfully!");
+    Ok(())
+}
+
 /// Capture a screenshot of a UI panel
 #[cfg(not(target_arch = "wasm32"))]
 fn capture_ui_panel_screenshot(
@@ -537,6 +617,18 @@ pub fn capture_scenario(
             height,
             background_color,
             with_sample_data,
+        ),
+        ScreenshotScenario::Composite {
+            level_id,
+            panels,
+            settle_frames,
+        } => capture_composite_screenshot(
+            level_id,
+            panels,
+            output_path,
+            width,
+            height,
+            settle_frames,
         ),
         ScreenshotScenario::Interactive { ref name, .. } => {
             anyhow::bail!("Interactive scenarios not yet implemented: {}", name)
