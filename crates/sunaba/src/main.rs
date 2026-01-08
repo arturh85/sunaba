@@ -202,9 +202,9 @@ fn main() -> anyhow::Result<()> {
     #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
     if args.test_scenario_stdin {
         use anyhow::Context;
+        use std::io::Read;
         use sunaba::scenario::{ScenarioDefinition, ScenarioExecutor, ScenarioExecutorConfig};
         use sunaba_core::world::World;
-        use std::io::Read;
 
         log::info!("Reading scenario from stdin...");
 
@@ -213,8 +213,8 @@ fn main() -> anyhow::Result<()> {
         std::io::stdin().read_to_string(&mut stdin_content)?;
 
         // Parse RON from stdin
-        let scenario: ScenarioDefinition = ron::from_str(&stdin_content)
-            .context("Failed to parse RON scenario from stdin")?;
+        let scenario: ScenarioDefinition =
+            ron::from_str(&stdin_content).context("Failed to parse RON scenario from stdin")?;
 
         log::info!("Loaded scenario: {}", scenario.name);
 

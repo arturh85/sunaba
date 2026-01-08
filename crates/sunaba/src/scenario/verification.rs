@@ -27,11 +27,7 @@ pub enum VerificationCondition {
     },
 
     /// Assert material exists at specific pixel
-    MaterialAt {
-        x: i32,
-        y: i32,
-        expected: u16,
-    },
+    MaterialAt { x: i32, y: i32, expected: u16 },
 
     /// Assert no material in region (all air)
     RegionEmpty { region: Region },

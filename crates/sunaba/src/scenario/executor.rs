@@ -3,8 +3,8 @@
 use anyhow::{Context, Result, bail};
 use glam::Vec2;
 use rand::thread_rng;
-use sunaba_core::entity::inventory::ItemStack;
 use sunaba_core::entity::InputState;
+use sunaba_core::entity::inventory::ItemStack;
 use sunaba_core::simulation::MaterialId;
 use sunaba_core::world::{NoopStats, World};
 
@@ -260,7 +260,10 @@ impl ScenarioExecutor {
                         ItemStack::Material { material_id, count } => {
                             let remaining = world.player.inventory.add_item(*material_id, *count);
                             if remaining == 0 {
-                                self.log(&format!("  Gave {} {:?} to inventory", count, material_id));
+                                self.log(&format!(
+                                    "  Gave {} {:?} to inventory",
+                                    count, material_id
+                                ));
                             } else {
                                 bail!("Failed to add all items - {} remaining", remaining);
                             }
