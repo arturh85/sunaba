@@ -32,9 +32,17 @@ use std::path::Path;
 
 use crate::headless::PixelRenderer;
 use crate::levels::LevelManager;
-use crate::simulation::Materials;
+use crate::simulation::{MaterialId, Materials};
 use crate::world::{NoopStats, World};
 use rand::thread_rng;
+
+use offscreen_renderer::OffscreenRenderer;
+
+// Imports for UI screenshot capture
+#[cfg(not(target_arch = "wasm32"))]
+use crate::config::GameConfig;
+use crate::entity::{crafting::RecipeRegistry, player::Player, tools::ToolRegistry};
+use crate::ui::{dock::DockTab, ui_state::UiState};
 
 pub use scenario::{ScreenshotScenario, list_all_scenarios};
 
@@ -212,6 +220,108 @@ pub fn list_ui_panels() {
     println!("Use: just screenshot-ui <level_id> <panel_name>");
 }
 
+/// Capture a screenshot of a UI panel
+#[cfg(not(target_arch = "wasm32"))]
+fn capture_ui_panel_screenshot(
+    panel: UiPanel,
+    output_path: impl AsRef<Path>,
+    width: usize,
+    height: usize,
+    background_color: [u8; 4],
+    with_sample_data: bool,
+) -> Result<()> {
+    log::info!("Capturing UI screenshot: {}", panel.name());
+    log::info!("  Resolution: {}x{}", width, height);
+    log::info!("  Sample data: {}", with_sample_data);
+
+    // 1. Initialize offscreen GPU renderer
+    let mut renderer = OffscreenRenderer::new(width as u32, height as u32)?;
+
+    // 2. Create sample data
+    let materials = Materials::new();
+    let player = if with_sample_data {
+        sample_data::create_sample_player_with_inventory()
+    } else {
+        Player::new(Vec2::ZERO)
+    };
+    let tool_registry = ToolRegistry::default();
+    let recipe_registry = RecipeRegistry::new();
+    let level_manager = LevelManager::new();
+    let mut config = GameConfig::default();
+
+    // 3. Initialize UI state
+    let mut ui_state = UiState::new(&config);
+
+    // 4. Open the target panel
+    match panel {
+        UiPanel::Params => ui_state.dock.open_tab(DockTab::Parameters),
+        UiPanel::Inventory => ui_state.dock.open_tab(DockTab::Inventory),
+        UiPanel::Crafting => ui_state.dock.open_tab(DockTab::Crafting),
+        UiPanel::Logger => ui_state.dock.open_tab(DockTab::Logger),
+        UiPanel::WorldGen => {
+            // WorldGen editor is not in dock, it's a separate window
+            // We'll need to render it differently
+            anyhow::bail!("WorldGen screenshot not yet implemented")
+        }
+        UiPanel::LevelSelector => ui_state.dock.open_tab(DockTab::LevelSelector),
+        #[cfg(feature = "multiplayer")]
+        UiPanel::Multiplayer => ui_state.dock.open_tab(DockTab::MultiplayerStats),
+    }
+
+    // 5. Render UI to offscreen texture
+    let pixels = renderer.render_ui(|ctx| {
+        // Set background color
+        let bg_color = egui::Color32::from_rgba_unmultiplied(
+            background_color[0],
+            background_color[1],
+            background_color[2],
+            background_color[3],
+        );
+        ctx.style_mut(|style| {
+            style.visuals.panel_fill = bg_color;
+            style.visuals.window_fill = bg_color;
+        });
+
+        // Render the UI state (only the open panel will render)
+        ui_state.render(
+            ctx,
+            egui::pos2(0.0, 0.0), // cursor pos (not used)
+            MaterialId::AIR,
+            &materials,
+            "Screenshot Mode",
+            false,
+            &level_manager,
+            &player,
+            &tool_registry,
+            &recipe_registry,
+            &mut config,
+            false, // no game over
+            #[cfg(feature = "multiplayer")]
+            None, // no multiplayer manager
+        );
+    })?;
+
+    // 6. Save as PNG
+    log::info!("Saving to {:?}...", output_path.as_ref());
+    save_buffer_as_png(&pixels, width, height, output_path)?;
+
+    log::info!("Screenshot saved successfully!");
+    Ok(())
+}
+
+/// Capture a screenshot of a UI panel (WASM stub - not supported)
+#[cfg(target_arch = "wasm32")]
+fn capture_ui_panel_screenshot(
+    _panel: UiPanel,
+    _output_path: impl AsRef<Path>,
+    _width: usize,
+    _height: usize,
+    _background_color: [u8; 4],
+    _with_sample_data: bool,
+) -> Result<()> {
+    anyhow::bail!("UI screenshot capture is not supported on WASM")
+}
+
 /// Capture a screenshot based on a scenario
 pub fn capture_scenario(
     scenario: ScreenshotScenario,
@@ -229,24 +339,18 @@ pub fn capture_scenario(
             };
             capture_level_screenshot(id, output_path, config)
         }
-        ScreenshotScenario::UiPanel { panel, .. } => {
-            // TODO: Implement GPU offscreen rendering for UI panels
-            eprintln!("UI panel screenshot requested: {}", panel.name());
-            eprintln!();
-            eprintln!("⚠️  UI screenshot capture is not yet implemented.");
-            eprintln!();
-            eprintln!("The infrastructure for scenario-based screenshots has been");
-            eprintln!("created, but GPU offscreen rendering is still in progress.");
-            eprintln!();
-            eprintln!("For now, capture UI screenshots manually:");
-            eprintln!("  1. Launch the game: just start");
-            eprintln!("  2. Open the {} panel", panel.name());
-            eprintln!("  3. Use OS screenshot tool (Shift+Cmd+5 on Mac, PrintScreen on Windows)");
-            eprintln!("  4. Save to: {:?}", output_path.as_ref());
-            eprintln!();
-            eprintln!("Coming soon: Automated GPU rendering for UI panels!");
-            anyhow::bail!("UI screenshot capture not yet implemented")
-        }
+        ScreenshotScenario::UiPanel {
+            panel,
+            background_color,
+            with_sample_data,
+        } => capture_ui_panel_screenshot(
+            panel,
+            output_path,
+            width,
+            height,
+            background_color,
+            with_sample_data,
+        ),
         ScreenshotScenario::Interactive { ref name, .. } => {
             anyhow::bail!("Interactive scenarios not yet implemented: {}", name)
         }

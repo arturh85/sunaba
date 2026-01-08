@@ -29,10 +29,8 @@ just web     # Build and serve WASM (localhost:8080)
 
 **Fast Iteration (Hot Reload):**
 ```bash
-# Auto-rebuild on file changes (watches build + tests in parallel)
-just watch         # Auto-build release AND run tests (interleaved output)
-just watch-check   # Auto-compile with clippy only
-just watch-test    # Auto-compile and run tests only
+# Auto-rebuild on file changes (single bacon instance, switch modes with keys)
+just watch         # Auto-compile (press 't' to compile tests, 'b' for release, 'q' to quit)
 
 # INSTANT LAUNCH (~100ms, no Cargo overhead) - use with `just watch`
 just run           # Execute release binary directly (truly instant!)
@@ -44,11 +42,12 @@ just load          # cargo run (load existing world)
 ```
 
 > **Instant Launch Workflow** ⭐ **RECOMMENDED**:
-> 1. **Terminal 1**: Run `just watch` - auto-builds release AND runs tests on every save (output is interleaved)
-> 2. **Terminal 2**: Edit code in your editor, bacon compiles automatically
-> 3. **Terminal 3**: **`just run`** - **Truly instant launch (~100ms)**!
->
-> **Note:** `just watch` runs both build and test watchers in parallel. Output is interleaved but both complete independently. For focused workflows, use `just watch-check` (clippy only) or `just watch-test` (tests only).
+> 1. **Terminal 1**: Run `just watch` - auto-compiles on every save
+>    - **Build mode (`b`)**: For manual testing - compiles release binary, then use `just run` to test
+>    - **Test mode (`t`)**: For Claude working - compiles test binaries (no spam), Claude runs `just test` to verify
+>    - Press `q` to quit
+> 2. **Terminal 2**: Edit code in your editor (or Claude edits), bacon compiles automatically
+> 3. **Terminal 3**: **`just run`** (manual testing) or **`just test`** (Claude verification)
 >
 > **Why instant?** `just run` executes `./target/release/sunaba --regenerate` directly, bypassing Cargo's file lock and dependency checks (1-2s overhead). With `just watch` pre-building artifacts, you get true hot-reload feel!
 

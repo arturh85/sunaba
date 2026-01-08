@@ -46,34 +46,10 @@ load:
 # Fast Development Commands (Auto-Rebuild + Instant Launch)
 # ============================================================================
 
-# Auto-rebuild on file changes (builds release + runs tests in parallel)
-[unix]
+# Auto-rebuild on file changes (defaults to build, switch with keys)
+# Keyboard shortcuts: b=build, t=test, q=quit
 watch:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    trap 'kill $(jobs -p) 2>/dev/null; exit' INT TERM
-    echo "🔄 Starting dual watchers: build + tests"
-    echo "   Build output and test output will be interleaved below"
-    echo "   Press Ctrl+C to stop both watchers"
-    echo ""
-    bacon build & bacon test & wait
-
-[windows]
-watch:
-    @Write-Host "🔄 Starting dual watchers: build + tests"
-    @Write-Host "   Press Ctrl+C to stop both watchers"
-    @Write-Host ""
-    Start-Job -ScriptBlock { bacon build } | Out-Null
-    Start-Job -ScriptBlock { bacon test } | Out-Null
-    Get-Job | Wait-Job | Receive-Job
-
-# Auto-rebuild with clippy only
-watch-check:
-    bacon clippy
-
-# Auto-rebuild and run tests only
-watch-test:
-    bacon test
+    bacon
 
 # Direct binary execution (instant launch, ~100ms, bypasses Cargo overhead)
 # Use with `just watch` for truly instant hot-reload

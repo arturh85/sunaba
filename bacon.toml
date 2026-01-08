@@ -17,47 +17,13 @@ command = [
 ]
 need_stdout = false
 
-# Check job: fast type-checking without building
-[jobs.check]
-command = ["cargo", "check", "--workspace", "--color", "always"]
-need_stdout = false
-
-# Clippy job: fast linting
-[jobs.clippy]
-command = ["cargo", "clippy", "--workspace", "--color", "always"]
-need_stdout = false
-
-# Test job: run tests on changes
+# Test job: compile test binaries (no execution, for fast 'cargo test')
 [jobs.test]
-command = ["cargo", "test", "--workspace", "--color", "always"]
-need_stdout = true
-
-# Build-tests job: compile all test binaries (no spam, switch to this when working on tests)
-[jobs.build-tests]
 command = ["cargo", "test", "--workspace", "--no-run", "--color", "always"]
 need_stdout = false
 
-# Run job: compile and run release
-[jobs.run]
-command = [
-    "cargo", "run",
-    "-p", "sunaba",
-    "--bin", "sunaba",
-    "--release",
-    "--no-default-features",
-    "--features", "native",
-    "--color", "always"
-]
-need_stdout = true
-
 # Keyboard shortcuts
 [keybindings]
-# Build/run modes
 b = "job:build"           # Build release (default)
-r = "job:run"             # Build and run release
-T = "job:build-tests"     # Build test binaries (for faster 'just test')
-# Check/lint modes
-c = "job:check"           # Type-check only
-l = "job:clippy"          # Lint with clippy
 t = "job:test"            # Run tests
 q = "quit"
