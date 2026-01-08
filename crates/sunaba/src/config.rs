@@ -96,7 +96,7 @@ pub struct WorldConfig {
 impl Default for WorldConfig {
     fn default() -> Self {
         Self {
-            autosave_interval_secs: 60,
+            autosave_interval_secs: 180, // 3 minutes (configurable via config.ron)
             active_chunk_radius: 3,
         }
     }
@@ -360,7 +360,7 @@ mod tests {
         let config = GameConfig::default();
         assert_eq!(config.camera.zoom_speed, 1.1);
         assert_eq!(config.player.move_speed, 200.0);
-        assert_eq!(config.world.autosave_interval_secs, 60);
+        assert_eq!(config.world.autosave_interval_secs, 180); // 3 minutes
         assert_eq!(config.ui.window_width, 1280);
         assert!(config.debug.debug_placement);
     }

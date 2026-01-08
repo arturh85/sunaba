@@ -371,7 +371,11 @@ impl VerificationCondition {
 
             VerificationCondition::InventorySlot { slot, expected } => {
                 // get_slot returns Option<&Option<ItemStack>>, flatten to Option<ItemStack>
-                let actual = world.player.inventory.get_slot(*slot).and_then(|opt| opt.clone());
+                let actual = world
+                    .player
+                    .inventory
+                    .get_slot(*slot)
+                    .and_then(|opt| opt.clone());
 
                 // Compare Option<ItemStack>
                 let passed = actual == *expected;

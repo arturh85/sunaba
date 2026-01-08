@@ -697,12 +697,20 @@ impl App {
         #[cfg(target_arch = "wasm32")]
         let autosave_interval = Duration::from_secs(60);
 
+        // Trigger incremental auto-save in persistent world mode
         if matches!(self.game_mode, GameMode::PersistentWorld)
             && self.last_autosave.elapsed() >= autosave_interval
+            && !self.world.is_save_in_progress()
         {
-            self.world.save_all_dirty_chunks(); // Save chunks AND player data
+            // Start incremental save (spreads across multiple frames)
+            self.world.start_incremental_save();
             self.last_autosave = Instant::now();
-            log::info!("Auto-saved world and player data");
+        }
+
+        // Process incremental saves every frame (if in progress)
+        if matches!(self.game_mode, GameMode::PersistentWorld) && self.world.is_save_in_progress() {
+            self.world.process_incremental_saves();
+            // Note: completion is logged by process_incremental_saves
         }
 
         // Process SpacetimeDB messages (native multiplayer only)
@@ -1923,6 +1931,12 @@ impl ApplicationHandler for App {
 
         match event {
             WindowEvent::CloseRequested => {
+                // Save before exit (background thread will flush on drop)
+                if matches!(self.game_mode, GameMode::PersistentWorld) {
+                    log::info!("[SAVE] Saving world before exit...");
+                    self.world.save_all_dirty_chunks();
+                    // Note: background thread will finish pending saves when ChunkPersistence is dropped
+                }
                 event_loop.exit();
             }
             WindowEvent::Resized(size) => {

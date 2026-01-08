@@ -61,9 +61,6 @@ impl ScenarioDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scenario::actions::MouseButton;
-    use crate::scenario::verification::Region;
-    use sunaba_core::simulation::MaterialId;
 
     #[test]
     fn test_scenario_serialization() {

@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use glam::IVec2;
+use std::collections::VecDeque;
 
 use super::chunk_manager::ChunkManager;
 use super::generation::WorldGenerator;
@@ -13,6 +14,12 @@ use crate::entity::player::Player;
 pub struct PersistenceSystem {
     pub(super) persistence: Option<ChunkPersistence>,
     pub(super) generator: WorldGenerator,
+
+    /// Queue of chunk positions pending incremental save
+    pending_saves: VecDeque<IVec2>,
+
+    /// Whether an incremental save is currently in progress
+    save_in_progress: bool,
 }
 
 impl PersistenceSystem {
@@ -21,6 +28,8 @@ impl PersistenceSystem {
         Self {
             persistence: None,
             generator: WorldGenerator::new(seed),
+            pending_saves: VecDeque::new(),
+            save_in_progress: false,
         }
     }
 
@@ -255,22 +264,15 @@ impl PersistenceSystem {
 
             for chunk in chunk_manager.chunks.values_mut() {
                 if chunk.dirty {
-                    let non_air = chunk.count_non_air();
-                    log::debug!(
-                        "[SAVE] Saving dirty chunk ({}, {}) - {} non-air pixels",
-                        chunk.x,
-                        chunk.y,
-                        non_air
-                    );
-
                     if let Err(e) = persistence.save_chunk(chunk) {
                         log::error!(
-                            "[SAVE] Failed to save chunk ({}, {}): {}",
+                            "[SAVE] Failed to enqueue chunk ({}, {}): {}",
                             chunk.x,
                             chunk.y,
                             e
                         );
                     } else {
+                        // Clear dirty flag immediately after enqueue (chunk will be saved in background)
                         chunk.dirty = false;
                         saved_count += 1;
                     }
@@ -281,6 +283,85 @@ impl PersistenceSystem {
                 log::info!("[SAVE] Auto-saved {} dirty chunks", saved_count);
             }
         }
+    }
+
+    /// Start incremental save - populate queue with dirty chunk positions
+    pub fn start_incremental_save(&mut self, chunk_manager: &ChunkManager) {
+        // Clear previous queue and start fresh
+        self.pending_saves.clear();
+
+        // Collect all dirty chunk positions
+        for (pos, chunk) in &chunk_manager.chunks {
+            if chunk.dirty {
+                self.pending_saves.push_back(*pos);
+            }
+        }
+
+        self.save_in_progress = true;
+
+        if !self.pending_saves.is_empty() {
+            log::info!(
+                "[SAVE] Starting incremental save of {} dirty chunks",
+                self.pending_saves.len()
+            );
+        }
+    }
+
+    /// Process incremental saves - save N chunks per frame
+    /// Returns true when save is complete, false if more chunks remain
+    pub fn process_incremental_saves(&mut self, chunk_manager: &mut ChunkManager) -> bool {
+        const CHUNKS_PER_FRAME: usize = 10;
+
+        if !self.save_in_progress {
+            return true; // No save in progress
+        }
+
+        if let Some(persistence) = &self.persistence {
+            let mut saved_this_frame = 0;
+
+            while saved_this_frame < CHUNKS_PER_FRAME {
+                if let Some(pos) = self.pending_saves.pop_front() {
+                    // Get chunk and save it
+                    if let Some(chunk) = chunk_manager.chunks.get_mut(&pos)
+                        && chunk.dirty
+                    {
+                        if let Err(e) = persistence.save_chunk(chunk) {
+                            log::error!(
+                                "[SAVE] Failed to enqueue chunk ({}, {}): {}",
+                                pos.x,
+                                pos.y,
+                                e
+                            );
+                        } else {
+                            chunk.dirty = false;
+                            saved_this_frame += 1;
+                        }
+                    }
+                } else {
+                    // Queue is empty, save complete
+                    self.save_in_progress = false;
+                    log::info!("[SAVE] Incremental save completed");
+                    return true;
+                }
+            }
+
+            // More chunks to save
+            log::debug!(
+                "[SAVE] Saved {} chunks, {} remaining",
+                saved_this_frame,
+                self.pending_saves.len()
+            );
+            false
+        } else {
+            // No persistence available
+            self.save_in_progress = false;
+            true
+        }
+    }
+
+    /// Check if an incremental save is currently in progress
+    pub fn is_save_in_progress(&self) -> bool {
+        self.save_in_progress
     }
 
     /// Save all chunks and metadata (manual save)

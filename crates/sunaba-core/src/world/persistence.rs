@@ -8,6 +8,18 @@ use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc::{self, Receiver, Sender};
+#[cfg(not(target_arch = "wasm32"))]
+use std::thread;
+
+/// Request to save a chunk in background thread
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone)]
+pub struct SaveRequest {
+    pub chunk: Chunk,
+}
+
 /// World metadata stored in world.meta file (RON format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldMetadata {
@@ -62,8 +74,64 @@ impl Default for WorldMetadata {
 pub struct ChunkPersistence {
     #[cfg(not(target_arch = "wasm32"))]
     world_dir: PathBuf,
+
+    #[cfg(not(target_arch = "wasm32"))]
+    save_tx: Option<Sender<SaveRequest>>,
+
     #[cfg(target_arch = "wasm32")]
     _phantom: (),
+}
+
+/// Background thread that processes save requests
+#[cfg(not(target_arch = "wasm32"))]
+fn save_worker_thread(rx: Receiver<SaveRequest>, world_dir: PathBuf) {
+    log::info!("[SAVE] Background save worker thread started");
+
+    for req in rx {
+        let path = world_dir
+            .join("chunks")
+            .join(format!("chunk_{}_{}.bin", req.chunk.x, req.chunk.y));
+
+        match save_chunk_sync(&req.chunk, &path) {
+            Ok(compressed_size) => {
+                log::debug!(
+                    "[SAVE] Background save: Chunk ({}, {}) saved ({} bytes)",
+                    req.chunk.x,
+                    req.chunk.y,
+                    compressed_size
+                );
+            }
+            Err(e) => {
+                log::error!(
+                    "[SAVE] Failed to save chunk ({}, {}): {}",
+                    req.chunk.x,
+                    req.chunk.y,
+                    e
+                );
+            }
+        }
+    }
+
+    log::info!("[SAVE] Background save worker thread exiting");
+}
+
+/// Synchronous chunk save (used by background thread)
+#[cfg(not(target_arch = "wasm32"))]
+fn save_chunk_sync(chunk: &Chunk, path: &Path) -> Result<usize> {
+    // Serialize with bincode
+    let serialized = bincode_next::serde::encode_to_vec(chunk, bincode_next::config::standard())
+        .context("Failed to serialize chunk")?;
+
+    // Compress with lz4
+    let compressed = lz4_flex::compress_prepend_size(&serialized);
+    let compressed_size = compressed.len();
+
+    // Atomic write: write to temp file, then rename
+    let temp_path = path.with_extension("tmp");
+    std::fs::write(&temp_path, &compressed).context("Failed to write chunk temp file")?;
+    std::fs::rename(temp_path, path).context("Failed to rename chunk file")?;
+
+    Ok(compressed_size)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -76,43 +144,57 @@ impl ChunkPersistence {
         std::fs::create_dir_all(world_dir.join("chunks"))
             .context("Failed to create world directories")?;
 
-        Ok(Self { world_dir })
+        // Start background save thread
+        let (save_tx, save_rx) = mpsc::channel();
+        let world_dir_clone = world_dir.clone();
+
+        thread::Builder::new()
+            .name("chunk-saver".to_string())
+            .spawn(move || {
+                save_worker_thread(save_rx, world_dir_clone);
+            })
+            .context("Failed to spawn background save thread")?;
+
+        log::info!("[SAVE] Background save thread started");
+
+        Ok(Self {
+            world_dir,
+            save_tx: Some(save_tx),
+        })
     }
 
-    /// Save a chunk to disk with compression
+    /// Enqueue chunk save in background thread (non-blocking)
     pub fn save_chunk(&self, chunk: &Chunk) -> Result<()> {
+        if let Some(tx) = &self.save_tx {
+            // Clone chunk data for background thread
+            let req = SaveRequest {
+                chunk: chunk.clone(),
+            };
+
+            tx.send(req)
+                .context("Failed to send save request to background thread")?;
+
+            log::debug!(
+                "[SAVE] Enqueued chunk ({}, {}) for background save",
+                chunk.x,
+                chunk.y
+            );
+        } else {
+            log::warn!(
+                "[SAVE] No background thread available, skipping chunk ({}, {})",
+                chunk.x,
+                chunk.y
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Save chunk synchronously (blocking, for tests)
+    #[cfg(test)]
+    pub fn save_chunk_blocking(&self, chunk: &Chunk) -> Result<()> {
         let path = self.chunk_path(chunk.x, chunk.y);
-        let non_air = chunk.count_non_air();
-
-        log::info!(
-            "[SAVE] Chunk ({}, {}) - {} non-air pixels - {:?}",
-            chunk.x,
-            chunk.y,
-            non_air,
-            path
-        );
-
-        // Serialize with bincode
-        let serialized =
-            bincode_next::serde::encode_to_vec(chunk, bincode_next::config::standard())
-                .context("Failed to serialize chunk")?;
-
-        // Compress with lz4
-        let compressed = lz4_flex::compress_prepend_size(&serialized);
-        let compressed_size = compressed.len();
-
-        // Atomic write: write to temp file, then rename
-        let temp_path = path.with_extension("tmp");
-        std::fs::write(&temp_path, compressed).context("Failed to write chunk temp file")?;
-        std::fs::rename(temp_path, &path).context("Failed to rename chunk file")?;
-
-        log::info!(
-            "[SAVE] Chunk ({}, {}) saved successfully ({} bytes compressed)",
-            chunk.x,
-            chunk.y,
-            compressed_size
-        );
-
+        save_chunk_sync(chunk, &path).context("Failed to save chunk synchronously")?;
         Ok(())
     }
 
@@ -289,8 +371,8 @@ mod tests {
         chunk.set_material(10, 20, 42);
         chunk.set_material(30, 40, 99);
 
-        // Save it
-        persistence.save_chunk(&chunk)?;
+        // Save it (use blocking save for tests)
+        persistence.save_chunk_blocking(&chunk)?;
 
         // Load it back
         let generator = WorldGenerator::new(0);

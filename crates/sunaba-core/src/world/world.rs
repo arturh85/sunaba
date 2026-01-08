@@ -1174,6 +1174,24 @@ impl World {
         );
     }
 
+    /// Start incremental save - populate queue with dirty chunks
+    pub fn start_incremental_save(&mut self) {
+        self.persistence_system
+            .start_incremental_save(&self.chunk_manager);
+    }
+
+    /// Process incremental saves - save N chunks per frame
+    /// Returns true when save is complete, false if more chunks remain
+    pub fn process_incremental_saves(&mut self) -> bool {
+        self.persistence_system
+            .process_incremental_saves(&mut self.chunk_manager)
+    }
+
+    /// Check if an incremental save is currently in progress
+    pub fn is_save_in_progress(&self) -> bool {
+        self.persistence_system.is_save_in_progress()
+    }
+
     /// Check all pixels in a chunk for state changes based on temperature
     fn check_chunk_state_changes(
         &mut self,

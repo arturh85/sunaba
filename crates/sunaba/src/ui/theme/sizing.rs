@@ -83,9 +83,9 @@ impl ResponsiveSizing {
 
     /// Check if window is in large size category
     ///
-    /// Large: > 1920x1080
+    /// Large: >= 1920x1080
     pub fn is_large(&self) -> bool {
-        self.window_width > 1920.0 && self.window_height > 1080.0
+        self.window_width >= 1920.0 && self.window_height >= 1080.0
     }
 
     /// Get the base scale factor
@@ -171,8 +171,9 @@ mod tests {
     #[test]
     fn test_grid_snapping() {
         let grid = GridSpacing::pixelart();
-        assert_eq!(grid.snap(12.0), 8.0); // Rounds down
-        assert_eq!(grid.snap(18.0), 16.0); // Rounds up
+        assert_eq!(grid.snap(12.0), 16.0); // Rounds to nearest (12/8=1.5→2→16)
+        assert_eq!(grid.snap(10.0), 8.0); // Rounds down (10/8=1.25→1→8)
+        assert_eq!(grid.snap(18.0), 16.0); // Rounds down (18/8=2.25→2→16)
         assert_eq!(grid.snap(16.0), 16.0); // Exact
     }
 }
