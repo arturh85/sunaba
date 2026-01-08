@@ -263,6 +263,14 @@ impl App {
         #[allow(unused_mut)] // Mut needed for multiplayer feature
         let mut ui_state = UiState::default();
 
+        // Apply UI theme (catppuccin MOCHA + game-specific colors)
+        ui_state.theme.apply_to_ctx(&egui_ctx);
+        log::info!("Applied UI theme: {}", ui_state.theme.variant.as_str());
+
+        // Load custom fonts (Fira Sans/Code family)
+        crate::ui::theme::FontSystem::load_for_variant(&egui_ctx, ui_state.theme.variant);
+        log::info!("Loaded fonts for theme variant");
+
         // Initialize multiplayer manager (starts disconnected)
         #[cfg(feature = "multiplayer")]
         let multiplayer_manager = {

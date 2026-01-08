@@ -111,6 +111,8 @@ pub struct UiConfig {
     pub window_height: u32,
     /// Show debug stats on startup
     pub show_stats_on_start: bool,
+    /// UI theme variant ("cozy_alchemist", "dark_cavern", "pixel_adventure")
+    pub theme: String,
 }
 
 impl Default for UiConfig {
@@ -119,6 +121,7 @@ impl Default for UiConfig {
             window_width: 1280,
             window_height: 720,
             show_stats_on_start: false,
+            theme: "cozy_alchemist".to_string(),
         }
     }
 }

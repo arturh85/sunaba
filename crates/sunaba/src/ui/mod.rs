@@ -12,6 +12,7 @@ pub mod logger_panel;
 pub mod multiplayer_panel;
 pub mod params_panel;
 pub mod stats;
+pub mod theme;
 pub mod toasts;
 pub mod tooltip;
 pub mod ui_state;

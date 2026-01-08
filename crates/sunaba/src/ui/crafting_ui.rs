@@ -3,7 +3,8 @@
 use crate::entity::crafting::{Recipe, RecipeOutput, RecipeRegistry};
 use crate::entity::inventory::Inventory;
 use crate::simulation::Materials;
-use egui::{Color32, RichText};
+use crate::ui::theme::GameColors;
+use egui::RichText;
 
 pub struct CraftingUI {
     pub visible: bool,
@@ -26,6 +27,7 @@ impl CraftingUI {
         inventory: &mut Inventory,
         recipes: &RecipeRegistry,
         materials: &Materials,
+        theme_colors: &GameColors,
     ) -> Option<RecipeOutput> {
         if !self.visible {
             return None;
@@ -43,7 +45,7 @@ impl CraftingUI {
                 let craftable = recipes.get_craftable(inventory);
 
                 if craftable.is_empty() {
-                    ui.colored_label(Color32::GRAY, "No craftable recipes");
+                    ui.colored_label(theme_colors.text_disabled, "No craftable recipes");
                     ui.label("Gather more materials to unlock recipes.");
                     return;
                 }
@@ -51,7 +53,14 @@ impl CraftingUI {
                 // Render each craftable recipe
                 for recipe in &craftable {
                     ui.separator();
-                    crafted_output = Self::render_recipe(ui, recipe, inventory, recipes, materials);
+                    crafted_output = Self::render_recipe(
+                        ui,
+                        recipe,
+                        inventory,
+                        recipes,
+                        materials,
+                        theme_colors,
+                    );
                     if crafted_output.is_some() {
                         break; // Only craft one item per frame
                     }
@@ -74,6 +83,7 @@ impl CraftingUI {
         inventory: &mut Inventory,
         recipes: &RecipeRegistry,
         materials: &Materials,
+        theme_colors: &GameColors,
     ) -> Option<RecipeOutput> {
         let mut crafted = None;
 
@@ -96,7 +106,7 @@ impl CraftingUI {
 
         // Show inputs
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Requires:").color(Color32::GRAY));
+            ui.label(RichText::new("Requires:").color(theme_colors.text_disabled));
 
             for (i, (mat_id, count)) in recipe.inputs.iter().enumerate() {
                 if i > 0 {
@@ -108,9 +118,9 @@ impl CraftingUI {
 
                 let text = format!("{} x{}", mat_name, count);
                 let color = if has_count >= *count {
-                    Color32::from_rgb(100, 255, 100) // Green if we have enough
+                    theme_colors.craftable
                 } else {
-                    Color32::from_rgb(255, 100, 100) // Red if not enough
+                    theme_colors.not_craftable
                 };
 
                 ui.colored_label(color, text);
@@ -119,15 +129,12 @@ impl CraftingUI {
 
         // Show output
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Produces:").color(Color32::GRAY));
+            ui.label(RichText::new("Produces:").color(theme_colors.text_disabled));
 
             match &recipe.output {
                 RecipeOutput::Material { id, count } => {
                     let mat_name = &materials.get(*id).name;
-                    ui.colored_label(
-                        Color32::from_rgb(150, 200, 255),
-                        format!("{} x{}", mat_name, count),
-                    );
+                    ui.colored_label(theme_colors.info, format!("{} x{}", mat_name, count));
                 }
                 RecipeOutput::Tool {
                     tool_id,
@@ -140,7 +147,7 @@ impl CraftingUI {
                         _ => "Unknown Tool",
                     };
                     ui.colored_label(
-                        Color32::from_rgb(255, 215, 0), // Gold color for tools
+                        theme_colors.tool_legendary,
                         format!("{} ({}⚒)", tool_name, durability),
                     );
                 }

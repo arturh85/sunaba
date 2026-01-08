@@ -530,6 +530,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
+name = "catppuccin-egui"
+version = "5.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "119005543bcd5cc74f76323d40801bb29baf1b062e84f86eb42fb0b2a3fe61e9"
+dependencies = [
+ "egui",
+]
+
+[[package]]
 name = "cauchy"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4367,6 +4376,7 @@ dependencies = [
  "bincode-next",
  "bitflags 2.10.0",
  "bytemuck",
+ "catppuccin-egui",
  "chrono",
  "clap",
  "config",

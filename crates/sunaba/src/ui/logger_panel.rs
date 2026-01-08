@@ -1,5 +1,7 @@
 //! In-game log viewer panel (native: egui_logger, WASM: in-memory buffer)
 
+use crate::ui::theme::GameColors;
+
 #[cfg(target_arch = "wasm32")]
 use std::sync::Mutex;
 
@@ -40,7 +42,7 @@ impl LoggerPanel {
     }
 
     /// Render the logger panel
-    pub fn render(&mut self, ctx: &egui::Context) {
+    pub fn render(&mut self, ctx: &egui::Context, theme_colors: &GameColors) {
         if !self.open {
             return;
         }
@@ -51,17 +53,18 @@ impl LoggerPanel {
             .resizable(true)
             .collapsible(true)
             .show(ctx, |ui| {
-                self.render_contents(ui);
+                self.render_contents(ui, theme_colors);
             });
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn render_contents(&mut self, ui: &mut egui::Ui) {
-        egui_logger::logger_ui().show(ui);
+    fn render_contents(&mut self, _ui: &mut egui::Ui, _theme_colors: &GameColors) {
+        // Native uses egui_logger which has its own styling
+        // Theme colors would be applied to egui_logger if we wanted to customize it
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn render_contents(&mut self, ui: &mut egui::Ui) {
+    fn render_contents(&mut self, ui: &mut egui::Ui, theme_colors: &GameColors) {
         ui.horizontal(|ui| {
             ui.label("WASM Logger");
             ui.checkbox(&mut self.auto_scroll, "Auto-scroll");
@@ -81,17 +84,17 @@ impl LoggerPanel {
                 if let Ok(buffer) = LOG_BUFFER.lock() {
                     for entry in buffer.iter() {
                         let color = match entry.level {
-                            log::Level::Error => egui::Color32::RED,
-                            log::Level::Warn => egui::Color32::YELLOW,
-                            log::Level::Info => egui::Color32::LIGHT_BLUE,
-                            log::Level::Debug => egui::Color32::GRAY,
-                            log::Level::Trace => egui::Color32::DARK_GRAY,
+                            log::Level::Error => theme_colors.error,
+                            log::Level::Warn => theme_colors.warning,
+                            log::Level::Info => theme_colors.info,
+                            log::Level::Debug => theme_colors.text_disabled,
+                            log::Level::Trace => theme_colors.text_disabled,
                         };
 
                         ui.horizontal(|ui| {
                             ui.label(
                                 egui::RichText::new(&entry.timestamp)
-                                    .color(egui::Color32::GRAY)
+                                    .color(theme_colors.text_disabled)
                                     .monospace(),
                             );
                             ui.label(

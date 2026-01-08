@@ -46,6 +46,7 @@ egui-wgpu = "0.33.3"
 egui_dock = "0.18"
 egui-notify = "0.21"
 egui_plot = "0.34.0"
+catppuccin-egui = { version = "5.7.0", default-features = false, features = ["egui33"] }
 
 # Math
 glam = { version = "0.25", features = ["serde"] }

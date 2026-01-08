@@ -3,6 +3,7 @@
 use super::dock::{DockManager, DockTab};
 use super::hud::Hud;
 use super::stats::{SimulationStats, StatsCollector};
+use super::theme::SunabaTheme;
 use super::toasts::ToastManager;
 use super::tooltip::TooltipState;
 use super::worldgen_editor::WorldGenEditor;
@@ -59,6 +60,9 @@ pub struct UiState {
 
     /// World generation editor (F7)
     pub worldgen_editor: WorldGenEditor,
+
+    /// UI theme (catppuccin + game-specific colors)
+    pub theme: SunabaTheme,
 }
 
 impl UiState {
@@ -66,8 +70,14 @@ impl UiState {
     const STATS_UPDATE_INTERVAL_MS: u128 = 250;
 
     #[cfg(not(target_arch = "wasm32"))]
-    #[allow(unused_variables)]
     pub fn new(config: &GameConfig) -> Self {
+        // Load theme from config
+        let theme = match config.ui.theme.as_str() {
+            "dark_cavern" => SunabaTheme::dark_cavern(),
+            "pixel_adventure" => SunabaTheme::pixel_adventure(),
+            _ => SunabaTheme::cozy_alchemist(), // Default fallback
+        };
+
         Self {
             stats: StatsCollector::new(),
             display_stats: SimulationStats::default(),
@@ -83,6 +93,7 @@ impl UiState {
             multiplayer_panel: super::multiplayer_panel::MultiplayerPanelState::new(),
             game_over_panel: super::game_over_panel::GameOverPanelState::new(),
             worldgen_editor: WorldGenEditor::new(),
+            theme,
         }
     }
 
@@ -102,6 +113,7 @@ impl UiState {
             multiplayer_panel: super::multiplayer_panel::MultiplayerPanelState::new(),
             game_over_panel: super::game_over_panel::GameOverPanelState::new(),
             worldgen_editor: WorldGenEditor::new(),
+            theme: SunabaTheme::default(), // Cozy Alchemist theme
         }
     }
 
@@ -209,6 +221,7 @@ impl UiState {
             selected_material,
             &material_names,
             tool_registry,
+            &self.theme.game,
         );
         self.toasts.render(ctx);
         self.tooltip.render_creature(ctx, Some(cursor_screen_pos));
@@ -219,7 +232,7 @@ impl UiState {
 
         // Render game over screen (if player is dead)
         if show_game_over {
-            self.game_over_panel.render(ctx);
+            self.game_over_panel.render(ctx, &self.theme.game);
         }
     }
 
@@ -277,6 +290,7 @@ impl UiState {
             selected_material,
             &material_names,
             tool_registry,
+            &self.theme.game,
         );
         self.toasts.render(ctx);
         self.tooltip.render_creature(ctx, Some(cursor_screen_pos));
@@ -287,7 +301,7 @@ impl UiState {
 
         // Render game over screen (if player is dead)
         if show_game_over {
-            self.game_over_panel.render(ctx);
+            self.game_over_panel.render(ctx, &self.theme.game);
         }
     }
 

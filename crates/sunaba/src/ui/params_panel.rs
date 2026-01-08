@@ -143,6 +143,52 @@ impl ParamsPanel {
 
             ui.add_space(4.0);
 
+            // UI Theme
+            ui.collapsing("UI Theme", |ui| {
+                ui.label("Select theme (requires restart to fully apply):");
+
+                let current_theme = &self.config.ui.theme;
+                let mut new_theme = current_theme.clone();
+
+                egui::ComboBox::from_label("Theme Variant")
+                    .selected_text(match current_theme.as_str() {
+                        "cozy_alchemist" => "Cozy Alchemist (Default)",
+                        "dark_cavern" => "Dark Cavern",
+                        "pixel_adventure" => "Pixel Adventure",
+                        _ => "Unknown",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut new_theme,
+                            "cozy_alchemist".to_string(),
+                            "Cozy Alchemist (Default)",
+                        );
+                        ui.selectable_value(
+                            &mut new_theme,
+                            "dark_cavern".to_string(),
+                            "Dark Cavern",
+                        );
+                        ui.selectable_value(
+                            &mut new_theme,
+                            "pixel_adventure".to_string(),
+                            "Pixel Adventure",
+                        );
+                    });
+
+                if new_theme != *current_theme {
+                    self.config.ui.theme = new_theme;
+                    self.changed = true;
+                }
+
+                ui.add_space(8.0);
+                ui.label("Theme descriptions:");
+                ui.label("• Cozy Alchemist: Warm, inviting with smooth rounded corners");
+                ui.label("• Dark Cavern: High-contrast underground mining aesthetic");
+                ui.label("• Pixel Adventure: Retro NES/SNES-inspired pixelart theme");
+            });
+
+            ui.add_space(4.0);
+
             // Rendering / Post-Processing
             ui.collapsing("Rendering", |ui| {
                 self.changed |= ui

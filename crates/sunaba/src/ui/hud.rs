@@ -1,5 +1,6 @@
 use crate::entity::player::Player;
 use crate::entity::tools::ToolRegistry;
+use crate::ui::theme::GameColors;
 use egui::{Color32, Context, CornerRadius, Rect, Stroke, StrokeKind, Vec2};
 
 /// Heads-up display showing player health, hunger, and hotbar
@@ -25,6 +26,7 @@ impl Hud {
         selected_material: u16,
         material_names: &[&str],
         tool_registry: &ToolRegistry,
+        theme_colors: &GameColors,
     ) {
         if !self.show {
             return;
@@ -41,17 +43,17 @@ impl Hud {
                     "Health",
                     player.health.current,
                     player.health.max,
-                    Color32::from_rgb(220, 50, 50), // Red
-                    Color32::from_rgb(100, 20, 20), // Dark red background
+                    theme_colors.health_full,
+                    theme_colors.health_bg,
                 );
 
                 ui.add_space(5.0);
 
                 // Hunger bar
                 let hunger_color = if player.is_starving() {
-                    Color32::from_rgb(255, 100, 0) // Orange when starving
+                    theme_colors.hunger_starving
                 } else {
-                    Color32::from_rgb(200, 150, 50) // Yellow-brown
+                    theme_colors.hunger_full
                 };
 
                 self.render_stat_bar(
@@ -60,7 +62,7 @@ impl Hud {
                     player.hunger.current,
                     player.hunger.max,
                     hunger_color,
-                    Color32::from_rgb(80, 60, 20),
+                    theme_colors.hunger_bg,
                 );
 
                 ui.add_space(5.0);

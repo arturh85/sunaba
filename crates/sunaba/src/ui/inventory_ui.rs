@@ -1,4 +1,5 @@
 use crate::entity::player::Player;
+use crate::ui::theme::GameColors;
 use egui::{Color32, Context, CornerRadius, Pos2, Rect, Stroke, StrokeKind, Vec2};
 
 /// Full inventory panel (opened with I key)
@@ -17,7 +18,13 @@ impl InventoryPanel {
     }
 
     /// Render the inventory panel
-    pub fn render(&mut self, ctx: &Context, player: &Player, material_names: &[&str]) {
+    pub fn render(
+        &mut self,
+        ctx: &Context,
+        player: &Player,
+        material_names: &[&str],
+        theme_colors: &GameColors,
+    ) {
         if !self.open {
             return;
         }
@@ -73,6 +80,7 @@ impl InventoryPanel {
                                         slot_index,
                                         material_names,
                                         SLOT_SIZE,
+                                        theme_colors,
                                     );
                                     ui.add_space(SPACING);
                                 }
@@ -94,6 +102,7 @@ impl InventoryPanel {
         slot_index: usize,
         material_names: &[&str],
         size: f32,
+        theme_colors: &GameColors,
     ) {
         let slot_data = player.inventory.get_slot(slot_index);
 
@@ -106,9 +115,9 @@ impl InventoryPanel {
 
         // Background color
         let bg_color = if is_selected {
-            Color32::from_rgb(80, 80, 120) // Highlighted if selected
+            theme_colors.selection_bg
         } else {
-            Color32::from_rgb(40, 40, 40)
+            theme_colors.slot_empty
         };
 
         painter.rect_filled(rect, CornerRadius::same(4), bg_color);
@@ -155,7 +164,7 @@ impl InventoryPanel {
                         egui::Align2::CENTER_CENTER,
                         &count_text,
                         egui::FontId::proportional(12.0),
-                        Color32::from_rgb(200, 200, 200),
+                        theme_colors.text_secondary,
                     );
                 }
                 ItemStack::Tool {
@@ -163,7 +172,7 @@ impl InventoryPanel {
                     durability,
                 } => {
                     // Tool indicator color (golden for tools)
-                    let tool_color = Color32::from_rgb(255, 215, 0); // Gold color
+                    let tool_color = theme_colors.tool_legendary;
                     let color_bar = Rect::from_min_size(rect.min, Vec2::new(size, 8.0));
                     painter.rect_filled(color_bar, CornerRadius::same(2), tool_color);
 
@@ -194,7 +203,7 @@ impl InventoryPanel {
                         egui::Align2::CENTER_CENTER,
                         &durability_text,
                         egui::FontId::proportional(12.0),
-                        Color32::from_rgb(150, 255, 150), // Light green
+                        theme_colors.tool_durability_full,
                     );
                 }
             }
@@ -207,16 +216,16 @@ impl InventoryPanel {
                     egui::Align2::CENTER_CENTER,
                     &slot_text,
                     egui::FontId::proportional(16.0),
-                    Color32::from_rgb(80, 80, 80),
+                    theme_colors.text_disabled,
                 );
             }
         }
 
         // Border
         let border_color = if is_selected {
-            Color32::from_rgb(150, 150, 200)
+            theme_colors.selection_border
         } else {
-            Color32::from_rgb(80, 80, 80)
+            theme_colors.border_normal
         };
 
         let border_width = if is_selected { 2.0 } else { 1.0 };

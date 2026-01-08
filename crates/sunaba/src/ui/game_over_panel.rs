@@ -1,5 +1,6 @@
 //! Game over screen shown when player dies
 
+use crate::ui::theme::GameColors;
 use egui::{Align2, Color32, CornerRadius, Vec2};
 
 /// Game over panel state
@@ -21,7 +22,7 @@ impl GameOverPanelState {
     }
 
     /// Render game over overlay (fullscreen)
-    pub fn render(&mut self, ctx: &egui::Context) {
+    pub fn render(&mut self, ctx: &egui::Context, theme_colors: &GameColors) {
         // Fullscreen dark overlay
         egui::Area::new("game_over_overlay".into())
             .fixed_pos(egui::pos2(0.0, 0.0))
@@ -47,7 +48,7 @@ impl GameOverPanelState {
                             // "You Died" message
                             ui.heading(
                                 egui::RichText::new("YOU DIED")
-                                    .color(Color32::from_rgb(200, 50, 50))
+                                    .color(theme_colors.error)
                                     .size(48.0),
                             );
 
