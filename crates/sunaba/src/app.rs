@@ -1095,11 +1095,17 @@ impl App {
         // Collect world stats
         self.ui_state.stats.collect_world_stats(&self.world);
 
-        // Update tooltip with world data
+        // Update tooltip with world data (hide when mouse is over UI)
+        let mouse_pos_for_tooltip = if self.egui_ctx.wants_pointer_input() {
+            None // Mouse is over UI, suppress tooltip
+        } else {
+            self.input_state.mouse_world_pos
+        };
+
         self.ui_state.update_tooltip(
             &self.world,
             self.world.materials(),
-            self.input_state.mouse_world_pos,
+            mouse_pos_for_tooltip,
             self.renderer.is_light_overlay_enabled(),
         );
 
