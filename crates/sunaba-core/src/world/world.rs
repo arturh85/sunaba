@@ -521,31 +521,33 @@ impl World {
     }
 
     /// Update mining progress (called each frame)
-    /// Returns true if mining completed this frame
-    pub fn update_mining(&mut self, delta_time: f32) -> bool {
+    /// Returns Some(material_id) if mining completed this frame, None otherwise
+    pub fn update_mining(&mut self, delta_time: f32) -> Option<u16> {
         if let Some((x, y)) = MiningSystem::update_mining(&mut self.player, delta_time) {
-            self.complete_mining(x, y);
-            true
+            self.complete_mining(x, y)
         } else {
-            false
+            None
         }
     }
 
     /// Complete mining at the specified position
-    fn complete_mining(&mut self, world_x: i32, world_y: i32) {
-        if MiningSystem::complete_mining(
+    /// Returns Some(material_id) if successfully mined, None otherwise
+    fn complete_mining(&mut self, world_x: i32, world_y: i32) -> Option<u16> {
+        let mined_material = MiningSystem::complete_mining(
             &mut self.player,
             &self.chunk_manager,
             world_x,
             world_y,
             &self.materials,
             &self.tool_registry,
-        )
-        .is_some()
-        {
+        );
+
+        if mined_material.is_some() {
             // Successfully mined - remove the pixel
             self.set_pixel(world_x, world_y, MaterialId::AIR);
         }
+
+        mined_material
     }
 
     /// DEBUG: Instantly mine all materials in a circle around position

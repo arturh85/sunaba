@@ -1,6 +1,7 @@
 //! Animated camera with smooth follow and zoom.
 
 use glam::Vec2;
+use rand::Rng;
 
 use super::tweens::{AnimatedValue, EaseType};
 
@@ -17,6 +18,14 @@ pub struct AnimatedCamera {
     /// This is expressed as the time constant in seconds.
     /// A value of 0.1 means the camera reaches ~63% of the way to target in 0.1s.
     follow_smoothness: f32,
+    /// Screen shake offset (pixels in world coordinates)
+    shake_offset: Vec2,
+    /// Current shake intensity (decays over time)
+    shake_intensity: f32,
+    /// Shake duration remaining (seconds)
+    shake_duration: f32,
+    /// Total shake duration (for calculating decay)
+    shake_total_duration: f32,
 }
 
 impl AnimatedCamera {
@@ -26,6 +35,10 @@ impl AnimatedCamera {
             position: AnimatedValue::new([initial_pos.x, initial_pos.y]),
             zoom: AnimatedValue::new(initial_zoom),
             follow_smoothness: 0.1, // Reach ~63% in 0.1 seconds
+            shake_offset: Vec2::ZERO,
+            shake_intensity: 0.0,
+            shake_duration: 0.0,
+            shake_total_duration: 0.0,
         }
     }
 
@@ -82,24 +95,63 @@ impl AnimatedCamera {
         self.zoom_to(target, duration);
     }
 
-    /// Update all animations.
+    /// Add screen shake effect.
+    ///
+    /// # Arguments
+    /// * `intensity` - Shake intensity in pixels (world coordinates)
+    /// * `duration` - Duration in seconds
+    pub fn add_shake(&mut self, intensity: f32, duration: f32) {
+        // If already shaking, add to existing shake (stacks with diminishing returns)
+        self.shake_intensity = (self.shake_intensity + intensity).min(intensity * 2.0);
+        self.shake_duration = duration.max(self.shake_duration);
+        self.shake_total_duration = duration;
+    }
+
+    /// Update all animations and screen shake.
     ///
     /// # Arguments
     /// * `dt` - Delta time in seconds
     pub fn update(&mut self, dt: f32) {
         self.position.update(dt);
         self.zoom.update(dt);
+
+        // Update screen shake
+        if self.shake_duration > 0.0 {
+            self.shake_duration -= dt;
+
+            // Exponential decay of shake intensity
+            let decay_factor = (self.shake_duration / self.shake_total_duration).max(0.0);
+            let current_intensity = self.shake_intensity * decay_factor;
+
+            // Random offset in circular pattern (only if intensity > 0)
+            if current_intensity > 0.01 {
+                let mut rng = rand::thread_rng();
+                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                let radius = rng.gen_range(0.0..current_intensity);
+
+                self.shake_offset = Vec2::new(
+                    radius * angle.cos(),
+                    radius * angle.sin(),
+                );
+            } else {
+                self.shake_offset = Vec2::ZERO;
+            }
+        } else {
+            self.shake_offset = Vec2::ZERO;
+            self.shake_intensity = 0.0;
+        }
     }
 
-    /// Get the current camera position.
+    /// Get the current camera position (with shake applied).
     pub fn position(&self) -> Vec2 {
         let pos = self.position.value();
-        Vec2::new(pos[0], pos[1])
+        Vec2::new(pos[0], pos[1]) + self.shake_offset
     }
 
-    /// Get the current camera position as array (for GPU uniform).
+    /// Get the current camera position as array (for GPU uniform, with shake applied).
     pub fn position_array(&self) -> [f32; 2] {
-        self.position.value()
+        let pos = self.position();
+        [pos.x, pos.y]
     }
 
     /// Get the current zoom level.
@@ -159,5 +211,43 @@ mod tests {
 
         camera.update(0.0);
         assert!((camera.zoom() - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_camera_shake() {
+        let mut camera = AnimatedCamera::new(Vec2::ZERO, 1.0);
+        let initial_pos = camera.position();
+
+        // Add shake
+        camera.add_shake(10.0, 0.2);
+        camera.update(0.016); // One frame at 60fps
+
+        // Position should have shake offset
+        let shaken_pos = camera.position();
+        assert!((shaken_pos - initial_pos).length() > 0.0);
+        assert!((shaken_pos - initial_pos).length() <= 10.0);
+
+        // After duration expires, shake should stop
+        camera.update(0.2);
+        let final_pos = camera.position();
+        assert_eq!(final_pos, initial_pos);
+    }
+
+    #[test]
+    fn test_camera_shake_decay() {
+        let mut camera = AnimatedCamera::new(Vec2::ZERO, 1.0);
+
+        // Add shake with 0.2s duration
+        camera.add_shake(10.0, 0.2);
+
+        // Update halfway through
+        camera.update(0.1);
+        let _midpoint_offset = camera.shake_offset.length();
+
+        // Update to end
+        camera.update(0.1);
+
+        // Shake should have decayed to zero
+        assert_eq!(camera.shake_offset, Vec2::ZERO);
     }
 }

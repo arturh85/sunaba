@@ -128,6 +128,8 @@ pub struct App {
     /// On WASM, this is a no-op but we keep it for API consistency.
     #[allow(dead_code)]
     hot_reload: crate::hot_reload::HotReloadManager,
+    /// Track previous grounded state for landing detection
+    was_grounded: bool,
 
     /// Multiplayer connection manager (handles state, client, reconnection)
     #[cfg(feature = "multiplayer")]
@@ -327,6 +329,7 @@ impl App {
             #[cfg(not(target_arch = "wasm32"))]
             config,
             hot_reload: crate::hot_reload::HotReloadManager::new(),
+            was_grounded: false,
             #[cfg(feature = "multiplayer")]
             multiplayer_manager,
             #[cfg(feature = "multiplayer")]
@@ -929,6 +932,18 @@ impl App {
             // Normal game loop - update player from input
             self.world.update_player(&self.input_state, 1.0 / 60.0);
 
+            // Detect hard landings and add camera shake
+            let is_grounded = self.world.player.grounded;
+            let fall_velocity = self.world.player.velocity.y;
+            if !self.was_grounded && is_grounded && fall_velocity < -100.0 {
+                // Player just landed with significant downward velocity
+                // Shake intensity scales with fall speed
+                let shake_intensity = (fall_velocity.abs() / 100.0).min(5.0);
+                let shake_duration = 0.1 + (shake_intensity * 0.05);
+                self.renderer.add_camera_shake(shake_intensity, shake_duration);
+            }
+            self.was_grounded = is_grounded;
+
             // Send player position to server (multiplayer only)
             #[cfg(feature = "multiplayer")]
             {
@@ -1005,6 +1020,9 @@ impl App {
                     player_pos,
                     [140, 130, 120, 255], // Generic dusty color
                 );
+
+                // Add small screen shake while mining (throttled per frame)
+                self.renderer.add_camera_shake(0.5, 0.05);
             }
 
             // Placing material from inventory with left mouse button

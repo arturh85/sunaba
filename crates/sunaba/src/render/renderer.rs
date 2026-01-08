@@ -2129,6 +2129,15 @@ impl Renderer {
         self.animated_camera.set_zoom_immediate(zoom);
     }
 
+    /// Add screen shake effect to the camera.
+    ///
+    /// # Arguments
+    /// * `intensity` - Shake intensity in pixels (world coordinates)
+    /// * `duration` - Duration in seconds
+    pub fn add_camera_shake(&mut self, intensity: f32, duration: f32) {
+        self.animated_camera.add_shake(intensity, duration);
+    }
+
     /// Get window size
     pub fn window_size(&self) -> (u32, u32) {
         (self.size.width, self.size.height)
