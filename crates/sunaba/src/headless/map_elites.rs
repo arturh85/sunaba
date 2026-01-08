@@ -417,6 +417,76 @@ impl MapElitesGrid {
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
     }
+
+    /// Get density heatmap showing count of elites per cell
+    ///
+    /// Returns a 2D grid where each cell contains the count of elites (0 or 1 in MAP-Elites).
+    /// This is used for behavior diversity visualizations.
+    pub fn as_density_heatmap(&self) -> Vec<Vec<usize>> {
+        let mut heatmap = vec![vec![0; self.resolution]; self.resolution];
+
+        for ((x, y), _) in &self.cells {
+            if *x < self.resolution && *y < self.resolution {
+                heatmap[*y][*x] = 1;
+            }
+        }
+
+        heatmap
+    }
+
+    /// Calculate Shannon entropy of elite distribution
+    ///
+    /// Higher entropy indicates more diverse elite distribution across the grid.
+    /// Returns 0 for empty grid, max value of ln(total_cells) for perfectly uniform distribution.
+    pub fn calculate_entropy(&self) -> f32 {
+        if self.cells.is_empty() {
+            return 0.0;
+        }
+
+        let total_cells = self.total_cells() as f32;
+        let occupied = self.cell_count() as f32;
+
+        // Probability of occupied vs empty cells
+        let p_occupied = occupied / total_cells;
+        let p_empty = (total_cells - occupied) / total_cells;
+
+        let mut entropy = 0.0;
+        if p_occupied > 0.0 {
+            entropy -= p_occupied * p_occupied.ln();
+        }
+        if p_empty > 0.0 {
+            entropy -= p_empty * p_empty.ln();
+        }
+
+        entropy
+    }
+
+    /// Calculate variance in cell densities
+    ///
+    /// In MAP-Elites, each cell has at most one elite (density of 0 or 1).
+    /// This measures how spread out the elites are across the grid.
+    /// Returns 0 for empty grid or fully occupied grid.
+    pub fn calculate_density_variance(&self) -> f32 {
+        if self.cells.is_empty() {
+            return 0.0;
+        }
+
+        let total_cells = self.total_cells();
+        let occupied = self.cell_count();
+
+        // Mean density
+        let mean_density = occupied as f32 / total_cells as f32;
+
+        // Variance: sum of squared differences from mean
+        // Occupied cells: (1 - mean)^2 * occupied_count
+        // Empty cells: (0 - mean)^2 * empty_count
+        let empty = total_cells - occupied;
+        let variance = ((1.0 - mean_density).powi(2) * occupied as f32
+            + mean_density.powi(2) * empty as f32)
+            / total_cells as f32;
+
+        variance
+    }
 }
 
 /// A diverse elite with a descriptive label
@@ -581,5 +651,140 @@ mod tests {
         assert_eq!(stats.cell_count, 2);
         assert!((stats.best_fitness - 20.0).abs() < 0.01);
         assert!((stats.avg_fitness - 15.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_density_heatmap() {
+        let mut grid = MapElitesGrid::default_grid();
+
+        // Insert elites in different cells
+        grid.try_insert(
+            make_test_genome(),
+            10.0,
+            &make_behavior(1.0, 1.0),
+            0,
+            CreatureArchetype::default(),
+        );
+        grid.try_insert(
+            make_test_genome(),
+            20.0,
+            &make_behavior(8.0, 8.0),
+            0,
+            CreatureArchetype::default(),
+        );
+
+        let heatmap = grid.as_density_heatmap();
+        assert_eq!(heatmap.len(), 10); // 10x10 grid
+        assert_eq!(heatmap[0].len(), 10);
+
+        // Count total occupied cells
+        let total_occupied: usize = heatmap.iter().map(|row| row.iter().sum::<usize>()).sum();
+        assert_eq!(total_occupied, 2); // 2 elites inserted
+
+        // Check that most cells are empty
+        let total_empty: usize = heatmap
+            .iter()
+            .map(|row| row.iter().filter(|&&c| c == 0).count())
+            .sum();
+        assert_eq!(total_empty, 98); // 100 - 2 = 98 empty cells
+    }
+
+    #[test]
+    fn test_entropy_empty_grid() {
+        let grid = MapElitesGrid::default_grid();
+        let entropy = grid.calculate_entropy();
+        assert_eq!(entropy, 0.0);
+    }
+
+    #[test]
+    fn test_entropy_single_elite() {
+        let mut grid = MapElitesGrid::default_grid();
+        grid.try_insert(
+            make_test_genome(),
+            10.0,
+            &make_behavior(5.0, 5.0),
+            0,
+            CreatureArchetype::default(),
+        );
+
+        let entropy = grid.calculate_entropy();
+        // With 1 occupied cell out of 100, entropy should be low but positive
+        assert!(entropy > 0.0);
+        assert!(entropy < 1.0);
+    }
+
+    #[test]
+    fn test_entropy_multiple_elites() {
+        let mut grid = MapElitesGrid::default_grid();
+
+        // Fill some cells (will result in ~25 occupied cells)
+        for i in 0..5 {
+            for j in 0..10 {
+                let x = (i as f32) * 2.0 + 1.0;
+                let y = (j as f32) + 0.5;
+                grid.try_insert(
+                    make_test_genome(),
+                    10.0,
+                    &make_behavior(x, y),
+                    0,
+                    CreatureArchetype::default(),
+                );
+            }
+        }
+
+        let entropy = grid.calculate_entropy();
+        // With 25 occupied and 75 empty cells, entropy should be around 0.56
+        // p_occ = 0.25, p_empty = 0.75
+        // H = -0.25*ln(0.25) - 0.75*ln(0.75) = 0.562
+        assert!((entropy - 0.562).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_density_variance_empty() {
+        let grid = MapElitesGrid::default_grid();
+        let variance = grid.calculate_density_variance();
+        assert_eq!(variance, 0.0);
+    }
+
+    #[test]
+    fn test_density_variance_single_elite() {
+        let mut grid = MapElitesGrid::default_grid();
+        grid.try_insert(
+            make_test_genome(),
+            10.0,
+            &make_behavior(5.0, 5.0),
+            0,
+            CreatureArchetype::default(),
+        );
+
+        let variance = grid.calculate_density_variance();
+        // With 1 occupied and 99 empty cells, variance should be close to mean * (1 - mean)
+        // mean = 1/100 = 0.01, variance ≈ 0.01 * 0.99 = 0.0099
+        assert!((variance - 0.0099).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_density_variance_multiple_elites() {
+        let mut grid = MapElitesGrid::default_grid();
+
+        // Fill some cells (will result in ~25 occupied cells)
+        for i in 0..5 {
+            for j in 0..10 {
+                let x = (i as f32) * 2.0 + 1.0;
+                let y = (j as f32) + 0.5;
+                grid.try_insert(
+                    make_test_genome(),
+                    10.0,
+                    &make_behavior(x, y),
+                    0,
+                    CreatureArchetype::default(),
+                );
+            }
+        }
+
+        let variance = grid.calculate_density_variance();
+        // With 25 occupied and 75 empty cells:
+        // mean = 0.25, variance = 0.25 * 0.75 = 0.1875
+        assert!((variance - 0.1875).abs() < 0.01);
     }
 }

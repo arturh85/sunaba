@@ -87,8 +87,158 @@ impl ReportGenerator {
         let json_path = format!("{}/summary.json", self.output_dir);
         fs::write(&json_path, json).context("Failed to write summary JSON")?;
 
+        // Generate CSV export if we have stats
+        if !stats_history.is_empty() {
+            let csv = self.generate_csv_export(stats_history);
+            let csv_path = format!("{}/training_data.csv", self.output_dir);
+            fs::write(&csv_path, csv).context("Failed to write CSV export")?;
+        }
+
         log::info!("Report generated: {}", path);
         Ok(())
+    }
+
+    /// Generate CSV export of training data
+    fn generate_csv_export(&self, stats_history: &[TrainingStats]) -> String {
+        use std::fmt::Write;
+
+        let mut csv = String::new();
+
+        // Determine which columns to include based on available data
+        let has_multi_env = stats_history
+            .iter()
+            .any(|s| s.multi_env_stats.is_some());
+        let has_curriculum = stats_history
+            .iter()
+            .any(|s| s.curriculum_stage.is_some());
+        let has_diversity = stats_history
+            .iter()
+            .any(|s| s.behavior_diversity.is_some());
+        let has_biome = stats_history
+            .iter()
+            .any(|s| s.best_per_biome.is_some());
+
+        // Build CSV header
+        csv.push_str("generation,best_fitness,avg_fitness,grid_coverage,new_elites,max_displacement,avg_displacement");
+
+        if has_multi_env {
+            csv.push_str(",multi_env_mean,multi_env_median,multi_env_std_dev");
+        }
+        if has_curriculum {
+            csv.push_str(",curriculum_stage,curriculum_stage_index,generations_in_stage");
+        }
+        if has_diversity {
+            csv.push_str(",behavior_entropy,unique_niches,density_variance");
+        }
+        if has_biome {
+            // Collect all unique biomes from the stats
+            let mut all_biomes = std::collections::HashSet::new();
+            for stat in stats_history {
+                if let Some(ref per_biome) = stat.best_per_biome {
+                    for biome in per_biome.keys() {
+                        all_biomes.insert(format!("{:?}", biome));
+                    }
+                }
+            }
+            let mut sorted_biomes: Vec<_> = all_biomes.into_iter().collect();
+            sorted_biomes.sort();
+
+            for biome in &sorted_biomes {
+                let _ = write!(csv, ",biome_{}", biome.to_lowercase());
+            }
+        }
+        csv.push('\n');
+
+        // Build CSV rows
+        for (generation, stat) in stats_history.iter().enumerate() {
+            let _ = write!(
+                csv,
+                "{},{:.2},{:.2},{:.4},{},{:.2},{:.2}",
+                generation,
+                stat.best_fitness,
+                stat.avg_fitness,
+                stat.grid_coverage,
+                stat.new_elites,
+                stat.max_displacement,
+                stat.avg_displacement
+            );
+
+            if has_multi_env {
+                if let Some(ref multi_env) = stat.multi_env_stats {
+                    let _ = write!(
+                        csv,
+                        ",{:.2},{:.2},{:.2}",
+                        multi_env.fitness_distribution.mean,
+                        multi_env.fitness_distribution.median,
+                        multi_env.fitness_distribution.std_dev
+                    );
+                } else {
+                    csv.push_str(",,,");
+                }
+            }
+
+            if has_curriculum {
+                if let Some(ref stage) = stat.curriculum_stage {
+                    let _ = write!(
+                        csv,
+                        ",\"{}\",{},{}",
+                        stage.stage_name.replace('"', "\"\""), // Escape quotes
+                        stage.stage_index,
+                        stage.generations_in_stage
+                    );
+                } else {
+                    csv.push_str(",,,");
+                }
+            }
+
+            if has_diversity {
+                if let Some(ref diversity) = stat.behavior_diversity {
+                    let _ = write!(
+                        csv,
+                        ",{:.4},{},{:.4}",
+                        diversity.entropy, diversity.unique_niches, diversity.density_variance
+                    );
+                } else {
+                    csv.push_str(",,,");
+                }
+            }
+
+            if has_biome {
+                // Match biome columns from header
+                let mut all_biomes = std::collections::HashSet::new();
+                for s in stats_history {
+                    if let Some(ref per_biome) = s.best_per_biome {
+                        for biome in per_biome.keys() {
+                            all_biomes.insert(format!("{:?}", biome));
+                        }
+                    }
+                }
+                let mut sorted_biomes: Vec<_> = all_biomes.into_iter().collect();
+                sorted_biomes.sort();
+
+                for biome in &sorted_biomes {
+                    if let Some(ref per_biome) = stat.best_per_biome {
+                        // Find matching biome in the map
+                        let fitness = per_biome
+                            .iter()
+                            .find(|(b, _)| format!("{:?}", b) == *biome)
+                            .map(|(_, f)| *f);
+
+                        if let Some(f) = fitness {
+                            let _ = write!(csv, ",{:.2}", f);
+                        } else {
+                            csv.push(',');
+                        }
+                    } else {
+                        csv.push(',');
+                    }
+                }
+            }
+
+            csv.push('\n');
+        }
+
+        csv
     }
 
     /// Generate the main HTML content
@@ -770,6 +920,151 @@ impl ReportGenerator {
             0.0
         };
 
+        // Check if we have enhanced stats in the final generation
+        let has_multi_env = stats_history
+            .last()
+            .and_then(|s| s.multi_env_stats.as_ref())
+            .is_some();
+        let has_curriculum = stats_history
+            .last()
+            .and_then(|s| s.curriculum_stage.as_ref())
+            .is_some();
+        let has_biome_training = stats_history
+            .last()
+            .and_then(|s| s.best_per_biome.as_ref())
+            .is_some();
+
+        // Generate multi-env stats section
+        let multi_env_json = if has_multi_env {
+            if let Some(ref last_stats) = stats_history.last() {
+                if let Some(ref multi_env) = last_stats.multi_env_stats {
+                    let mut env_perf = String::new();
+                    let mut first_env = true;
+                    for (env_type, stats) in &multi_env.env_type_performance {
+                        if !first_env {
+                            env_perf.push_str(",\n            ");
+                        }
+                        first_env = false;
+                        let _ = write!(
+                            env_perf,
+                            r#""{env}": {{ "mean": {mean:.2}, "best": {best:.2}, "worst": {worst:.2}, "count": {count} }}"#,
+                            env = env_type,
+                            mean = stats.mean_fitness,
+                            best = stats.best_fitness,
+                            worst = stats.worst_fitness,
+                            count = stats.count,
+                        );
+                    }
+
+                    let dist = &multi_env.fitness_distribution;
+                    format!(
+                        r#",
+    "multi_environment": {{
+        "enabled": true,
+        "env_type_performance": {{
+            {}
+        }},
+        "fitness_distribution": {{
+            "min": {:.2},
+            "q25": {:.2},
+            "median": {:.2},
+            "q75": {:.2},
+            "max": {:.2},
+            "mean": {:.2},
+            "std_dev": {:.2}
+        }}
+    }}"#,
+                        env_perf, dist.min, dist.q25, dist.median, dist.q75, dist.max, dist.mean, dist.std_dev
+                    )
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        // Generate curriculum stats section
+        let curriculum_json = if has_curriculum {
+            if let Some(ref last_stats) = stats_history.last() {
+                if let Some(ref stage) = last_stats.curriculum_stage {
+                    format!(
+                        r#",
+    "curriculum": {{
+        "enabled": true,
+        "final_stage": {{
+            "index": {},
+            "name": "{}",
+            "generations_in_stage": {}
+        }}
+    }}"#,
+                        stage.stage_index, stage.stage_name, stage.generations_in_stage
+                    )
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        // Generate behavior diversity stats section
+        let diversity_json = if let Some(ref last_stats) = stats_history.last() {
+            if let Some(ref diversity) = last_stats.behavior_diversity {
+                format!(
+                    r#",
+    "behavior_diversity": {{
+        "final_entropy": {:.4},
+        "final_unique_niches": {},
+        "final_density_variance": {:.4}
+    }}"#,
+                    diversity.entropy, diversity.unique_niches, diversity.density_variance
+                )
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        // Generate per-biome stats section
+        let per_biome_json = if has_biome_training {
+            if let Some(ref last_stats) = stats_history.last() {
+                if let Some(ref per_biome) = last_stats.best_per_biome {
+                    let mut biome_stats = String::new();
+                    let mut first_biome = true;
+                    for (biome, fitness) in per_biome {
+                        if !first_biome {
+                            biome_stats.push_str(",\n            ");
+                        }
+                        first_biome = false;
+                        let _ = write!(
+                            biome_stats,
+                            r#""{:?}": {{ "best_fitness": {:.2} }}"#,
+                            biome, fitness
+                        );
+                    }
+                    format!(
+                        r#",
+    "per_biome": {{
+        {}
+    }}"#,
+                        biome_stats
+                    )
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
         format!(
             r#"{{
     "scenario": {{
@@ -787,8 +1082,7 @@ impl ReportGenerator {
     }},
     "per_archetype": {{
         {}
-    }},
-    "fitness_history": [{}]
+    }}{}{}{}{},"fitness_history": [{}]
 }}"#,
             self.scenario_config.name,
             self.scenario_config.description,
@@ -800,6 +1094,10 @@ impl ReportGenerator {
             avg_coverage,
             total_cells,
             per_archetype,
+            multi_env_json,
+            curriculum_json,
+            diversity_json,
+            per_biome_json,
             stats_history
                 .iter()
                 .map(|s| format!("{:.2}", s.best_fitness))

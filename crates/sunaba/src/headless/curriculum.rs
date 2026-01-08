@@ -300,6 +300,115 @@ impl CurriculumConfig {
             current_stage: 0,
         }
     }
+
+    /// Biome progression curriculum for biome specialist training
+    ///
+    /// Designed for use with biome specialist mode where each biome's population
+    /// trains independently. This curriculum progresses through difficulty stages
+    /// suitable for specialized adaptation to a single biome.
+    ///
+    /// Stages:
+    /// 1. Flat terrain (learn basic locomotion in biome)
+    /// 2. Gentle hills (adapt to biome-specific slopes)
+    /// 3. Obstacles (navigate biome-specific obstacles)
+    /// 4. Hazards (survive biome-specific hazards)
+    /// 5. Full complexity (master all biome features)
+    pub fn biome_progression() -> Self {
+        let stages = vec![
+            CurriculumStage {
+                name: "Stage 1: Basic Locomotion".to_string(),
+                distribution: EnvironmentDistribution::discrete(vec![DifficultyConfig::flat()]),
+                min_generations: 15,
+                advancement: AdvancementCriteria::FitnessThreshold { target: 5.0 },
+            },
+            CurriculumStage {
+                name: "Stage 2: Terrain Adaptation".to_string(),
+                distribution: EnvironmentDistribution::discrete(vec![
+                    DifficultyConfig::gentle_hills(),
+                ]),
+                min_generations: 20,
+                advancement: AdvancementCriteria::Combined {
+                    fitness_target: 8.0,
+                    coverage_target: 0.08,
+                },
+            },
+            CurriculumStage {
+                name: "Stage 3: Obstacle Navigation".to_string(),
+                distribution: EnvironmentDistribution::discrete(vec![
+                    DifficultyConfig::gentle_hills(),
+                    DifficultyConfig::obstacles(),
+                ]),
+                min_generations: 25,
+                advancement: AdvancementCriteria::Combined {
+                    fitness_target: 12.0,
+                    coverage_target: 0.12,
+                },
+            },
+            CurriculumStage {
+                name: "Stage 4: Hazard Survival".to_string(),
+                distribution: EnvironmentDistribution::discrete(vec![
+                    DifficultyConfig::obstacles(),
+                    DifficultyConfig::hazards(),
+                ]),
+                min_generations: 30,
+                advancement: AdvancementCriteria::Combined {
+                    fitness_target: 15.0,
+                    coverage_target: 0.15,
+                },
+            },
+            CurriculumStage {
+                name: "Stage 5: Full Complexity".to_string(),
+                distribution: EnvironmentDistribution::uniform(
+                    DifficultyConfig::gentle_hills(),
+                    DifficultyConfig::random(),
+                ),
+                min_generations: 0, // Final stage - no advancement
+                advancement: AdvancementCriteria::Automatic,
+            },
+        ];
+
+        Self {
+            stages,
+            current_stage: 0,
+        }
+    }
+
+    /// Quick biome curriculum for testing biome specialist training
+    ///
+    /// Shorter version of biome_progression() with fewer generations per stage.
+    /// Useful for rapid iteration and testing.
+    pub fn biome_quick() -> Self {
+        let stages = vec![
+            CurriculumStage {
+                name: "Stage 1: Basic Locomotion".to_string(),
+                distribution: EnvironmentDistribution::discrete(vec![DifficultyConfig::flat()]),
+                min_generations: 5,
+                advancement: AdvancementCriteria::Automatic,
+            },
+            CurriculumStage {
+                name: "Stage 2: Terrain Adaptation".to_string(),
+                distribution: EnvironmentDistribution::discrete(vec![
+                    DifficultyConfig::gentle_hills(),
+                ]),
+                min_generations: 8,
+                advancement: AdvancementCriteria::FitnessThreshold { target: 5.0 },
+            },
+            CurriculumStage {
+                name: "Stage 3: Full Complexity".to_string(),
+                distribution: EnvironmentDistribution::uniform(
+                    DifficultyConfig::gentle_hills(),
+                    DifficultyConfig::random(),
+                ),
+                min_generations: 0, // Final stage
+                advancement: AdvancementCriteria::Automatic,
+            },
+        ];
+
+        Self {
+            stages,
+            current_stage: 0,
+        }
+    }
 }
 
 /// Tracks curriculum progress during training

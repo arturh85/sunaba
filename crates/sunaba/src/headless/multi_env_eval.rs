@@ -74,6 +74,23 @@ impl MultiEnvironmentEvaluator {
             .sample_batch(eval_id, self.num_environments)
     }
 
+    /// Sample terrain configurations for a specific biome (biome specialist training)
+    ///
+    /// Forces all sampled terrains to use the specified biome. Used for biome
+    /// specialist training where creatures train exclusively on one biome type.
+    ///
+    /// # Arguments
+    /// * `eval_id` - Unique evaluation ID (generation * pop_size + creature_idx)
+    /// * `biome` - Target biome type to force for all environments
+    pub fn sample_terrains_for_biome(
+        &self,
+        eval_id: u64,
+        biome: sunaba_core::world::biome::BiomeType,
+    ) -> Result<Vec<TrainingTerrainConfig>> {
+        self.distribution
+            .sample_batch_for_biome(eval_id, self.num_environments, biome)
+    }
+
     /// Aggregate fitness scores from multiple environments
     pub fn aggregate_fitness(&self, scores: &[f32]) -> f32 {
         if scores.is_empty() {

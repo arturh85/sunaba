@@ -1,10 +1,11 @@
 //! Biome system for diverse world generation
 
 use crate::simulation::MaterialId;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Types of biomes in the world
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BiomeType {
     // Surface biomes (y > -100)
     Desert,

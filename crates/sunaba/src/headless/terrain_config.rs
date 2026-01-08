@@ -3,6 +3,7 @@
 //! Provides high-level difficulty parameters that map to WorldGenConfig for procedural terrain generation.
 
 use serde::{Deserialize, Serialize};
+use sunaba_core::world::biome::BiomeType;
 use sunaba_core::world::worldgen_config::WorldGenConfig;
 
 /// Configuration for procedural training terrain generation
@@ -20,6 +21,10 @@ pub struct TrainingTerrainConfig {
 
     /// Underlying WorldGenConfig (can be modified by difficulty)
     pub worldgen_config: WorldGenConfig,
+
+    /// Target biome for this terrain (None = use default worldgen biome distribution)
+    #[serde(default)]
+    pub biome_type: Option<BiomeType>,
 }
 
 /// Parameterized difficulty settings (0.0 = easiest, 1.0 = hardest)
@@ -121,6 +126,23 @@ impl DifficultyConfig {
             gap_frequency: self.gap_frequency + (other.gap_frequency - self.gap_frequency) * t,
         }
     }
+
+    /// Classify terrain type based on dominant difficulty parameter
+    ///
+    /// Used for grouping multi-environment evaluation results by terrain type.
+    pub fn classify_type(&self) -> String {
+        if self.terrain_roughness < 0.2 {
+            "flat".to_string()
+        } else if self.terrain_roughness < 0.5 {
+            "gentle_hills".to_string()
+        } else if self.obstacle_density > 0.4 {
+            "obstacles".to_string()
+        } else if self.hazard_density > 0.3 {
+            "hazards".to_string()
+        } else {
+            "mixed".to_string()
+        }
+    }
 }
 
 impl TrainingTerrainConfig {
@@ -132,6 +154,7 @@ impl TrainingTerrainConfig {
             height,
             difficulty: DifficultyConfig::flat(),
             worldgen_config: WorldGenConfig::default(),
+            biome_type: None,
         }
     }
 
@@ -143,6 +166,7 @@ impl TrainingTerrainConfig {
             height,
             difficulty: DifficultyConfig::gentle_hills(),
             worldgen_config: WorldGenConfig::default(),
+            biome_type: None,
         }
     }
 
@@ -154,6 +178,7 @@ impl TrainingTerrainConfig {
             height,
             difficulty: DifficultyConfig::obstacles(),
             worldgen_config: WorldGenConfig::default(),
+            biome_type: None,
         }
     }
 
@@ -165,6 +190,7 @@ impl TrainingTerrainConfig {
             height,
             difficulty: DifficultyConfig::hazards(),
             worldgen_config: WorldGenConfig::default(),
+            biome_type: None,
         }
     }
 
@@ -176,6 +202,25 @@ impl TrainingTerrainConfig {
             height,
             difficulty: DifficultyConfig::random(),
             worldgen_config: WorldGenConfig::default(),
+            biome_type: None,
+        }
+    }
+
+    /// Create training terrain with a specific biome
+    pub fn with_biome(
+        seed: u64,
+        width: i32,
+        height: i32,
+        difficulty: DifficultyConfig,
+        biome: BiomeType,
+    ) -> Self {
+        Self {
+            base_seed: seed,
+            width,
+            height,
+            difficulty,
+            worldgen_config: WorldGenConfig::default(),
+            biome_type: Some(biome),
         }
     }
 
@@ -184,6 +229,10 @@ impl TrainingTerrainConfig {
     /// Maps high-level difficulty settings to low-level worldgen parameters.
     /// This allows training scenarios to use intuitive difficulty knobs
     /// without needing to understand all the WorldGen parameters.
+    ///
+    /// Note: biome_type is stored in this config but NOT applied here.
+    /// Biome-specific world generation is handled by the scenario setup code
+    /// which can create a biome-specific world using the biome_type field.
     pub fn apply_difficulty(&self) -> WorldGenConfig {
         let mut config = self.worldgen_config.clone();
 
@@ -318,4 +367,99 @@ mod tests {
             worldgen2.caves.large_threshold
         );
     }
+
+    // Biome-related tests
+
+    #[test]
+    fn test_biome_type_backward_compatibility() {
+        // Existing constructors should set biome_type = None
+        let flat = TrainingTerrainConfig::flat(42, 512, 128);
+        assert_eq!(flat.biome_type, None);
+
+        let hills = TrainingTerrainConfig::gentle_hills(42, 512, 128);
+        assert_eq!(hills.biome_type, None);
+
+        let obstacles = TrainingTerrainConfig::obstacles(42, 512, 128);
+        assert_eq!(obstacles.biome_type, None);
+
+        let hazards = TrainingTerrainConfig::hazards(42, 512, 128);
+        assert_eq!(hazards.biome_type, None);
+
+        let random = TrainingTerrainConfig::random(42, 512, 128);
+        assert_eq!(random.biome_type, None);
+    }
+
+    #[test]
+    fn test_biome_type_storage() {
+        // Test that biome_type is properly stored in config
+        let desert_config = TrainingTerrainConfig::with_biome(
+            42,
+            512,
+            128,
+            DifficultyConfig::flat(),
+            BiomeType::Desert,
+        );
+
+        assert_eq!(desert_config.biome_type, Some(BiomeType::Desert));
+
+        let mountains_config = TrainingTerrainConfig::with_biome(
+            42,
+            512,
+            128,
+            DifficultyConfig::gentle_hills(),
+            BiomeType::Mountains,
+        );
+
+        assert_eq!(mountains_config.biome_type, Some(BiomeType::Mountains));
+    }
+
+    #[test]
+    fn test_biome_with_difficulty_interaction() {
+        // Biome config stores biome_type, but apply_difficulty() only applies difficulty params
+        let config = TrainingTerrainConfig::with_biome(
+            42,
+            512,
+            128,
+            DifficultyConfig::gentle_hills(), // 0.3 roughness
+            BiomeType::Mountains,
+        );
+
+        let worldgen = config.apply_difficulty();
+
+        // Difficulty parameters should be applied
+        // gentle_hills has roughness=0.3 → height_scale=30.0
+        assert!((worldgen.terrain.height_scale - 30.0).abs() < 0.001);
+
+        // Biome_type is stored in config for later use by scenario setup
+        assert_eq!(config.biome_type, Some(BiomeType::Mountains));
+    }
+
+    #[test]
+    fn test_difficulty_classify_type() {
+        assert_eq!(DifficultyConfig::flat().classify_type(), "flat");
+
+        assert_eq!(
+            DifficultyConfig::gentle_hills().classify_type(),
+            "gentle_hills"
+        );
+
+        // Obstacles has high obstacle_density
+        let obstacles = DifficultyConfig::obstacles();
+        assert_eq!(obstacles.classify_type(), "obstacles");
+
+        // Hazards has high hazard_density
+        let hazards = DifficultyConfig::hazards();
+        assert_eq!(hazards.classify_type(), "hazards");
+
+        // Custom config with medium roughness but low obstacles/hazards → mixed
+        let custom = DifficultyConfig {
+            terrain_roughness: 0.6,
+            obstacle_density: 0.2,
+            hazard_density: 0.1,
+            cave_density: 0.3,
+            gap_frequency: 0.2,
+        };
+        assert_eq!(custom.classify_type(), "mixed");
+    }
+
 }

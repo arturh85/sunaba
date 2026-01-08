@@ -14,6 +14,8 @@ use crate::creature::spawning::CreatureManager;
 use crate::creature::viability::analyze_viability;
 use crate::simulation::Materials;
 
+use sunaba_core::world::biome::BiomeType;
+
 use super::curriculum::{CurriculumConfig, CurriculumTracker};
 use super::fitness::BehaviorDescriptor;
 use super::gif_capture::GifCapture;
@@ -22,6 +24,19 @@ use super::multi_env_eval::MultiEnvironmentEvaluator;
 use super::pixel_renderer::PixelRenderer;
 use super::report::{CapturedGif, ReportGenerator};
 use super::scenario::Scenario;
+
+/// Configuration for biome specialist training mode
+#[derive(Debug, Clone)]
+pub struct BiomeSpecialistConfig {
+    /// Which biomes to train on (1-5 biomes)
+    pub target_biomes: Vec<BiomeType>,
+
+    /// Archetype to use for all biome grids (None = use config.archetype)
+    pub archetype: Option<CreatureArchetype>,
+
+    /// Whether to test cross-biome performance periodically (deferred to future work)
+    pub enable_cross_biome_testing: bool,
+}
 
 /// Configuration for the training run
 #[derive(Debug, Clone)]
@@ -58,6 +73,8 @@ pub struct TrainingConfig {
     pub multi_env: Option<MultiEnvironmentEvaluator>,
     /// Curriculum learning (None = no curriculum, backward compatible)
     pub curriculum: Option<CurriculumConfig>,
+    /// Biome specialist training (None = archetype-based grids, backward compatible)
+    pub biome_specialist: Option<BiomeSpecialistConfig>,
 }
 
 impl Default for TrainingConfig {
@@ -76,9 +93,10 @@ impl Default for TrainingConfig {
             use_simple_morphology: false,
             min_viability: 0.3,
             archetype: CreatureArchetype::default(),
-            archetypes: Vec::new(), // Empty = use single archetype field
-            multi_env: None,        // None = single environment (backward compatible)
-            curriculum: None,       // None = no curriculum (backward compatible)
+            archetypes: Vec::new(),      // Empty = use single archetype field
+            multi_env: None,             // None = single environment (backward compatible)
+            curriculum: None,            // None = no curriculum (backward compatible)
+            biome_specialist: None,      // None = archetype-based grids (backward compatible)
         }
     }
 }
@@ -93,6 +111,104 @@ impl TrainingConfig {
             self.archetypes.clone()
         }
     }
+
+    /// Enable biome specialist training (separate populations per biome)
+    ///
+    /// Trains independent MAP-Elites grids for each specified biome, allowing
+    /// creatures to specialize in specific biome conditions (desert, mountains, etc.).
+    ///
+    /// # Arguments
+    /// * `biomes` - Which biomes to train on (1-5 biomes)
+    pub fn with_biome_specialists(mut self, biomes: Vec<BiomeType>) -> Self {
+        self.biome_specialist = Some(BiomeSpecialistConfig {
+            target_biomes: biomes,
+            archetype: None, // Use config.archetype
+            enable_cross_biome_testing: false,
+        });
+        self
+    }
+
+    /// Enable biome specialist training with a specific archetype
+    ///
+    /// Like `with_biome_specialists()`, but uses a specific archetype for all biome grids.
+    ///
+    /// # Arguments
+    /// * `biomes` - Which biomes to train on (1-5 biomes)
+    /// * `archetype` - Creature archetype to use for all biome grids
+    pub fn with_biome_specialists_archetype(
+        mut self,
+        biomes: Vec<BiomeType>,
+        archetype: CreatureArchetype,
+    ) -> Self {
+        self.biome_specialist = Some(BiomeSpecialistConfig {
+            target_biomes: biomes,
+            archetype: Some(archetype),
+            enable_cross_biome_testing: false,
+        });
+        self
+    }
+}
+
+/// Statistics for multi-environment evaluation
+#[derive(Debug, Clone)]
+pub struct MultiEnvStats {
+    /// Performance breakdown by environment type (flat, hills, obstacles, etc.)
+    pub env_type_performance: HashMap<String, EnvTypeStats>,
+    /// Overall fitness distribution across all environments
+    pub fitness_distribution: FitnessDistribution,
+}
+
+/// Performance stats for a specific environment type
+#[derive(Debug, Clone)]
+pub struct EnvTypeStats {
+    pub mean_fitness: f32,
+    pub best_fitness: f32,
+    pub worst_fitness: f32,
+    pub count: usize,
+}
+
+/// Fitness distribution statistics (for box plots)
+#[derive(Debug, Clone)]
+pub struct FitnessDistribution {
+    pub min: f32,
+    pub q25: f32,     // 25th percentile
+    pub median: f32,
+    pub q75: f32,     // 75th percentile
+    pub max: f32,
+    pub mean: f32,
+    pub std_dev: f32,
+}
+
+/// Curriculum stage snapshot for a generation
+#[derive(Debug, Clone)]
+pub struct CurriculumStageSnapshot {
+    pub stage_index: usize,
+    pub stage_name: String,
+    pub generations_in_stage: usize,
+    /// If advanced this generation, describe the reason
+    pub advanced_this_gen: Option<String>,
+}
+
+/// Behavior diversity statistics for MAP-Elites grid
+#[derive(Debug, Clone)]
+pub struct BehaviorDiversityStats {
+    /// Shannon entropy of elite distribution (higher = more diverse)
+    pub entropy: f32,
+    /// Number of unique niches occupied
+    pub unique_niches: usize,
+    /// Variance in cell densities (measures clustering)
+    pub density_variance: f32,
+}
+
+/// Record of a curriculum stage transition
+#[derive(Debug, Clone)]
+pub struct CurriculumTransition {
+    pub generation: usize,
+    pub from_stage: String,
+    pub to_stage: String,
+    pub reason: String,
+    pub fitness_at_transition: f32,
+    pub coverage_at_transition: f32,
 }
 
 /// Statistics from a training run
@@ -114,6 +230,16 @@ pub struct TrainingStats {
     pub avg_displacement: f32,
     /// Best fitness per archetype
     pub best_per_archetype: HashMap<CreatureArchetype, f32>,
+
+    // NEW: Enhanced reporting fields
+    /// Multi-environment performance tracking (None if multi-env disabled)
+    pub multi_env_stats: Option<MultiEnvStats>,
+    /// Curriculum stage snapshot (None if curriculum disabled)
+    pub curriculum_stage: Option<CurriculumStageSnapshot>,
+    /// Behavior diversity metrics (always computed if grids exist)
+    pub behavior_diversity: Option<BehaviorDiversityStats>,
+    /// Best fitness per biome (None if biome specialist mode disabled)
+    pub best_per_biome: Option<HashMap<BiomeType, f32>>,
 }
 
 /// Single creature evaluation result
@@ -124,6 +250,11 @@ struct EvalResult {
     behavior: BehaviorDescriptor,
     /// Actual displacement from spawn position (for debugging)
     displacement: f32,
+    /// Target biome (for biome specialist training, None = archetype-based)
+    target_biome: Option<BiomeType>,
+    /// Multi-environment scores (if multi-env evaluation enabled)
+    /// Vec of (environment_type, fitness_score) pairs
+    multi_env_scores: Option<Vec<(String, f32)>>,
 }
 
 /// Main training environment
@@ -132,8 +263,12 @@ pub struct TrainingEnv {
     pub config: TrainingConfig,
     /// Training scenario
     pub scenario: Scenario,
-    /// MAP-Elites grids (one per archetype)
+    /// MAP-Elites grids (one per archetype, legacy mode)
     pub grids: HashMap<CreatureArchetype, MapElitesGrid>,
+    /// MAP-Elites grids (one per biome, biome specialist mode)
+    pub biome_grids: HashMap<BiomeType, MapElitesGrid>,
+    /// Biome specialist mode flag
+    pub biome_specialist_mode: bool,
     /// Current generation
     generation: usize,
     /// Statistics history
@@ -142,10 +277,12 @@ pub struct TrainingEnv {
     report_gen: ReportGenerator,
     /// Morphology configuration (simple or default)
     morphology_config: MorphologyConfig,
-    /// Archetypes being trained
+    /// Archetypes being trained (legacy mode)
     archetypes: Vec<CreatureArchetype>,
     /// Curriculum tracker (tracks progress through stages)
     curriculum_tracker: Option<CurriculumTracker>,
+    /// Timeline of curriculum stage transitions (for reporting)
+    pub curriculum_timeline: Vec<CurriculumTransition>,
 }
 
 impl TrainingEnv {
@@ -159,10 +296,20 @@ impl TrainingEnv {
         };
         let archetypes = config.effective_archetypes();
 
-        // Create a separate MAP-Elites grid for each archetype
+        // Create a separate MAP-Elites grid for each archetype (legacy mode)
         let mut grids = HashMap::new();
         for archetype in &archetypes {
             grids.insert(*archetype, MapElitesGrid::default_grid());
+        }
+
+        // Initialize biome grids if biome specialist mode enabled
+        let mut biome_grids = HashMap::new();
+        let biome_specialist_mode = config.biome_specialist.is_some();
+
+        if let Some(ref biome_config) = config.biome_specialist {
+            for biome in &biome_config.target_biomes {
+                biome_grids.insert(*biome, MapElitesGrid::default_grid());
+            }
         }
 
         // Initialize curriculum tracker if curriculum is enabled
@@ -176,12 +323,15 @@ impl TrainingEnv {
             config,
             scenario,
             grids,
+            biome_grids,
+            biome_specialist_mode,
             generation: 0,
             stats_history: Vec::new(),
             report_gen,
             morphology_config,
             archetypes,
             curriculum_tracker,
+            curriculum_timeline: Vec::new(),
         }
     }
 
@@ -203,6 +353,56 @@ impl TrainingEnv {
         archetype: &CreatureArchetype,
     ) -> Option<&super::map_elites::Elite> {
         self.grids.get(archetype).and_then(|g| g.best_elite())
+    }
+
+    /// Get the active grid for insertion (either archetype or biome grid)
+    ///
+    /// Returns a mutable reference to the appropriate grid based on biome specialist mode.
+    /// If biome is Some, returns the biome-specific grid. Otherwise, returns the archetype grid.
+    fn get_active_grid_mut(
+        &mut self,
+        archetype: &CreatureArchetype,
+        biome: Option<&BiomeType>,
+    ) -> Option<&mut MapElitesGrid> {
+        if let Some(biome) = biome {
+            self.biome_grids.get_mut(biome)
+        } else {
+            self.grids.get_mut(archetype)
+        }
+    }
+
+    /// Get the overall best elite across all grids (archetype + biome)
+    ///
+    /// Returns the champion creature with the highest fitness regardless of whether it's
+    /// from an archetype grid or a biome grid. Useful for checkpointing and visualization.
+    pub fn best_elite_overall(&self) -> Option<(CreatureArchetype, BiomeType, &super::map_elites::Elite)> {
+        // Check archetype grids
+        let best_archetype = self
+            .grids
+            .iter()
+            .filter_map(|(arch, grid)| grid.best_elite().map(|e| (*arch, None, e)));
+
+        // Check biome grids
+        let best_biome = self
+            .biome_grids
+            .iter()
+            .filter_map(|(biome, grid)| {
+                grid.best_elite().map(|e| {
+                    // Get archetype from elite or use default
+                    let archetype = e.archetype;
+                    (archetype, Some(*biome), e)
+                })
+            });
+
+        // Combine and find max
+        best_archetype
+            .chain(best_biome)
+            .max_by(|(_, _, a), (_, _, b)| {
+                a.fitness
+                    .partial_cmp(&b.fitness)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(arch, biome, elite)| (arch, biome.unwrap_or(BiomeType::Plains), elite))
     }
 
     /// Check if a genome produces a viable morphology for a given archetype
@@ -288,13 +488,22 @@ impl TrainingEnv {
                 tracker.on_stage_advance(self.generation);
                 let new_stage = curriculum.current_stage().name.clone();
 
+                let reason_str = reason.unwrap_or_else(|| "criteria met".to_string());
                 let msg = format!(
                     "🎓 Curriculum advanced: {} → {} ({})",
-                    old_stage,
-                    new_stage,
-                    reason.unwrap_or_else(|| "criteria met".to_string())
+                    old_stage, new_stage, reason_str
                 );
                 pb.println(&msg);
+
+                // Record transition to timeline
+                self.curriculum_timeline.push(CurriculumTransition {
+                    generation: self.generation,
+                    from_stage: old_stage,
+                    to_stage: new_stage.clone(),
+                    reason: reason_str,
+                    fitness_at_transition: stats.best_fitness,
+                    coverage_at_transition: stats.grid_coverage,
+                });
 
                 // Update multi_env distribution if enabled
                 if let Some(ref mut multi_env) = self.config.multi_env {
@@ -371,11 +580,18 @@ impl TrainingEnv {
             let results = self.evaluate_population_with_archetypes(&offspring, &pb)?;
 
             // Update grid and collect stats
-            let stats = self.update_grid(results);
-            self.stats_history.push(stats.clone());
+            let mut stats = self.update_grid(results);
 
-            // Check curriculum advancement
-            self.check_curriculum_advancement(&stats, &pb);
+            // Check curriculum advancement and update stats if advanced
+            let (advanced, msg) = self.check_curriculum_advancement(&stats, &pb);
+            if advanced {
+                // Update the curriculum_stage in stats to mark advancement
+                if let Some(ref mut stage) = stats.curriculum_stage {
+                    stage.advanced_this_gen = msg;
+                }
+            }
+
+            self.stats_history.push(stats.clone());
 
             // Log progress
             if generation_num % 5 == 0 {
@@ -549,8 +765,9 @@ impl TrainingEnv {
         let per_archetype = self.config.population_size / num_archetypes;
         let remainder = self.config.population_size % num_archetypes;
 
-        // Generate (archetype, genome) pairs
-        let mut archetype_genomes: Vec<(CreatureArchetype, CreatureGenome)> = Vec::new();
+        // Generate (archetype, genome, biome) tuples
+        let mut archetype_genomes: Vec<(CreatureArchetype, CreatureGenome, Option<BiomeType>)> =
+            Vec::new();
 
         for (idx, &archetype) in self.archetypes.iter().enumerate() {
             // Give remainder creatures to first archetypes
@@ -567,7 +784,7 @@ impl TrainingEnv {
                     );
                     g
                 };
-                archetype_genomes.push((archetype, genome));
+                archetype_genomes.push((archetype, genome, None)); // None = no target biome during init
             }
         }
 
@@ -597,11 +814,102 @@ impl TrainingEnv {
         Ok(())
     }
 
-    /// Generate offspring from current grids (balanced across archetypes)
-    fn generate_offspring(&self) -> Vec<(CreatureArchetype, CreatureGenome)> {
+    /// Generate a single offspring genome from a grid
+    ///
+    /// Handles crossover, mutation, and viability checking.
+    /// If grid is None or empty, generates a random genome.
+    fn generate_offspring_from_grid(
+        &self,
+        grid: Option<&MapElitesGrid>,
+        archetype: CreatureArchetype,
+    ) -> CreatureGenome {
+        // Try to generate a viable child (up to 10 attempts if using simple morphology)
+        let max_attempts = if self.config.use_simple_morphology {
+            10
+        } else {
+            1
+        };
+
+        let mut child = None;
+        for _ in 0..max_attempts {
+            let candidate = if let Some(grid) = grid {
+                if let Some((parent1, parent2)) = grid.sample_parents() {
+                    // Crossover
+                    let mut c = crossover_genome(
+                        &parent1.genome,
+                        &parent2.genome,
+                        parent1.fitness,
+                        parent2.fitness,
+                    );
+                    c.mutate(
+                        &self.config.mutation_config,
+                        self.config.controller_mutation_rate,
+                    );
+                    c
+                } else if let Some(parent) = grid.sample_elite() {
+                    // Mutation only
+                    let mut c = parent.genome.clone();
+                    c.mutate(
+                        &self.config.mutation_config,
+                        self.config.controller_mutation_rate,
+                    );
+                    c
+                } else {
+                    // Random (shouldn't happen after initialization)
+                    let mut genome = self.base_genome_for(archetype);
+                    genome.mutate(
+                        &self.config.mutation_config,
+                        self.config.controller_mutation_rate,
+                    );
+                    genome
+                }
+            } else {
+                // No grid for this archetype - random
+                let mut genome = self.base_genome_for(archetype);
+                genome.mutate(
+                    &self.config.mutation_config,
+                    self.config.controller_mutation_rate,
+                );
+                genome
+            };
+
+            // Check viability if using simple morphology
+            if !self.config.use_simple_morphology || self.is_viable(&candidate, archetype) {
+                child = Some(candidate);
+                break;
+            }
+        }
+
+        // Use fallback if no viable child found
+        child.unwrap_or_else(|| self.generate_viable_genome(archetype))
+    }
+
+    /// Generate offspring from current grids (balanced across archetypes or biomes)
+    fn generate_offspring(&self) -> Vec<(CreatureArchetype, CreatureGenome, Option<BiomeType>)> {
         let mut offspring = Vec::with_capacity(self.config.population_size);
 
-        // Distribute offspring evenly across archetypes
+        // Biome specialist mode: distribute offspring across biomes
+        if self.biome_specialist_mode {
+            if let Some(ref biome_config) = self.config.biome_specialist {
+                let num_biomes = biome_config.target_biomes.len();
+                let per_biome = self.config.population_size / num_biomes;
+                let remainder = self.config.population_size % num_biomes;
+
+                for (idx, &biome) in biome_config.target_biomes.iter().enumerate() {
+                    let count = per_biome + if idx < remainder { 1 } else { 0 };
+                    let grid = self.biome_grids.get(&biome);
+                    let archetype = biome_config.archetype.unwrap_or(self.config.archetype);
+
+                    for _ in 0..count {
+                        let genome = self.generate_offspring_from_grid(grid, archetype);
+                        offspring.push((archetype, genome, Some(biome)));
+                    }
+                }
+                return offspring;
+            }
+        }
+
+        // Legacy archetype mode: distribute offspring evenly across archetypes
         let num_archetypes = self.archetypes.len();
         let per_archetype = self.config.population_size / num_archetypes;
         let remainder = self.config.population_size % num_archetypes;
@@ -611,83 +919,39 @@ impl TrainingEnv {
             let grid = self.grids.get(&archetype);
 
             for _ in 0..count {
-                // Try to generate a viable child (up to 10 attempts if using simple morphology)
-                let max_attempts = if self.config.use_simple_morphology {
-                    10
-                } else {
-                    1
-                };
-
-                let mut child = None;
-                for _ in 0..max_attempts {
-                    let candidate = if let Some(grid) = grid {
-                        if let Some((parent1, parent2)) = grid.sample_parents() {
-                            // Crossover
-                            let mut c = crossover_genome(
-                                &parent1.genome,
-                                &parent2.genome,
-                                parent1.fitness,
-                                parent2.fitness,
-                            );
-                            c.mutate(
-                                &self.config.mutation_config,
-                                self.config.controller_mutation_rate,
-                            );
-                            c
-                        } else if let Some(parent) = grid.sample_elite() {
-                            // Mutation only
-                            let mut c = parent.genome.clone();
-                            c.mutate(
-                                &self.config.mutation_config,
-                                self.config.controller_mutation_rate,
-                            );
-                            c
-                        } else {
-                            // Random (shouldn't happen after initialization)
-                            let mut genome = self.base_genome_for(archetype);
-                            genome.mutate(
-                                &self.config.mutation_config,
-                                self.config.controller_mutation_rate,
-                            );
-                            genome
-                        }
-                    } else {
-                        // No grid for this archetype - random
-                        let mut genome = self.base_genome_for(archetype);
-                        genome.mutate(
-                            &self.config.mutation_config,
-                            self.config.controller_mutation_rate,
-                        );
-                        genome
-                    };
-
-                    // Check viability if using simple morphology
-                    if !self.config.use_simple_morphology || self.is_viable(&candidate, archetype) {
-                        child = Some(candidate);
-                        break;
-                    }
-                }
-
-                // Use fallback if no viable child found
-                let genome = child.unwrap_or_else(|| self.generate_viable_genome(archetype));
-                offspring.push((archetype, genome));
+                let genome = self.generate_offspring_from_grid(grid, archetype);
+                offspring.push((archetype, genome, None)); // None = no target biome
             }
         }
 
         offspring
     }
 
-    /// Evaluate a population of genomes in parallel (with archetypes)
+    /// Evaluate a population of genomes in parallel (with archetypes and optional biome targets)
     fn evaluate_population_with_archetypes(
         &self,
-        archetype_genomes: &[(CreatureArchetype, CreatureGenome)],
+        archetype_genomes: &[(CreatureArchetype, CreatureGenome, Option<BiomeType>)],
         pb: &ProgressBar,
     ) -> Result<Vec<EvalResult>> {
         let results: Vec<EvalResult> = archetype_genomes
             .par_iter()
             .enumerate()
-            .map(|(idx, (archetype, genome))| {
-                let result = self.evaluate_single(genome.clone(), *archetype, idx);
+            .map(|(idx, (archetype, genome, target_biome))| {
+                // For biome specialist mode with multi-env, use specialized evaluation
+                let result = if target_biome.is_some() && self.config.multi_env.is_some() {
+                    let multi_env = self.config.multi_env.as_ref().unwrap();
+                    self.evaluate_single_multi_env(
+                        genome.clone(),
+                        *archetype,
+                        idx,
+                        multi_env,
+                        *target_biome,
+                    )
+                } else {
+                    let mut res = self.evaluate_single(genome.clone(), *archetype, idx);
+                    res.target_biome = *target_biome; // Attach biome target to result
+                    res
+                };
                 pb.inc(1);
                 result
             })
@@ -705,7 +969,8 @@ impl TrainingEnv {
     ) -> EvalResult {
         // Check if multi-environment evaluation is enabled
         if let Some(ref multi_env) = self.config.multi_env {
-            return self.evaluate_single_multi_env(genome, archetype, creature_idx, multi_env);
+            // target_biome will be set by caller after evaluation
+            return self.evaluate_single_multi_env(genome, archetype, creature_idx, multi_env, None);
         }
 
         // Legacy single-environment evaluation
@@ -793,28 +1058,43 @@ impl TrainingEnv {
             fitness,
             behavior,
             displacement,
+            target_biome: None, // Legacy single-env evaluation
+            multi_env_scores: None, // Single environment
         }
     }
 
     /// Multi-environment evaluation (NEW)
+    ///
+    /// If target_biome is Some, samples only terrains for that biome (biome specialist training).
+    /// Otherwise, samples terrains from the default distribution.
     fn evaluate_single_multi_env(
         &self,
         genome: CreatureGenome,
         archetype: CreatureArchetype,
         creature_idx: usize,
         multi_env: &MultiEnvironmentEvaluator,
+        target_biome: Option<BiomeType>,
     ) -> EvalResult {
         // Compute deterministic eval_id for this creature
         let eval_id =
             (self.generation as u64) * (self.config.population_size as u64) + (creature_idx as u64);
 
         // Sample terrain configurations for this evaluation
-        let terrains = multi_env
-            .sample_terrains(eval_id)
-            .expect("Failed to sample terrains");
+        let terrains = if let Some(biome) = target_biome {
+            // Biome specialist mode: sample only terrains for this biome
+            multi_env
+                .sample_terrains_for_biome(eval_id, biome)
+                .expect("Failed to sample biome-specific terrains")
+        } else {
+            // Default multi-env mode: sample from general distribution
+            multi_env
+                .sample_terrains(eval_id)
+                .expect("Failed to sample terrains")
+        };
 
         // Evaluate on each environment
         let mut individual_scores = Vec::new();
+        let mut env_type_scores = Vec::new(); // Track (env_type, fitness) pairs
         let mut behavior_sum = BehaviorDescriptor {
             locomotion_efficiency: 0.0,
             foraging_efficiency: 0.0,
@@ -826,6 +1106,11 @@ impl TrainingEnv {
         for terrain in &terrains {
             let result = self.evaluate_on_terrain(&genome, archetype, terrain);
             individual_scores.push(result.fitness);
+
+            // Classify terrain type for multi-env stats
+            let env_type = terrain.difficulty.classify_type();
+            env_type_scores.push((env_type, result.fitness));
+
             behavior_sum.locomotion_efficiency += result.behavior.locomotion_efficiency;
             behavior_sum.foraging_efficiency += result.behavior.foraging_efficiency;
             behavior_sum.exploration += result.behavior.exploration;
@@ -852,6 +1137,8 @@ impl TrainingEnv {
             fitness: aggregated_fitness,
             behavior: avg_behavior,
             displacement: avg_displacement,
+            target_biome: None, // Multi-env evaluation (will be set by caller for biome training)
+            multi_env_scores: Some(env_type_scores), // Track per-environment performance
         }
     }
 
@@ -932,6 +1219,8 @@ impl TrainingEnv {
             fitness,
             behavior,
             displacement,
+            target_biome: None, // Single terrain evaluation
+            multi_env_scores: None, // Single terrain, no multi-env tracking
         }
     }
 
@@ -943,15 +1232,36 @@ impl TrainingEnv {
         let mut max_displacement = 0.0f32;
 
         for result in &results {
-            if let Some(grid) = self.grids.get_mut(&result.archetype)
-                && grid.try_insert(
-                    result.genome.clone(),
-                    result.fitness,
-                    &result.behavior,
-                    self.generation,
-                    result.archetype,
-                )
-            {
+            // Check if this is a biome specialist result
+            let inserted = if let Some(biome) = result.target_biome {
+                // Insert into biome-specific grid
+                if let Some(grid) = self.biome_grids.get_mut(&biome) {
+                    grid.try_insert(
+                        result.genome.clone(),
+                        result.fitness,
+                        &result.behavior,
+                        self.generation,
+                        result.archetype,
+                    )
+                } else {
+                    false
+                }
+            } else {
+                // Insert into archetype grid (legacy mode)
+                if let Some(grid) = self.grids.get_mut(&result.archetype) {
+                    grid.try_insert(
+                        result.genome.clone(),
+                        result.fitness,
+                        &result.behavior,
+                        self.generation,
+                        result.archetype,
+                    )
+                } else {
+                    false
+                }
+            };
+
+            if inserted {
                 new_elites += 1;
             }
             total_fitness += result.fitness;
@@ -959,11 +1269,12 @@ impl TrainingEnv {
             max_displacement = max_displacement.max(result.displacement);
         }
 
-        // Compute aggregate stats across all grids
+        // Compute aggregate stats across all active grids
         let mut best_fitness = f32::NEG_INFINITY;
         let mut total_coverage = 0.0;
         let mut best_per_archetype = HashMap::new();
 
+        // Include archetype grids (legacy mode)
         for (archetype, grid) in &self.grids {
             let stats = grid.stats();
             best_fitness = best_fitness.max(stats.best_fitness);
@@ -971,13 +1282,169 @@ impl TrainingEnv {
             best_per_archetype.insert(*archetype, stats.best_fitness);
         }
 
-        let avg_coverage = if self.grids.is_empty() {
+        // Include biome grids (biome specialist mode) and track per-biome best fitness
+        let mut best_per_biome = if self.biome_specialist_mode {
+            Some(HashMap::new())
+        } else {
+            None
+        };
+
+        for (biome, grid) in &self.biome_grids {
+            let stats = grid.stats();
+            best_fitness = best_fitness.max(stats.best_fitness);
+            total_coverage += stats.coverage;
+
+            // Track best fitness per biome
+            if let Some(ref mut biome_map) = best_per_biome {
+                biome_map.insert(*biome, stats.best_fitness);
+            }
+        }
+
+        let total_grids = self.grids.len() + self.biome_grids.len();
+        let avg_coverage = if total_grids == 0 {
             0.0
         } else {
-            total_coverage / self.grids.len() as f32
+            total_coverage / total_grids as f32
+        };
+
+        // Compute behavior diversity across all active grids
+        let behavior_diversity = if total_grids > 0 {
+            let mut total_entropy = 0.0;
+            let mut total_unique = 0;
+            let mut total_variance = 0.0;
+
+            // Aggregate diversity from archetype grids
+            for grid in self.grids.values() {
+                total_entropy += grid.calculate_entropy();
+                total_unique += grid.cell_count();
+                total_variance += grid.calculate_density_variance();
+            }
+
+            // Aggregate diversity from biome grids
+            for grid in self.biome_grids.values() {
+                total_entropy += grid.calculate_entropy();
+                total_unique += grid.cell_count();
+                total_variance += grid.calculate_density_variance();
+            }
+
+            Some(BehaviorDiversityStats {
+                entropy: total_entropy / total_grids as f32,
+                unique_niches: total_unique,
+                density_variance: total_variance / total_grids as f32,
+            })
+        } else {
+            None
         };
 
         let n = results.len() as f32;
+
+        // Get curriculum stage snapshot if curriculum is enabled
+        let curriculum_stage = if let Some(ref curriculum) = self.config.curriculum {
+            if let Some(ref tracker) = self.curriculum_tracker {
+                let stage_idx = curriculum.current_stage_index();
+                let stage_name = curriculum.current_stage().name.clone();
+                let generations_in_stage = tracker.generations_in_stage(self.generation);
+
+                Some(CurriculumStageSnapshot {
+                    stage_index: stage_idx,
+                    stage_name,
+                    generations_in_stage,
+                    advanced_this_gen: None, // Will be set by check_curriculum_advancement
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Compute multi-environment stats if multi-env evaluation is enabled
+        let multi_env_stats = if self.config.multi_env.is_some() {
+            // Collect all (env_type, fitness) pairs from results
+            let mut all_env_scores: Vec<(String, f32)> = Vec::new();
+            for result in &results {
+                if let Some(ref scores) = result.multi_env_scores {
+                    all_env_scores.extend(scores.iter().cloned());
+                }
+            }
+
+            if !all_env_scores.is_empty() {
+                // Group scores by environment type
+                let mut env_type_map: std::collections::HashMap<String, Vec<f32>> =
+                    std::collections::HashMap::new();
+
+                for (env_type, fitness) in all_env_scores.iter() {
+                    env_type_map
+                        .entry(env_type.clone())
+                        .or_insert_with(Vec::new)
+                        .push(*fitness);
+                }
+
+                // Calculate EnvTypeStats for each environment type
+                let mut env_type_performance = std::collections::HashMap::new();
+                for (env_type, scores) in env_type_map.iter() {
+                    let mean_fitness = scores.iter().sum::<f32>() / scores.len() as f32;
+                    let best_fitness = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                    let worst_fitness = scores.iter().copied().fold(f32::INFINITY, f32::min);
+                    let count = scores.len();
+
+                    env_type_performance.insert(
+                        env_type.clone(),
+                        EnvTypeStats {
+                            mean_fitness,
+                            best_fitness,
+                            worst_fitness,
+                            count,
+                        },
+                    );
+                }
+
+                // Calculate overall fitness distribution (across all environment types)
+                let all_fitnesses: Vec<f32> = all_env_scores.iter().map(|(_, f)| *f).collect();
+                let mut sorted_fitnesses = all_fitnesses.clone();
+                sorted_fitnesses.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+                let min = sorted_fitnesses[0];
+                let max = sorted_fitnesses[sorted_fitnesses.len() - 1];
+                let mean = all_fitnesses.iter().sum::<f32>() / all_fitnesses.len() as f32;
+
+                let q25_idx = (sorted_fitnesses.len() as f32 * 0.25) as usize;
+                let median_idx = sorted_fitnesses.len() / 2;
+                let q75_idx = (sorted_fitnesses.len() as f32 * 0.75) as usize;
+
+                let q25 = sorted_fitnesses[q25_idx.min(sorted_fitnesses.len() - 1)];
+                let median = if sorted_fitnesses.len() % 2 == 0 {
+                    (sorted_fitnesses[median_idx - 1] + sorted_fitnesses[median_idx]) / 2.0
+                } else {
+                    sorted_fitnesses[median_idx]
+                };
+                let q75 = sorted_fitnesses[q75_idx.min(sorted_fitnesses.len() - 1)];
+
+                let variance = all_fitnesses
+                    .iter()
+                    .map(|f| (f - mean).powi(2))
+                    .sum::<f32>()
+                    / all_fitnesses.len() as f32;
+                let std_dev = variance.sqrt();
+
+                Some(MultiEnvStats {
+                    env_type_performance,
+                    fitness_distribution: FitnessDistribution {
+                        min,
+                        q25,
+                        median,
+                        q75,
+                        max,
+                        mean,
+                        std_dev,
+                    },
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         TrainingStats {
             generation: self.generation,
@@ -996,6 +1463,12 @@ impl TrainingEnv {
                 total_displacement / n
             },
             best_per_archetype,
+
+            // Enhanced reporting fields
+            multi_env_stats,
+            curriculum_stage,
+            behavior_diversity,
+            best_per_biome,
         }
     }
 
@@ -1262,5 +1735,201 @@ mod tests {
 
         assert_eq!(env.generation, 0);
         assert!(env.stats_history.is_empty());
+    }
+
+    #[test]
+    fn test_biome_specialist_initialization() {
+        let config = TrainingConfig {
+            generations: 5,
+            population_size: 20,
+            biome_specialist: Some(BiomeSpecialistConfig {
+                target_biomes: vec![BiomeType::Desert, BiomeType::Plains],
+                archetype: Some(CreatureArchetype::Spider),
+                enable_cross_biome_testing: false,
+            }),
+            ..Default::default()
+        };
+        let scenario = Scenario::locomotion();
+        let env = TrainingEnv::new(config, scenario);
+
+        // Should have 2 biome grids
+        assert_eq!(env.biome_grids.len(), 2);
+        assert!(env.biome_grids.contains_key(&BiomeType::Desert));
+        assert!(env.biome_grids.contains_key(&BiomeType::Plains));
+
+        // Should be in biome specialist mode
+        assert!(env.biome_specialist_mode);
+
+        // Archetype grids are still initialized (for potential hybrid use)
+        // but only biome grids are used during training
+        assert!(!env.grids.is_empty());
+    }
+
+    #[test]
+    fn test_biome_specialist_backward_compatibility() {
+        // Without biome_specialist config, should use archetype grids
+        let config = TrainingConfig {
+            generations: 5,
+            population_size: 20,
+            biome_specialist: None,
+            ..Default::default()
+        };
+        let scenario = Scenario::locomotion();
+        let env = TrainingEnv::new(config, scenario);
+
+        // Should have archetype grids
+        assert!(!env.grids.is_empty());
+
+        // Should not have biome grids
+        assert!(env.biome_grids.is_empty());
+
+        // Should not be in biome specialist mode
+        assert!(!env.biome_specialist_mode);
+    }
+
+    #[test]
+    fn test_multi_env_configuration() {
+        use crate::headless::multi_env_eval::{FitnessAggregation, MultiEnvironmentEvaluator};
+        use crate::headless::env_distribution::EnvironmentDistribution;
+
+        let config = TrainingConfig {
+            generations: 2,
+            population_size: 10,
+            multi_env: Some(MultiEnvironmentEvaluator {
+                num_environments: 3,
+                distribution: EnvironmentDistribution::default(),
+                aggregation: FitnessAggregation::Mean,
+            }),
+            ..Default::default()
+        };
+        let scenario = Scenario::locomotion();
+        let env = TrainingEnv::new(config, scenario);
+
+        // Multi-env should be configured
+        assert!(env.config.multi_env.is_some());
+        let multi_env = env.config.multi_env.as_ref().unwrap();
+        assert_eq!(multi_env.num_environments, 3);
+    }
+
+    #[test]
+    fn test_curriculum_configuration() {
+        use crate::headless::curriculum::{AdvancementCriteria, CurriculumConfig, CurriculumStage};
+        use crate::headless::env_distribution::EnvironmentDistribution;
+
+        let curriculum = CurriculumConfig::new(vec![
+            CurriculumStage {
+                name: "Stage 1".to_string(),
+                distribution: EnvironmentDistribution::default(),
+                min_generations: 2,
+                advancement: AdvancementCriteria::Automatic,
+            },
+            CurriculumStage {
+                name: "Stage 2".to_string(),
+                distribution: EnvironmentDistribution::default(),
+                min_generations: 2,
+                advancement: AdvancementCriteria::Automatic,
+            },
+        ])
+        .unwrap();
+
+        let config = TrainingConfig {
+            generations: 5,
+            population_size: 20,
+            curriculum: Some(curriculum),
+            ..Default::default()
+        };
+        let scenario = Scenario::locomotion();
+        let env = TrainingEnv::new(config, scenario);
+
+        // Should have curriculum configured
+        assert!(env.config.curriculum.is_some());
+        let curriculum = env.config.curriculum.as_ref().unwrap();
+        assert_eq!(curriculum.num_stages(), 2);
+
+        // Should have curriculum tracker initialized
+        assert!(env.curriculum_tracker.is_some());
+
+        // Curriculum timeline should be empty at start
+        assert!(env.curriculum_timeline.is_empty());
+    }
+
+    #[test]
+    fn test_archetype_grids_initialization() {
+        let config = TrainingConfig {
+            generations: 2,
+            population_size: 20,
+            ..Default::default()
+        };
+        let scenario = Scenario::locomotion();
+        let env = TrainingEnv::new(config, scenario);
+
+        // Should have archetype grids (not biome grids)
+        assert!(!env.grids.is_empty());
+        assert!(env.biome_grids.is_empty());
+
+        // All configured archetypes should have grids
+        for archetype in &env.archetypes {
+            assert!(env.grids.contains_key(archetype));
+        }
+    }
+
+    #[test]
+    fn test_biome_specialist_with_multi_env() {
+        use crate::headless::multi_env_eval::{FitnessAggregation, MultiEnvironmentEvaluator};
+        use crate::headless::env_distribution::EnvironmentDistribution;
+
+        let config = TrainingConfig {
+            generations: 2,
+            population_size: 20,
+            biome_specialist: Some(BiomeSpecialistConfig {
+                target_biomes: vec![BiomeType::Desert, BiomeType::Mountains],
+                archetype: Some(CreatureArchetype::Spider),
+                enable_cross_biome_testing: false,
+            }),
+            multi_env: Some(MultiEnvironmentEvaluator {
+                num_environments: 3,
+                distribution: EnvironmentDistribution::default(),
+                aggregation: FitnessAggregation::Mean,
+            }),
+            ..Default::default()
+        };
+        let scenario = Scenario::locomotion();
+        let env = TrainingEnv::new(config, scenario);
+
+        // Should have both biome grids and multi-env configured
+        assert_eq!(env.biome_grids.len(), 2);
+        assert!(env.config.multi_env.is_some());
+
+        // Should be in biome specialist mode
+        assert!(env.biome_specialist_mode);
+    }
+
+    #[test]
+    fn test_backward_compatibility_no_enhanced_features() {
+        // Without multi-env or biome training, should use default behavior
+        let config = TrainingConfig {
+            generations: 2,
+            population_size: 10,
+            multi_env: None,
+            biome_specialist: None,
+            curriculum: None,
+            ..Default::default()
+        };
+        let scenario = Scenario::locomotion();
+        let env = TrainingEnv::new(config, scenario);
+
+        // Should use archetype grids
+        assert!(!env.grids.is_empty());
+        assert!(env.biome_grids.is_empty());
+
+        // Should not be in biome specialist mode
+        assert!(!env.biome_specialist_mode);
+
+        // Multi-env should be None
+        assert!(env.config.multi_env.is_none());
+
+        // Curriculum should be None
+        assert!(env.config.curriculum.is_none());
+        assert!(env.curriculum_tracker.is_none());
     }
 }

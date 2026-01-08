@@ -84,6 +84,44 @@ impl EnvironmentDistribution {
         (0..count).map(|i| self.sample(eval_id, i)).collect()
     }
 
+    /// Sample a single environment for a specific biome (biome specialist training)
+    ///
+    /// Forces the sampled terrain to use the specified biome, overriding any default
+    /// biome distribution. Used for biome specialist training where creatures train
+    /// exclusively on one biome type.
+    ///
+    /// # Arguments
+    /// * `eval_id` - Evaluation ID (generation * pop_size + creature_idx)
+    /// * `env_index` - Environment index within the batch
+    /// * `biome` - Target biome type to force
+    pub fn sample_for_biome(
+        &self,
+        eval_id: u64,
+        env_index: usize,
+        biome: sunaba_core::world::biome::BiomeType,
+    ) -> Result<TrainingTerrainConfig> {
+        let mut config = self.sample(eval_id, env_index)?;
+        config.biome_type = Some(biome);
+        Ok(config)
+    }
+
+    /// Sample multiple environments for a specific biome in batch
+    ///
+    /// # Arguments
+    /// * `eval_id` - Evaluation ID
+    /// * `count` - Number of environments to sample
+    /// * `biome` - Target biome type to force for all environments
+    pub fn sample_batch_for_biome(
+        &self,
+        eval_id: u64,
+        count: usize,
+        biome: sunaba_core::world::biome::BiomeType,
+    ) -> Result<Vec<TrainingTerrainConfig>> {
+        (0..count)
+            .map(|i| self.sample_for_biome(eval_id, i, biome))
+            .collect()
+    }
+
     /// Derive deterministic seed from eval_id and environment index
     ///
     /// Combines:
@@ -136,6 +174,7 @@ impl EnvironmentDistribution {
             height: 128,
             difficulty: diff.clone(),
             worldgen_config: sunaba_core::world::worldgen_config::WorldGenConfig::default(),
+            biome_type: None,
         }
     }
 

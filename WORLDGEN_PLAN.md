@@ -535,12 +535,51 @@ pub struct TerrainSensoryInput {
 4. [x] Curriculum learning system
 5. [x] Extended terrain sensors
 
-### Sprint 5: Polish & Biome Content (4-5 days)
-1. [x] Biome zone system (underground biomes) - **COMPLETE**
-2. [ ] Biome specialist training mode
-3. [x] More structures (bridges, ruins) - **COMPLETE** (in Sprint 3)
-4. [x] Builtin presets (5+ varied configs) - **COMPLETE** (Default, Cave Heavy, Flat, Desert, Mountain)
-5. [ ] Training report enhancements
+### Sprint 5: Biome Specialist Training & Enhanced Reports - COMPLETE ✅ (January 2026)
+
+Successfully implemented biome-specialized evolution and comprehensive training analytics:
+- **Biome Specialist Training** - Per-biome MAP-Elites grids with biome-specific terrain evaluation
+- **Multi-Environment Statistics** - Per-environment-type performance tracking and fitness distributions
+- **Curriculum Stage Tracking** - Timeline of stage transitions with advancement reasons
+- **Behavior Diversity Metrics** - Shannon entropy, unique niches, density variance
+- **Enhanced Data Export** - Extended JSON schema + CSV export for external analysis
+- **2 Biome Curriculum Presets** - `biome_progression()` and `biome_quick()` for specialized training
+
+**Files Created:**
+- None (extended existing files)
+
+**Files Modified:**
+- `crates/sunaba/src/headless/training_env.rs` (+290 lines) - BiomeSpecialistConfig, biome grids, enhanced stats tracking
+- `crates/sunaba/src/headless/terrain_config.rs` (+20 lines) - BiomeType field, classify_type() helper
+- `crates/sunaba/src/headless/env_distribution.rs` (+40 lines) - sample_for_biome() methods
+- `crates/sunaba/src/headless/multi_env_eval.rs` (+30 lines) - sample_terrains_for_biome()
+- `crates/sunaba/src/headless/map_elites.rs` (+115 lines) - Behavior diversity calculations (entropy, heatmap, variance)
+- `crates/sunaba/src/headless/curriculum.rs` (+108 lines) - Biome curriculum presets
+- `crates/sunaba/src/headless/report.rs` (+327 lines) - Extended JSON schema, CSV export
+
+**Test Coverage:**
+- 9 new integration tests for biome training
+- 7 new unit tests for behavior diversity
+- All 118 tests passing ✅
+
+**Key Features:**
+1. **Biome Specialist Training**: Train separate populations per biome (Desert, Plains, Forest, Mountains, Ocean)
+   ```rust
+   let config = TrainingConfig::default()
+       .with_biome_specialists(vec![BiomeType::Desert, BiomeType::Mountains]);
+   ```
+2. **Multi-Environment Stats**: Track mean/best/worst fitness per environment type (flat, hills, obstacles, hazards)
+3. **Curriculum Tracking**: Record stage transitions with fitness/coverage at advancement
+4. **Behavior Diversity**: Calculate entropy and density variance of MAP-Elites grids
+5. **CSV Export**: All training data exportable to `training_data.csv` with dynamic columns
+6. **Backward Compatible**: All enhanced stats are optional, existing training unchanged
+
+**Deliverables:**
+1. [x] Biome zone system (underground biomes) - **COMPLETE** (Phase 3)
+2. [x] Biome specialist training mode - **COMPLETE**
+3. [x] More structures (bridges, ruins) - **COMPLETE** (Phase 2)
+4. [x] Builtin presets (5+ varied configs) - **COMPLETE** (Phase 1)
+5. [x] Training report enhancements - **COMPLETE** (JSON schema + CSV export)
 
 ---
 
