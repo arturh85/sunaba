@@ -9,6 +9,15 @@
 
 A 2D falling-sand physics sandbox survival game featuring ML-evolved creatures with articulated bodies and emergent behaviors, inspired by Noita and Terraria.
 
+<p align="center">
+  <video width="800" height="450" controls loop autoplay muted>
+    <source src="https://arturh85.github.io/sunaba/videos/material_reactions.mp4" type="video/mp4">
+    Material reactions showcase
+  </video>
+</p>
+
+*Emergent material interactions: fire spreading, structural collapse, chemical reactions, and dynamic physics*
+
 ## Features (Planned)
 
 - **Emergent Physics**: Every pixel is simulated with material properties

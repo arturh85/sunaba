@@ -204,6 +204,76 @@ screenshot-layout layout_name level_id="" width="1920" height="1080" settle="60"
 # ============================================================================
 
 # ============================================================================
+# Video Generation Commands (MP4)
+# ============================================================================
+
+# List all available video scenarios
+list-video-scenarios:
+    cargo run -p sunaba --bin sunaba --release --features headless -- --list-video-scenarios
+
+# Generate a single video scenario
+# Usage: just video <scenario_id>
+# Example: just video fire_spread
+[unix]
+video scenario:
+    @mkdir -p videos
+    cargo run -p sunaba --bin sunaba --release --features headless -- --video-scenario {{scenario}} --video-output-dir videos
+    @echo "Video generated successfully!"
+
+[windows]
+video scenario:
+    @if (-not (Test-Path videos)) { New-Item -ItemType Directory -Path videos | Out-Null }
+    cargo run -p sunaba --bin sunaba --release --features headless -- --video-scenario {{scenario}} --video-output-dir videos
+    @Write-Host "Video generated successfully!"
+
+# Generate all video scenarios
+[unix]
+videos-all:
+    @mkdir -p videos
+    cargo run -p sunaba --bin sunaba --release --features headless -- --generate-all-videos --video-output-dir videos
+    @echo "All videos generated successfully!"
+
+[windows]
+videos-all:
+    @if (-not (Test-Path videos)) { New-Item -ItemType Directory -Path videos | Out-Null }
+    cargo run -p sunaba --bin sunaba --release --features headless -- --generate-all-videos --video-output-dir videos
+    @Write-Host "All videos generated successfully!"
+
+# Generate documentation screenshots (subset for docs, not all 21 levels)
+[unix]
+screenshots-docs:
+    @mkdir -p screenshots
+    @echo "Generating documentation screenshots..."
+    just screenshot 3 1920 1080           # Material Catalog
+    just screenshot 17 1920 1080          # Phase 5 Materials
+    just screenshot 12 1920 1080          # Castle Structure
+    just screenshot 20 1920 1080          # Lighting System
+    just screenshot 16 1920 1080          # Survival Tutorial
+    just screenshot-ui inventory 1280 720
+    just screenshot-ui crafting 1280 720
+    @echo "Documentation screenshots complete!"
+
+[windows]
+screenshots-docs:
+    @if (-not (Test-Path screenshots)) { New-Item -ItemType Directory -Path screenshots | Out-Null }
+    @Write-Host "Generating documentation screenshots..."
+    just screenshot 3 1920 1080
+    just screenshot 17 1920 1080
+    just screenshot 12 1920 1080
+    just screenshot 20 1920 1080
+    just screenshot 16 1920 1080
+    just screenshot-ui inventory 1280 720
+    just screenshot-ui crafting 1280 720
+    @Write-Host "Documentation screenshots complete!"
+
+# Generate all documentation media (screenshots + videos)
+docs-media: screenshots-docs videos-all
+
+# ============================================================================
+# End Video Generation Commands
+# ============================================================================
+
+# ============================================================================
 # Scenario Testing Commands
 # ============================================================================
 

@@ -26,6 +26,8 @@ mod layouts;
 mod offscreen_renderer;
 mod sample_data;
 pub mod scenario;
+pub mod video_capture;
+pub mod video_scenarios;
 
 pub use layouts::ScreenshotLayout;
 
@@ -47,6 +49,8 @@ use crate::entity::{
 };
 
 pub use scenario::{ScreenshotScenario, list_all_scenarios};
+pub use video_capture::VideoCapture;
+pub use video_scenarios::{VideoScenario, ScenarioAction, get_all_scenarios as get_all_video_scenarios, get_scenario_by_id as get_video_scenario_by_id};
 
 /// Screenshot configuration
 pub struct ScreenshotConfig {
@@ -689,6 +693,200 @@ pub fn capture_scenario(
             anyhow::bail!("Interactive scenarios not yet implemented: {}", name)
         }
     }
+}
+
+/// Capture a video scenario and encode to MP4
+///
+/// # Arguments
+/// * `scenario` - The video scenario to capture
+/// * `output_path` - Output MP4 file path (relative to current directory)
+///
+/// # Returns
+/// Ok(()) on success, or an error if capturing or encoding fails
+pub fn capture_video_scenario(
+    scenario: &VideoScenario,
+    output_path: impl AsRef<Path>,
+) -> Result<()> {
+    log::info!("Capturing video scenario: {}", scenario.name);
+    log::info!("  Description: {}", scenario.description);
+    log::info!("  Resolution: {}x{}", scenario.width, scenario.height);
+    log::info!("  Duration: {}s @ {}fps", scenario.duration_seconds, scenario.fps);
+    log::info!("  Actions: {}", scenario.actions.len());
+
+    // Initialize video capture
+    let mut video = VideoCapture::new(scenario.width, scenario.height, scenario.fps)?;
+
+    // Initialize world (skip initial creatures for clean video)
+    let mut world = World::new(true);
+    let materials = Materials::new();
+
+    // Load level if specified
+    if let Some(level_id) = scenario.level_id {
+        let mut level_manager = LevelManager::new();
+        if level_id >= level_manager.levels().len() {
+            anyhow::bail!(
+                "Invalid level ID: {} (max: {})",
+                level_id,
+                level_manager.levels().len() - 1
+            );
+        }
+        level_manager.load_level(level_id, &mut world);
+        let level_name = level_manager.levels()[level_id].name;
+        log::info!("  Level: {}", level_name);
+    } else {
+        log::info!("  Level: (empty world)");
+    }
+
+    // Determine camera center (default to world origin)
+    let camera_center = Vec2::new(0.0, 32.0);
+
+    // Create renderer
+    let mut renderer = PixelRenderer::new(scenario.width as usize, scenario.height as usize);
+
+    // Physics simulation parameters
+    let dt = 1.0 / 60.0; // 60 FPS physics
+    let capture_interval = 60 / scenario.fps as usize; // Capture every N frames (e.g., every 3 frames for 20fps)
+    let total_frames = (scenario.duration_seconds * 60.0) as usize;
+
+    let mut stats = NoopStats;
+    let mut rng = thread_rng();
+
+    log::info!("Simulating {} frames ({} captures)...", total_frames, total_frames / capture_interval);
+
+    // Build action timeline (frame number -> actions to execute)
+    let action_timeline = build_action_timeline(&scenario.actions);
+
+    // Simulation and capture loop
+    for frame in 0..total_frames {
+        // Execute scenario actions scheduled for this frame
+        if let Some(actions) = action_timeline.get(&frame) {
+            for action in actions {
+                execute_video_action(action, &mut world, frame);
+            }
+        }
+
+        // Update world physics
+        world.update(dt, &mut stats, &mut rng, false);
+
+        // Capture frame at intervals
+        if frame % capture_interval == 0 {
+            renderer.render(&world, &materials, camera_center, &[]);
+            video.capture_frame(&renderer)?;
+        }
+
+        // Progress logging every second
+        if frame % 60 == 0 {
+            log::debug!("  Frame {}/{} ({:.1}s)", frame, total_frames, frame as f32 / 60.0);
+        }
+    }
+
+    log::info!("Encoding {} frames to MP4...", video.frame_count());
+    video.encode_to_mp4(&output_path)?;
+
+    log::info!("Video saved successfully: {:?}", output_path.as_ref());
+    Ok(())
+}
+
+/// Build action timeline from scenario actions
+///
+/// Converts a sequence of actions (with Wait actions) into a frame-based timeline.
+/// Returns a map of frame number -> actions to execute at that frame.
+fn build_action_timeline(actions: &[ScenarioAction]) -> std::collections::HashMap<usize, Vec<ScenarioAction>> {
+    use std::collections::HashMap;
+
+    let mut timeline: HashMap<usize, Vec<ScenarioAction>> = HashMap::new();
+    let mut current_frame = 0;
+
+    for action in actions {
+        match action {
+            ScenarioAction::Wait { frames } => {
+                // Advance frame counter (don't schedule any action)
+                current_frame += frames;
+            }
+            other => {
+                // Schedule action at current frame
+                timeline
+                    .entry(current_frame)
+                    .or_insert_with(Vec::new)
+                    .push(other.clone());
+            }
+        }
+    }
+
+    if !timeline.is_empty() {
+        log::debug!("Action timeline: {} trigger frames", timeline.len());
+        for (frame, actions) in &timeline {
+            log::debug!("  Frame {}: {} action(s)", frame, actions.len());
+        }
+    }
+
+    timeline
+}
+
+/// Execute a scenario action
+fn execute_video_action(action: &ScenarioAction, world: &mut World, frame: usize) {
+    match action {
+        ScenarioAction::Wait { .. } => {
+            // Does nothing - just advance simulation
+        }
+
+        ScenarioAction::MineCircle { x, y, radius } => {
+            world.debug_mine_circle(*x, *y, *radius);
+        }
+
+        ScenarioAction::PlaceMaterial { x, y, material, radius } => {
+            world.place_material_debug(*x, *y, *material, *radius as u32);
+        }
+
+        ScenarioAction::RemoveSupport { x, y, width, height } => {
+            // Remove all materials in the rectangular area (set to AIR)
+            const AIR: u16 = 0;
+            for dy in 0..*height {
+                for dx in 0..*width {
+                    let world_x = x + dx;
+                    let world_y = y + dy;
+                    world.set_pixel(world_x, world_y, AIR);
+                }
+            }
+        }
+
+        ScenarioAction::TeleportPlayer { .. } => {
+            // TODO: Implement player teleport in headless mode
+            // For now, skip this action since headless mode doesn't have a player entity
+            log::warn!("TeleportPlayer action not yet implemented in headless video capture (frame {})", frame);
+        }
+
+        ScenarioAction::SimulatePlayerMining { .. } => {
+            // TODO: Implement player mining simulation in headless mode
+            // For now, skip this action
+            log::warn!("SimulatePlayerMining action not yet implemented in headless video capture (frame {})", frame);
+        }
+    }
+}
+
+/// List all available video scenarios
+pub fn list_video_scenarios() {
+    let scenarios = get_all_video_scenarios();
+    println!("Available video scenarios:");
+    println!();
+
+    for scenario in scenarios {
+        println!(
+            "  {} ({}) - {}s @ {}fps",
+            scenario.id, scenario.name, scenario.duration_seconds, scenario.fps
+        );
+        println!("    {}", scenario.description);
+        if let Some(level_id) = scenario.level_id {
+            println!("    Level: {}", level_id);
+        }
+        println!();
+    }
+
+    println!("Total: {} scenarios", get_all_video_scenarios().len());
+    println!();
+    println!("Usage:");
+    println!("  cargo run --release --features headless -- --video-scenario <id>");
+    println!("  cargo run --release --features headless -- --generate-all-videos");
 }
 
 /// Save RGBA buffer as PNG

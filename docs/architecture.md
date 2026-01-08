@@ -445,6 +445,51 @@ flowchart TB
     Mutation --> NN_G
 ```
 
+## User Interface
+
+Sunaba's UI is built with egui, providing immediate-mode rendering for game controls and information displays.
+
+### Inventory System
+
+![Inventory Panel](/screenshots/ui_inventory.png)
+
+The inventory system supports:
+- **Item Stacking**: Materials stack up to 999 per slot
+- **Tool Durability**: Tools show remaining uses and degrade with use
+- **Quick Access**: Hotbar for frequently used items
+- **Visual Feedback**: Item icons with quantity displays
+
+### Crafting System
+
+![Crafting Panel](/screenshots/ui_crafting.png)
+
+The crafting interface provides:
+- **Recipe Discovery**: Available recipes shown based on inventory
+- **Material Requirements**: Clear display of required ingredients
+- **Output Preview**: Shows crafted item before creation
+- **Batch Crafting**: Support for creating multiple items at once
+
+### Material Showcase
+
+![Material Catalog](/screenshots/level_3.png)
+*Basic material showcase: 8 fundamental materials with distinct visual properties*
+
+![Extended Materials](/screenshots/level_17.png)
+*Phase 5 materials: 30+ materials including ores, organics, refined materials, and special compounds*
+
+### Lighting & World Systems
+
+![Day/Night Cycle](/screenshots/level_20.png)
+*Light propagation demonstration: underground lava, fire sources, and surface daylight*
+
+### Structural Complexity
+
+![Castle Structure](/screenshots/level_12.png)
+*Complex architectural structures demonstrating building capabilities*
+
+![Survival Environment](/screenshots/level_16.png)
+*Tutorial level with resource distribution and starter area*
+
 ## Tech Stack Summary
 
 | Component | Technology |

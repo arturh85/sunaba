@@ -74,6 +74,48 @@ Material: Water
 
 Behaviors emerge from these properties, not from special-case code.
 
+### Visual Demonstrations
+
+#### Fire Propagation
+
+<video width="640" height="360" controls loop>
+  <source src="/videos/fire_spread.mp4" type="video/mp4">
+  Fire spreading through wooden structures
+</video>
+
+Fire spreads through flammable materials when temperature exceeds ignition point. No explicit "fire spreading" code exists — the behavior emerges from:
+- Wood's flammability property
+- Fire's heat output
+- Temperature diffusion
+- Material state transitions
+
+#### Liquid Physics
+
+<video width="640" height="360" controls loop>
+  <source src="/videos/water_flow.mp4" type="video/mp4">
+  Water flowing down platforms
+</video>
+
+Liquids flow based on density, viscosity, and neighbor states. Water finds paths through gaps and pools at the lowest point through simple neighbor-checking rules.
+
+#### Structural Dependencies
+
+<video width="640" height="360" controls loop>
+  <source src="/videos/bridge_collapse.mp4" type="video/mp4">
+  Bridge collapse cascade
+</video>
+
+When a support pillar is removed, connected structures evaluate their support state. Unsupported sections convert to debris, triggering a cascade. This demonstrates emergent structural integrity from local connectivity checks.
+
+#### Chemical Reactions
+
+<video width="640" height="360" controls loop>
+  <source src="/videos/lava_water_reaction.mp4" type="video/mp4">
+  Lava and water reaction
+</video>
+
+Lava + Water → Steam + Stone demonstrates temperature-based state changes. The reaction emerges from material properties and temperature thresholds, not hardcoded behavior.
+
 ### The Update Algorithm
 
 Sunaba processes pixels bottom-to-top, alternating horizontal direction each row to avoid directional bias:

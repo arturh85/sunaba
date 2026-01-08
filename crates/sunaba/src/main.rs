@@ -116,6 +116,26 @@ struct Args {
     #[arg(long)]
     #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
     remote_control: bool,
+
+    /// Generate video animation from scenario ID
+    #[arg(long)]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
+    video_scenario: Option<String>,
+
+    /// List all available video scenarios
+    #[arg(long)]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
+    list_video_scenarios: bool,
+
+    /// Generate all video scenarios
+    #[arg(long)]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
+    generate_all_videos: bool,
+
+    /// Output directory for videos (default: "videos/")
+    #[arg(long, default_value = "videos")]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
+    video_output_dir: String,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -204,6 +224,73 @@ fn main() -> anyhow::Result<()> {
             args.screenshot_width,
             args.screenshot_height,
         );
+    }
+
+    // Handle --list-video-scenarios flag
+    #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
+    if args.list_video_scenarios {
+        sunaba::screenshot::list_video_scenarios();
+        return Ok(());
+    }
+
+    // Handle --generate-all-videos flag
+    #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
+    if args.generate_all_videos {
+        use std::path::PathBuf;
+
+        // Create output directory
+        std::fs::create_dir_all(&args.video_output_dir)?;
+
+        let scenarios = sunaba::screenshot::get_all_video_scenarios();
+        let total = scenarios.len();
+
+        log::info!("Generating {} video scenarios to: {}", total, args.video_output_dir);
+
+        for (i, scenario) in scenarios.iter().enumerate() {
+            log::info!("=== Video {}/{}: {} ===", i + 1, total, scenario.name);
+
+            let output_path = PathBuf::from(&args.video_output_dir)
+                .join(format!("{}.mp4", scenario.id));
+
+            match sunaba::screenshot::capture_video_scenario(scenario, &output_path) {
+                Ok(_) => log::info!("✓ Successfully generated: {:?}", output_path),
+                Err(e) => {
+                    log::error!("✗ Failed to generate {}: {}", scenario.id, e);
+                    // Continue with other scenarios
+                }
+            }
+
+            println!(); // Blank line between scenarios
+        }
+
+        log::info!("Finished generating videos!");
+        return Ok(());
+    }
+
+    // Handle --video-scenario flag
+    #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
+    if let Some(scenario_id) = args.video_scenario {
+        use std::path::PathBuf;
+
+        // Get scenario by ID
+        let scenario = sunaba::screenshot::get_video_scenario_by_id(&scenario_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Unknown video scenario: '{}'\nRun with --list-video-scenarios to see available scenarios",
+                    scenario_id
+                )
+            })?;
+
+        // Create output directory
+        std::fs::create_dir_all(&args.video_output_dir)?;
+
+        // Determine output path
+        let output_path = PathBuf::from(&args.video_output_dir)
+            .join(format!("{}.mp4", scenario.id));
+
+        log::info!("Generating video scenario: {}", scenario.name);
+
+        return sunaba::screenshot::capture_video_scenario(&scenario, output_path);
     }
 
     // Handle --test-scenario-stdin flag

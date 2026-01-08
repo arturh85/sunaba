@@ -8,6 +8,77 @@ Sunaba is a research-oriented sandbox exploring the intersection of **emergent p
 
 The playable web version is available at [/game/](game/).
 
+## Visual Showcase
+
+### Emergent Physics
+
+<video width="640" height="360" controls loop autoplay muted>
+  <source src="/videos/fire_spread.mp4" type="video/mp4">
+  Fire spreading through wooden structures
+</video>
+
+*Fire propagates through flammable materials based on temperature and material properties*
+
+<video width="640" height="360" controls loop autoplay muted>
+  <source src="/videos/water_flow.mp4" type="video/mp4">
+  Water flowing down platforms
+</video>
+
+*Liquids flow with realistic viscosity and density interactions*
+
+### Structural Integrity
+
+<video width="640" height="360" controls loop autoplay muted>
+  <source src="/videos/bridge_collapse.mp4" type="video/mp4">
+  Bridge collapse with cascade failure
+</video>
+
+*Structures collapse when support is removed, demonstrating emergent structural dependencies*
+
+### Material Diversity
+
+![Material Catalog](/screenshots/level_3.png)
+*37 unique materials with distinct properties and interactions*
+
+![Phase 5 Materials](/screenshots/level_17.png)
+*Extended material system: ores, organics, refined materials, and special compounds*
+
+### Chemistry & Reactions
+
+<video width="640" height="360" controls loop autoplay muted>
+  <source src="/videos/lava_water_reaction.mp4" type="video/mp4">
+  Lava meets water reaction
+</video>
+
+*Temperature-based state changes: lava + water → steam + stone*
+
+<video width="640" height="360" controls loop autoplay muted>
+  <source src="/videos/material_reactions.mp4" type="video/mp4">
+  Multiple material reactions
+</video>
+
+*Comprehensive chemistry: gunpowder explosions, acid corrosion, organic transformations*
+
+### Advanced Systems
+
+<video width="640" height="360" controls loop autoplay muted>
+  <source src="/videos/plant_growth.mp4" type="video/mp4">
+  Plant growth under light
+</video>
+
+*Light propagation and organic growth systems enable renewable resources*
+
+![Lighting System](/screenshots/level_20.png)
+*Day/night cycle with realistic light propagation from multiple sources*
+
+### User Interface
+
+![Inventory System](/screenshots/ui_inventory.png)
+*Inventory management with item stacking and tool durability*
+
+![Crafting System](/screenshots/ui_crafting.png)
+*Recipe-based crafting for material transformations*
+
 ## The Core Question
 
 Can complex, adaptive behaviors emerge from the interaction of simple rules and evolutionary pressure?
