@@ -471,8 +471,7 @@ impl WorldGenerator {
 
         // Blend materials
         let material = self.biome_transition.blend_material(
-            world_x,
-            world_y,
+            crate::world::biome_transition::BlendContext { world_x, world_y },
             depth,
             if left_biome != biome_type {
                 other_biome

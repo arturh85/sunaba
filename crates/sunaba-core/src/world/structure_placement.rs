@@ -8,6 +8,13 @@ use crate::world::structures::{AnchorType, StructureTemplate};
 /// Maximum height for bridge support columns
 const MAX_COLUMN_HEIGHT: i32 = 64;
 
+/// Chunk position in chunk space
+#[derive(Debug, Clone, Copy)]
+struct ChunkPos {
+    x: i32,
+    y: i32,
+}
+
 /// Place a structure template at world coordinates
 ///
 /// # Arguments
@@ -51,8 +58,10 @@ pub fn place_structure(
     {
         place_bridge_supports(
             chunk,
-            chunk_x,
-            chunk_y,
+            ChunkPos {
+                x: chunk_x,
+                y: chunk_y,
+            },
             world_x,
             world_y,
             left_offset,
@@ -86,8 +95,7 @@ pub fn place_structure(
 /// If no ground is found within MAX_COLUMN_HEIGHT, the support is not placed.
 fn place_bridge_supports(
     chunk: &mut Chunk,
-    chunk_x: i32,
-    chunk_y: i32,
+    chunk_pos: ChunkPos,
     bridge_x: i32,
     bridge_y: i32,
     left_offset: i8,
@@ -95,8 +103,8 @@ fn place_bridge_supports(
     scanner: &ContextScanner,
 ) {
     let chunk_size = CHUNK_SIZE as i32;
-    let chunk_world_x = chunk_x * chunk_size;
-    let chunk_world_y = chunk_y * chunk_size;
+    let chunk_world_x = chunk_pos.x * chunk_size;
+    let chunk_world_y = chunk_pos.y * chunk_size;
 
     for support_offset in [left_offset as i32, right_offset as i32] {
         let support_x = bridge_x + support_offset;

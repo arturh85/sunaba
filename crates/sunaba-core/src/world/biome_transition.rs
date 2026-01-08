@@ -7,6 +7,13 @@ use crate::simulation::{MaterialId, Materials};
 use crate::world::biome::{BiomeDefinition, BiomeType};
 use fastnoise_lite::FastNoiseLite;
 
+/// Position context for biome blending
+#[derive(Debug, Clone, Copy)]
+pub struct BlendContext {
+    pub world_x: i32,
+    pub world_y: i32,
+}
+
 /// Biome transition configuration
 pub struct BiomeTransition {
     /// Transition width in pixels (default: 32)
@@ -118,8 +125,7 @@ impl BiomeTransition {
     /// This is the main entry point for biome transition logic.
     pub fn blend_material(
         &self,
-        world_x: i32,
-        world_y: i32,
+        ctx: BlendContext,
         depth: i32,
         biome1: &BiomeDefinition,
         biome2: &BiomeDefinition,
@@ -147,7 +153,7 @@ impl BiomeTransition {
 
         // Physics-aware blending
         if self.enforce_stability {
-            self.blend_stable(world_x, world_y, mat1, mat2, weight1, weight2, materials)
+            self.blend_stable(ctx, mat1, mat2, weight1, weight2, materials)
         } else {
             // Simple probabilistic blend
             if weight1 > 0.5 { mat1 } else { mat2 }
@@ -170,8 +176,7 @@ impl BiomeTransition {
     /// Ensures powder materials don't create unstable configurations
     fn blend_stable(
         &self,
-        world_x: i32,
-        world_y: i32,
+        ctx: BlendContext,
         mat1: u16,
         mat2: u16,
         weight1: f32,
@@ -184,7 +189,7 @@ impl BiomeTransition {
         // Use noise to create natural boundaries
         let noise = self
             .boundary_noise
-            .get_noise_2d(world_x as f32, world_y as f32);
+            .get_noise_2d(ctx.world_x as f32, ctx.world_y as f32);
         let threshold = 0.5 - (weight1 - 0.5); // Bias threshold based on weights
 
         match (stability1, stability2) {
