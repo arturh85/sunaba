@@ -175,6 +175,30 @@ screenshot-composite level_id panels width="1920" height="1080" settle="60":
     cargo run -p sunaba --bin sunaba --release --features headless -- --screenshot composite:{{level_id}}:{{panels}} --screenshot-width {{width}} --screenshot-height {{height}} --screenshot-settle {{settle}}
     @Write-Host "Composite screenshot captured!"
 
+# Capture layout screenshot (predefined UI layouts)
+# Usage: just screenshot-layout inventory 3  # Inventory layout with level 3
+# Available layouts: default, inventory, crafting, debug, minimal
+[unix]
+screenshot-layout layout_name level_id="" width="1920" height="1080" settle="60":
+    @mkdir -p screenshots
+    #!/usr/bin/env bash
+    if [ -z "{{level_id}}" ]; then \
+        cargo run -p sunaba --bin sunaba --release --features headless -- --screenshot layout:{{layout_name}} --screenshot-width {{width}} --screenshot-height {{height}} --screenshot-settle {{settle}}; \
+    else \
+        cargo run -p sunaba --bin sunaba --release --features headless -- --screenshot layout:{{layout_name}}:{{level_id}} --screenshot-width {{width}} --screenshot-height {{height}} --screenshot-settle {{settle}}; \
+    fi
+    @echo "Layout screenshot captured!"
+
+[windows]
+screenshot-layout layout_name level_id="" width="1920" height="1080" settle="60":
+    @if (-not (Test-Path screenshots)) { New-Item -ItemType Directory -Path screenshots | Out-Null }
+    @if ("{{level_id}}" -eq "") { \
+        cargo run -p sunaba --bin sunaba --release --features headless -- --screenshot layout:{{layout_name}} --screenshot-width {{width}} --screenshot-height {{height}} --screenshot-settle {{settle}}; \
+    } else { \
+        cargo run -p sunaba --bin sunaba --release --features headless -- --screenshot layout:{{layout_name}}:{{level_id}} --screenshot-width {{width}} --screenshot-height {{height}} --screenshot-settle {{settle}}; \
+    }
+    @Write-Host "Layout screenshot captured!"
+
 # ============================================================================
 # End Screenshot Commands
 # ============================================================================

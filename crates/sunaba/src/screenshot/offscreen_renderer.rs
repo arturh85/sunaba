@@ -134,7 +134,7 @@ impl OffscreenRenderer {
     }
 
     /// Internal UI rendering implementation
-    fn render_ui_internal<F>(&mut self, mut ui_fn: F) -> Result<Vec<u8>>
+    fn render_ui_internal<F>(&mut self, ui_fn: F) -> Result<Vec<u8>>
     where
         F: FnMut(&egui::Context),
     {

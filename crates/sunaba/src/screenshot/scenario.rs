@@ -25,6 +25,13 @@ pub enum ScreenshotScenario {
         settle_frames: usize,
     },
 
+    /// Render with a predefined layout template
+    Layout {
+        layout_name: String,
+        level_id: Option<usize>,
+        settle_frames: usize,
+    },
+
     /// Future: Interactive scenario with setup steps
     #[allow(dead_code)]
     Interactive {
@@ -105,6 +112,28 @@ impl ScreenshotScenario {
             });
         }
 
+        if let Some(rest) = s.strip_prefix("layout:") {
+            // Format: layout:LAYOUT_NAME or layout:LAYOUT_NAME:LEVEL_ID
+            // Example: layout:default or layout:inventory:3
+            let parts: Vec<&str> = rest.split(':').collect();
+            let layout_name = parts[0].to_string();
+            let level_id = if parts.len() >= 2 {
+                Some(
+                    parts[1]
+                        .parse::<usize>()
+                        .map_err(|_| anyhow::anyhow!("Invalid level ID: {}", parts[1]))?,
+                )
+            } else {
+                None
+            };
+
+            return Ok(ScreenshotScenario::Layout {
+                layout_name,
+                level_id,
+                settle_frames,
+            });
+        }
+
         if s.strip_prefix("scenario:").is_some() {
             anyhow::bail!("Interactive scenarios not yet implemented");
         }
@@ -125,13 +154,26 @@ impl ScreenshotScenario {
         match self {
             ScreenshotScenario::Level { id, .. } => format!("level_{}", id),
             ScreenshotScenario::UiPanel { panel, .. } => format!("ui_{}", panel.as_str()),
-            ScreenshotScenario::Composite { level_id, panels, .. } => {
+            ScreenshotScenario::Composite {
+                level_id, panels, ..
+            } => {
                 let panel_str = panels
                     .iter()
                     .map(|p| p.as_str())
                     .collect::<Vec<_>>()
                     .join("_");
                 format!("composite_level{}_{}", level_id, panel_str)
+            }
+            ScreenshotScenario::Layout {
+                layout_name,
+                level_id,
+                ..
+            } => {
+                if let Some(id) = level_id {
+                    format!("layout_{}_level{}", layout_name, id)
+                } else {
+                    format!("layout_{}", layout_name)
+                }
             }
             ScreenshotScenario::Interactive { name, .. } => format!("scenario_{}", name),
         }

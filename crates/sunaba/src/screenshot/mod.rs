@@ -22,9 +22,12 @@
 //! just list-scenarios
 //! ```
 
+mod layouts;
 mod offscreen_renderer;
 mod sample_data;
 pub mod scenario;
+
+pub use layouts::ScreenshotLayout;
 
 use anyhow::Result;
 use glam::Vec2;
@@ -229,7 +232,11 @@ fn capture_composite_screenshot(
     height: usize,
     settle_frames: usize,
 ) -> Result<()> {
-    log::info!("Capturing composite screenshot: level {} with {:?}", level_id, panels);
+    log::info!(
+        "Capturing composite screenshot: level {} with {:?}",
+        level_id,
+        panels
+    );
     log::info!("  Resolution: {}x{}", width, height);
 
     // 1. Render world background using CPU PixelRenderer
@@ -630,6 +637,54 @@ pub fn capture_scenario(
             height,
             settle_frames,
         ),
+        ScreenshotScenario::Layout {
+            layout_name,
+            level_id,
+            settle_frames,
+        } => {
+            // Get layout template
+            let layout = ScreenshotLayout::by_name(&layout_name)
+                .ok_or_else(|| anyhow::anyhow!("Unknown layout: {}", layout_name))?;
+
+            // For now, layout screenshots just render the active panel from the layout
+            // Future: Render full dock with multiple tabs + overlays
+            if let Some(panel) = layout.active_panel {
+                if let Some(level) = level_id {
+                    // Layout with world background
+                    capture_composite_screenshot(
+                        level,
+                        vec![panel],
+                        output_path,
+                        width,
+                        height,
+                        settle_frames,
+                    )
+                } else {
+                    // Layout without world (just UI panel)
+                    capture_ui_panel_screenshot(
+                        panel,
+                        output_path,
+                        width,
+                        height,
+                        [45, 45, 48, 255],
+                        true,
+                    )
+                }
+            } else {
+                // Minimal layout (no panels) - just world or empty
+                if let Some(level) = level_id {
+                    let config = ScreenshotConfig {
+                        width,
+                        height,
+                        settle_frames,
+                        camera_center: None,
+                    };
+                    capture_level_screenshot(level, output_path, config)
+                } else {
+                    anyhow::bail!("Minimal layout requires a level ID")
+                }
+            }
+        }
         ScreenshotScenario::Interactive { ref name, .. } => {
             anyhow::bail!("Interactive scenarios not yet implemented: {}", name)
         }

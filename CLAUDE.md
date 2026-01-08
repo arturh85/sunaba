@@ -83,6 +83,12 @@ just screenshot-ui-all               # Screenshot all panels at once
 # Composite screenshots (world + UI panels, automated)
 just screenshot-composite 3 inventory           # Level 3 + inventory panel
 just screenshot-composite 5 inventory,crafting  # Level 5 + multiple panels (comma-separated)
+
+# Layout screenshots (predefined panel arrangements, automated)
+just screenshot-layout inventory      # Inventory layout (UI only)
+just screenshot-layout inventory 3    # Inventory layout with level 3 background
+just screenshot-layout crafting 5     # Crafting layout with level 5 background
+just screenshot-layout minimal 17     # Minimal layout (clean world view, no UI)
 ```
 
 > **Visual Iteration Workflows**:
@@ -116,10 +122,23 @@ just screenshot-composite 5 inventory,crafting  # Level 5 + multiple panels (com
 > 3. Panel shows sample data overlaid on actual game world
 > 4. Iterate on UI positioning and world interaction
 >
-> **Future Enhancements (Planned)**:
-> - ⏳ Full layout screenshots (multiple panels + HUD + overlays arranged as in-game)
+> **4. Layout Screenshots (Predefined Panel Arrangements)** ⭐ **IMPLEMENTED**:
+> - Use for: Testing common UI configurations quickly
+> - Automated, no game launch required
+> - 5 predefined layouts: `default`, `inventory`, `crafting`, `debug`, `minimal`
+> - Can render with or without world background
+> - **Available layouts**:
+>   - `default` - Logger + LevelSelector tabs, HUD overlay
+>   - `inventory` - Inventory + Crafting tabs (inventory active)
+>   - `crafting` - Crafting + Inventory tabs (crafting active)
+>   - `debug` - Logger + Params tabs, no overlays
+>   - `minimal` - No UI panels (clean world view for screenshots)
+> 1. `just screenshot-layout inventory` to capture inventory layout (themed background)
+> 2. `just screenshot-layout inventory 3` to capture with level 3 world background
+> 3. Use the Read tool to view: `screenshots/layout_inventory_level3.png` or `screenshots/layout_inventory.png`
+> 4. Quickly iterate on layout configurations and world/UI integration
 >
-> **3. Manual Full UI Screenshots** (for complex layouts):
+> **5. Manual Full UI Screenshots** (for complex custom layouts):
 > - Use for: Testing full UI layouts with multiple panels arranged
 > - Requires launching the game manually
 > - Can capture any arrangement of panels and overlays
