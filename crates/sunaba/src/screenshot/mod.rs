@@ -32,19 +32,16 @@ use std::path::Path;
 
 use crate::headless::PixelRenderer;
 use crate::levels::LevelManager;
-use crate::simulation::{MaterialId, Materials};
+use crate::simulation::Materials;
 use crate::world::{NoopStats, World};
 use rand::thread_rng;
 
 use offscreen_renderer::OffscreenRenderer;
 
 // Imports for UI screenshot capture
-#[cfg(not(target_arch = "wasm32"))]
-use crate::config::GameConfig;
 use crate::entity::{
     crafting::RecipeRegistry, inventory::ItemStack, player::Player, tools::ToolRegistry,
 };
-use crate::ui::{dock::DockTab, ui_state::UiState};
 
 pub use scenario::{ScreenshotScenario, list_all_scenarios};
 
