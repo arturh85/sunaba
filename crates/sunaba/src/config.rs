@@ -112,7 +112,12 @@ pub struct UiConfig {
     /// Show debug stats on startup
     pub show_stats_on_start: bool,
     /// UI theme variant ("cozy_alchemist", "dark_cavern", "pixel_adventure")
+    #[serde(default = "default_theme")]
     pub theme: String,
+}
+
+fn default_theme() -> String {
+    "cozy_alchemist".to_string()
 }
 
 impl Default for UiConfig {
