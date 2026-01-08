@@ -576,7 +576,7 @@ impl ScenarioExecutor {
             let h = height.unwrap_or(1080);
 
             let mut renderer = PixelRenderer::new(w, h);
-            renderer.render(world, world.materials(), world.player.position, &[]);
+            renderer.render(world, world.materials(), world.player.position, &[], 1.0);
 
             // Ensure screenshot directory exists
             std::fs::create_dir_all(&self.config.screenshot_dir)?;

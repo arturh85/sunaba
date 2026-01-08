@@ -30,15 +30,19 @@ impl PixelRenderer {
     }
 
     /// Render the world centered on a position
+    ///
+    /// # Arguments
+    /// * `zoom` - Zoom factor (1.0 = 1:1 pixel mapping, 2.0 = 2x zoomed in, 0.5 = 2x zoomed out)
     pub fn render(
         &mut self,
         world: &World,
         materials: &Materials,
         center: Vec2,
         creatures: &[CreatureRenderData],
+        zoom: f32,
     ) {
-        let half_width = self.width as f32 / 2.0;
-        let half_height = self.height as f32 / 2.0;
+        let half_width = (self.width as f32 / 2.0) / zoom;
+        let half_height = (self.height as f32 / 2.0) / zoom;
 
         // Calculate world bounds for this viewport
         let min_x = (center.x - half_width).floor() as i32;
@@ -90,22 +94,22 @@ impl PixelRenderer {
 
         // Render creatures on top
         for creature in creatures {
-            self.render_creature(creature, center);
+            self.render_creature(creature, center, zoom);
         }
     }
 
     /// Render a creature's body parts
-    fn render_creature(&mut self, creature: &CreatureRenderData, center: Vec2) {
+    fn render_creature(&mut self, creature: &CreatureRenderData, center: Vec2, zoom: f32) {
         let half_width = self.width as f32 / 2.0;
         let half_height = self.height as f32 / 2.0;
 
         for part in &creature.body_parts {
-            // Convert world position to screen position
-            let screen_x = (part.position.x - center.x + half_width) as i32;
-            let screen_y = (center.y - part.position.y + half_height) as i32; // Flip Y
+            // Convert world position to screen position (with zoom)
+            let screen_x = ((part.position.x - center.x) * zoom + half_width) as i32;
+            let screen_y = ((center.y - part.position.y) * zoom + half_height) as i32; // Flip Y
 
-            // Draw a filled circle for each body part
-            let radius = (part.radius * 2.0).max(2.0) as i32; // Scale up for visibility
+            // Draw a filled circle for each body part (scale radius by zoom)
+            let radius = ((part.radius * 2.0).max(2.0) * zoom) as i32; // Scale up for visibility
             self.draw_filled_circle(screen_x, screen_y, radius, part.color);
         }
     }

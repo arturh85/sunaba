@@ -31,14 +31,14 @@ pub mod video_scenarios;
 
 pub use layouts::ScreenshotLayout;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use glam::Vec2;
 use std::path::Path;
 
 use crate::headless::PixelRenderer;
 use crate::levels::LevelManager;
 use crate::simulation::Materials;
-use crate::world::{NoopStats, World};
+use crate::world::{NoopStats, World, CHUNK_SIZE};
 use rand::thread_rng;
 
 use offscreen_renderer::OffscreenRenderer;
@@ -51,8 +51,8 @@ use crate::entity::{
 pub use scenario::{ScreenshotScenario, list_all_scenarios};
 pub use video_capture::VideoCapture;
 pub use video_scenarios::{
-    ScenarioAction, VideoScenario, get_all_scenarios as get_all_video_scenarios,
-    get_scenario_by_id as get_video_scenario_by_id,
+    CameraParams, CameraSpec, MaterialFilter, ScenarioAction, VideoScenario,
+    get_all_scenarios as get_all_video_scenarios, get_scenario_by_id as get_video_scenario_by_id,
 };
 
 /// Screenshot configuration
@@ -698,6 +698,179 @@ pub fn capture_scenario(
     }
 }
 
+/// Calculate camera parameters to frame a rectangular region within viewport
+///
+/// # Arguments
+/// * `bounds` - World space bounding rectangle (min_x, min_y, max_x, max_y)
+/// * `padding` - Extra world pixels to include around bounds
+/// * `viewport_width` - Target viewport width in pixels
+/// * `viewport_height` - Target viewport height in pixels
+///
+/// # Returns
+/// CameraParams with center and zoom to frame the bounds
+fn calculate_camera_from_bounds(
+    bounds: (i32, i32, i32, i32),
+    padding: i32,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Result<CameraParams> {
+    let (min_x, min_y, max_x, max_y) = bounds;
+
+    // Edge case: empty bounds
+    if max_x < min_x || max_y < min_y {
+        anyhow::bail!(
+            "Invalid bounds: max < min (got bounds ({}, {}, {}, {}))",
+            min_x,
+            min_y,
+            max_x,
+            max_y
+        );
+    }
+
+    // Calculate content dimensions (inclusive of endpoints)
+    let content_width = ((max_x - min_x + 1) as f32).max(10.0);
+    let content_height = ((max_y - min_y + 1) as f32).max(10.0);
+
+    // Apply padding (convert to world space)
+    let padded_width = content_width + (2 * padding) as f32;
+    let padded_height = content_height + (2 * padding) as f32;
+
+    // Calculate center of bounds (world space)
+    let center_x = (min_x + max_x) as f32 / 2.0;
+    let center_y = (min_y + max_y) as f32 / 2.0;
+
+    // Calculate zoom to fit content in viewport
+    let zoom_x = viewport_width as f32 / padded_width;
+    let zoom_y = viewport_height as f32 / padded_height;
+
+    // Use the smaller zoom to ensure content fits in BOTH dimensions
+    let zoom = zoom_x.min(zoom_y).clamp(0.1, 20.0);
+
+    Ok(CameraParams {
+        center: Vec2::new(center_x, center_y),
+        zoom,
+    })
+}
+
+/// Scan world chunks to detect content bounds based on material filter
+///
+/// # Arguments
+/// * `world` - World to scan
+/// * `materials` - Material definitions for type checking
+/// * `filter` - Material filter determining what counts as content
+///
+/// # Returns
+/// Bounding rectangle (min_x, min_y, max_x, max_y) or None if no content found
+fn detect_content_bounds(
+    world: &World,
+    materials: &Materials,
+    filter: &MaterialFilter,
+) -> Option<(i32, i32, i32, i32)> {
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+    let mut found_any = false;
+
+    // Iterate over all loaded chunks
+    for (chunk_coord, chunk) in world.chunks() {
+        // Chunk world origin (chunks are 64x64)
+        let chunk_world_x = chunk_coord.x * CHUNK_SIZE as i32;
+        let chunk_world_y = chunk_coord.y * CHUNK_SIZE as i32;
+
+        // Scan all pixels in chunk
+        for local_y in 0..CHUNK_SIZE {
+            for local_x in 0..CHUNK_SIZE {
+                let pixel = chunk.get_pixel(local_x, local_y);
+
+                // Skip if pixel doesn't match filter
+                if !pixel_matches_filter(pixel.material_id, materials, filter) {
+                    continue;
+                }
+
+                // Update bounds
+                let world_x = chunk_world_x + local_x as i32;
+                let world_y = chunk_world_y + local_y as i32;
+
+                min_x = min_x.min(world_x);
+                min_y = min_y.min(world_y);
+                max_x = max_x.max(world_x);
+                max_y = max_y.max(world_y);
+                found_any = true;
+            }
+        }
+    }
+
+    if found_any {
+        Some((min_x, min_y, max_x, max_y))
+    } else {
+        None
+    }
+}
+
+/// Check if a material ID matches the filter criteria
+fn pixel_matches_filter(material_id: u16, materials: &Materials, filter: &MaterialFilter) -> bool {
+    match filter {
+        MaterialFilter::NonAir => material_id != 0,
+
+        MaterialFilter::Types(types) => {
+            if material_id == 0 {
+                return false;
+            }
+            let material = materials.get(material_id);
+            types.contains(&material.material_type)
+        }
+
+        MaterialFilter::ExcludeTypes(types) => {
+            if material_id == 0 {
+                return false;
+            }
+            let material = materials.get(material_id);
+            !types.contains(&material.material_type)
+        }
+
+        MaterialFilter::Ids(ids) => ids.contains(&material_id),
+
+        MaterialFilter::ExcludeIds(ids) => material_id != 0 && !ids.contains(&material_id),
+    }
+}
+
+/// Resolve a CameraSpec to CameraParams
+fn resolve_camera_spec(
+    spec: &CameraSpec,
+    world: &World,
+    materials: &Materials,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Result<CameraParams> {
+    match spec {
+        CameraSpec::Bounds {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+            padding,
+        } => calculate_camera_from_bounds(
+            (*min_x, *min_y, *max_x, *max_y),
+            *padding,
+            viewport_width,
+            viewport_height,
+        ),
+
+        CameraSpec::AutoDetect { filter, padding } => {
+            let bounds = detect_content_bounds(world, materials, filter)
+                .context("No content found for camera auto-detection")?;
+
+            calculate_camera_from_bounds(bounds, *padding, viewport_width, viewport_height)
+        }
+
+        CameraSpec::Manual { center, zoom } => Ok(CameraParams {
+            center: *center,
+            zoom: *zoom,
+        }),
+    }
+}
+
 /// Capture a video scenario and encode to MP4
 ///
 /// # Arguments
@@ -749,19 +922,32 @@ pub fn capture_video_scenario(
         log::info!("  Level: (empty world)");
     }
 
-    // Determine camera center based on actual content bounds (not chunk coordinates)
-    // Each level places content at different world coordinates within the 5x5 chunk grid
-    let camera_center = match scenario.level_id {
-        Some(1) => Vec2::new(32.0, 32.0), // Fire spread - full 5x5 grid centered at (32, 32)
-        Some(2) => Vec2::new(32.0, 14.0), // Lava/water - content peaks at Y=28, center at Y=14
-        Some(5) => Vec2::new(31.0, 14.0), // Liquid lab - water/oil at Y [0-28], X [0-62]
-        Some(8) => Vec2::new(32.0, -52.0), // Bridge - bedrock down to Y=-128, bridge at Y=24
-        Some(16) => Vec2::new(32.0, 35.0), // Stress test - platform at Y [15-54]
-        Some(18) => Vec2::new(32.0, 28.0), // Alchemy - chambers at Y [0-56]
-        Some(19) => Vec2::new(32.0, 32.0), // Plant growth - typical 5x5 distribution
-        Some(20) => Vec2::new(32.0, 32.0), // Day/night - farm/plants distributed
-        _ => Vec2::new(32.0, 32.0),       // Default: center of 5x5 chunk grid
+    // Determine initial camera using CameraSpec resolution
+    let initial_camera = if let Some(camera_spec) = &scenario.camera {
+        // User-specified camera spec
+        resolve_camera_spec(
+            camera_spec,
+            &world,
+            &materials,
+            scenario.width,
+            scenario.height,
+        )?
+    } else {
+        // Default: AutoDetect with NonAir filter, 20px padding
+        let bounds = detect_content_bounds(&world, &materials, &MaterialFilter::NonAir)
+            .context("No content found for camera auto-detection")?;
+        calculate_camera_from_bounds(bounds, 20, scenario.width, scenario.height)?
     };
+
+    log::info!(
+        "  Camera: center=({:.1}, {:.1}), zoom={:.2}",
+        initial_camera.center.x,
+        initial_camera.center.y,
+        initial_camera.zoom
+    );
+
+    // Make camera mutable for dynamic adjustments via scenario actions
+    let mut current_camera = initial_camera;
 
     // Create renderer
     let mut renderer = PixelRenderer::new(scenario.width as usize, scenario.height as usize);
@@ -785,31 +971,33 @@ pub fn capture_video_scenario(
 
     // Simulation and capture loop
     for frame in 0..total_frames {
-        // Execute scenario actions scheduled for this frame
+        // Execute scenario actions scheduled for this frame (including camera actions)
         if let Some(actions) = action_timeline.get(&frame) {
             for action in actions {
-                execute_video_action(action, &mut world, frame);
+                execute_video_action(
+                    action,
+                    &mut world,
+                    &mut current_camera,
+                    &materials,
+                    scenario.width,
+                    scenario.height,
+                    frame,
+                );
             }
         }
 
         // Update world physics
         world.update(dt, &mut stats, &mut rng, false);
 
-        // Capture frame at intervals
+        // Capture frame at intervals using dynamic camera
         if frame % capture_interval == 0 {
-            // Use per-level zoom to properly frame content (different levels have very different sizes)
-            let zoom = match scenario.level_id {
-                Some(1) => 2.0,  // Fire spread - full 5x5 chunk grid (320x320)
-                Some(2) => 8.0,  // Lava/water - small content area (64x28)
-                Some(5) => 8.0,  // Liquid lab - small platforms (62x28)
-                Some(8) => 4.0,  // Bridge - vertical structure (44x152)
-                Some(16) => 5.0, // Stress test - medium platform
-                Some(18) => 5.0, // Alchemy - chambers
-                Some(19) => 5.0, // Plant growth
-                Some(20) => 5.0, // Day/night - farm area
-                _ => 4.0,        // Default: moderate zoom
-            };
-            renderer.render(&world, &materials, camera_center, &[], zoom);
+            renderer.render(
+                &world,
+                &materials,
+                current_camera.center,
+                &[],
+                current_camera.zoom,
+            );
             video.capture_frame(&renderer)?;
         }
 
@@ -870,7 +1058,15 @@ fn build_action_timeline(
 }
 
 /// Execute a scenario action
-fn execute_video_action(action: &ScenarioAction, world: &mut World, frame: usize) {
+fn execute_video_action(
+    action: &ScenarioAction,
+    world: &mut World,
+    camera: &mut CameraParams,
+    materials: &Materials,
+    viewport_width: u32,
+    viewport_height: u32,
+    frame: usize,
+) {
     match action {
         ScenarioAction::Wait { .. } => {
             // Does nothing - just advance simulation
@@ -923,6 +1119,90 @@ fn execute_video_action(action: &ScenarioAction, world: &mut World, frame: usize
                 frame
             );
         }
+
+        // Camera control actions
+        ScenarioAction::SetCameraBounds {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+            padding,
+        } => {
+            match calculate_camera_from_bounds(
+                (*min_x, *min_y, *max_x, *max_y),
+                *padding,
+                viewport_width,
+                viewport_height,
+            ) {
+                Ok(new_camera) => {
+                    *camera = new_camera;
+                    log::info!(
+                        "Frame {}: Camera set to bounds ({}, {}) - ({}, {}) with padding {} -> center=({:.1}, {:.1}), zoom={:.2}",
+                        frame,
+                        min_x,
+                        min_y,
+                        max_x,
+                        max_y,
+                        padding,
+                        camera.center.x,
+                        camera.center.y,
+                        camera.zoom
+                    );
+                }
+                Err(e) => {
+                    log::error!("Frame {}: Failed to set camera bounds: {}", frame, e);
+                }
+            }
+        }
+
+        ScenarioAction::SetCameraCenter { x, y } => {
+            camera.center = Vec2::new(*x, *y);
+            log::info!(
+                "Frame {}: Camera center set to ({:.1}, {:.1})",
+                frame,
+                camera.center.x,
+                camera.center.y
+            );
+        }
+
+        ScenarioAction::SetCameraZoom { zoom } => {
+            camera.zoom = *zoom;
+            log::info!("Frame {}: Camera zoom set to {:.2}", frame, camera.zoom);
+        }
+
+        ScenarioAction::AutoFrameContent { filter, padding } => {
+            match detect_content_bounds(world, materials, filter) {
+                Some(bounds) => {
+                    match calculate_camera_from_bounds(
+                        bounds,
+                        *padding,
+                        viewport_width,
+                        viewport_height,
+                    ) {
+                        Ok(new_camera) => {
+                            *camera = new_camera;
+                            log::info!(
+                                "Frame {}: Auto-framed content -> center=({:.1}, {:.1}), zoom={:.2}",
+                                frame,
+                                camera.center.x,
+                                camera.center.y,
+                                camera.zoom
+                            );
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "Frame {}: Failed to calculate camera from bounds: {}",
+                                frame,
+                                e
+                            );
+                        }
+                    }
+                }
+                None => {
+                    log::warn!("Frame {}: No content found for auto-framing", frame);
+                }
+            }
+        }
     }
 }
 
@@ -966,4 +1246,355 @@ fn save_buffer_as_png(
 
     img.save(path)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::simulation::{MaterialId, MaterialType, Materials};
+
+    /// Test camera calculation with square content (equal width/height)
+    #[test]
+    fn test_calculate_camera_square_content() {
+        let bounds = (0, 0, 63, 63); // 64x64 square
+        let padding = 20;
+        let viewport = (1280, 720);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_ok());
+
+        let camera = result.unwrap();
+        // Center should be at midpoint
+        assert_eq!(camera.center.x, 31.5);
+        assert_eq!(camera.center.y, 31.5);
+        // Zoom should fit 64px + 40px padding = 104px into 720px height (limiting dimension)
+        // zoom = 720 / 104 = ~6.92
+        assert!((camera.zoom - 6.92).abs() < 0.1);
+    }
+
+    /// Test camera calculation with wide content (wider than tall)
+    #[test]
+    fn test_calculate_camera_wide_content() {
+        let bounds = (0, 0, 199, 49); // 200x50 wide rectangle
+        let padding = 10;
+        let viewport = (1280, 720);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_ok());
+
+        let camera = result.unwrap();
+        // Center should be at midpoint
+        assert_eq!(camera.center.x, 99.5);
+        assert_eq!(camera.center.y, 24.5);
+        // Zoom limited by width: 1280 / (200 + 20) = ~5.82
+        assert!((camera.zoom - 5.82).abs() < 0.1);
+    }
+
+    /// Test camera calculation with tall content (taller than wide)
+    #[test]
+    fn test_calculate_camera_tall_content() {
+        let bounds = (0, 0, 49, 199); // 50x200 tall rectangle
+        let padding = 10;
+        let viewport = (1280, 720);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_ok());
+
+        let camera = result.unwrap();
+        // Center should be at midpoint
+        assert_eq!(camera.center.x, 24.5);
+        assert_eq!(camera.center.y, 99.5);
+        // Zoom limited by height: 720 / (200 + 20) = ~3.27
+        assert!((camera.zoom - 3.27).abs() < 0.1);
+    }
+
+    /// Test camera calculation with single pixel content
+    #[test]
+    fn test_calculate_camera_single_pixel() {
+        let bounds = (50, 50, 50, 50); // Single pixel at (50, 50)
+        let padding = 20;
+        let viewport = (1280, 720);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_ok());
+
+        let camera = result.unwrap();
+        // Center should be at the pixel
+        assert_eq!(camera.center.x, 50.0);
+        assert_eq!(camera.center.y, 50.0);
+        // Zoom should use minimum content size (10px) + padding
+        // zoom = min(1280/50, 720/50) = min(25.6, 14.4) = 14.4
+        assert!((camera.zoom - 14.4).abs() < 0.1);
+    }
+
+    /// Test camera calculation with very small content (uses minimum 10px)
+    #[test]
+    fn test_calculate_camera_tiny_content() {
+        let bounds = (100, 100, 102, 101); // 3x2 content
+        let padding = 5;
+        let viewport = (800, 600);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_ok());
+
+        let camera = result.unwrap();
+        // Should use minimum 10px content size
+        // padded = 10 + 10 = 20px
+        // zoom = min(800/20, 600/20) = min(40, 30) = 20 (clamped to max)
+        assert_eq!(camera.zoom, 20.0); // Max zoom clamp
+    }
+
+    /// Test camera calculation with invalid bounds (max < min)
+    #[test]
+    fn test_calculate_camera_invalid_bounds() {
+        let bounds = (100, 100, 50, 50); // max_x < min_x, max_y < min_y
+        let padding = 20;
+        let viewport = (1280, 720);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid bounds"));
+    }
+
+    /// Test camera calculation with negative coordinates
+    #[test]
+    fn test_calculate_camera_negative_coords() {
+        let bounds = (-50, -30, 50, 30); // 101x61 centered at origin
+        let padding = 20;
+        let viewport = (1280, 720);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_ok());
+
+        let camera = result.unwrap();
+        // Center should be at (0, 0)
+        assert_eq!(camera.center.x, 0.0);
+        assert_eq!(camera.center.y, 0.0);
+        // Zoom limited by height: 720 / (61 + 40) = ~7.13
+        assert!((camera.zoom - 7.13).abs() < 0.1);
+    }
+
+    /// Test camera calculation with zero padding
+    #[test]
+    fn test_calculate_camera_zero_padding() {
+        let bounds = (0, 0, 99, 99); // 100x100 square
+        let padding = 0;
+        let viewport = (1000, 1000);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_ok());
+
+        let camera = result.unwrap();
+        assert_eq!(camera.center.x, 49.5);
+        assert_eq!(camera.center.y, 49.5);
+        // Zoom should be exactly 10.0 (1000 / 100)
+        assert_eq!(camera.zoom, 10.0);
+    }
+
+    /// Test camera calculation with large padding
+    #[test]
+    fn test_calculate_camera_large_padding() {
+        let bounds = (0, 0, 9, 9); // 10x10 square
+        let padding = 100;
+        let viewport = (1280, 720);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_ok());
+
+        let camera = result.unwrap();
+        // Padded size = 10 + 200 = 210px
+        // zoom = min(1280/210, 720/210) = min(6.09, 3.43) = 3.43
+        assert!((camera.zoom - 3.43).abs() < 0.1);
+    }
+
+    /// Helper to create a minimal Materials registry for testing
+    /// Uses the default materials which include:
+    /// - MaterialId::AIR = 0 (Gas)
+    /// - MaterialId::STONE = 1 (Solid)
+    /// - MaterialId::SAND = 2 (Powder)
+    /// - MaterialId::WATER = 3 (Liquid)
+    /// - MaterialId::STEAM = 7 (Gas)
+    fn create_test_materials() -> Materials {
+        Materials::new()
+    }
+
+    /// Test pixel_matches_filter with NonAir filter
+    #[test]
+    fn test_pixel_matches_filter_non_air() {
+        let materials = create_test_materials();
+        let filter = MaterialFilter::NonAir;
+
+        assert!(!pixel_matches_filter(MaterialId::AIR, &materials, &filter));
+        assert!(pixel_matches_filter(MaterialId::STONE, &materials, &filter));
+        assert!(pixel_matches_filter(MaterialId::SAND, &materials, &filter));
+        assert!(pixel_matches_filter(MaterialId::WATER, &materials, &filter));
+        assert!(pixel_matches_filter(MaterialId::STEAM, &materials, &filter));
+    }
+
+    /// Test pixel_matches_filter with Types filter (specific types)
+    #[test]
+    fn test_pixel_matches_filter_types() {
+        let materials = create_test_materials();
+        let filter = MaterialFilter::Types(vec![MaterialType::Solid, MaterialType::Powder]);
+
+        assert!(!pixel_matches_filter(MaterialId::AIR, &materials, &filter));
+        assert!(pixel_matches_filter(MaterialId::STONE, &materials, &filter)); // Solid
+        assert!(pixel_matches_filter(MaterialId::SAND, &materials, &filter)); // Powder
+        assert!(!pixel_matches_filter(MaterialId::WATER, &materials, &filter)); // Liquid
+        assert!(!pixel_matches_filter(MaterialId::STEAM, &materials, &filter)); // Gas
+    }
+
+    /// Test pixel_matches_filter with ExcludeTypes filter (exclude gases)
+    #[test]
+    fn test_pixel_matches_filter_exclude_types() {
+        let materials = create_test_materials();
+        let filter = MaterialFilter::ExcludeTypes(vec![MaterialType::Gas]);
+
+        assert!(!pixel_matches_filter(MaterialId::AIR, &materials, &filter)); // Air (always excluded)
+        assert!(pixel_matches_filter(MaterialId::STONE, &materials, &filter));
+        assert!(pixel_matches_filter(MaterialId::SAND, &materials, &filter));
+        assert!(pixel_matches_filter(MaterialId::WATER, &materials, &filter));
+        assert!(!pixel_matches_filter(MaterialId::STEAM, &materials, &filter)); // Gas - excluded
+    }
+
+    /// Test pixel_matches_filter with Ids filter (specific material IDs)
+    #[test]
+    fn test_pixel_matches_filter_ids() {
+        let materials = create_test_materials();
+        let filter = MaterialFilter::Ids(vec![MaterialId::STONE, MaterialId::WATER]);
+
+        assert!(!pixel_matches_filter(MaterialId::AIR, &materials, &filter));
+        assert!(pixel_matches_filter(MaterialId::STONE, &materials, &filter)); // In list
+        assert!(!pixel_matches_filter(MaterialId::SAND, &materials, &filter));
+        assert!(pixel_matches_filter(MaterialId::WATER, &materials, &filter)); // In list
+        assert!(!pixel_matches_filter(MaterialId::STEAM, &materials, &filter));
+    }
+
+    /// Test pixel_matches_filter with ExcludeIds filter
+    #[test]
+    fn test_pixel_matches_filter_exclude_ids() {
+        let materials = create_test_materials();
+        let filter = MaterialFilter::ExcludeIds(vec![MaterialId::SAND, MaterialId::STEAM]);
+
+        assert!(!pixel_matches_filter(MaterialId::AIR, &materials, &filter)); // Air (always excluded)
+        assert!(pixel_matches_filter(MaterialId::STONE, &materials, &filter));
+        assert!(!pixel_matches_filter(MaterialId::SAND, &materials, &filter)); // Excluded
+        assert!(pixel_matches_filter(MaterialId::WATER, &materials, &filter));
+        assert!(!pixel_matches_filter(MaterialId::STEAM, &materials, &filter)); // Excluded
+    }
+
+    /// Test CameraSpec serialization/deserialization (Bounds variant)
+    #[test]
+    fn test_camera_spec_bounds_serde() {
+        let spec = CameraSpec::Bounds {
+            min_x: -50,
+            min_y: -30,
+            max_x: 100,
+            max_y: 80,
+            padding: 20,
+        };
+
+        let ron_str = ron::to_string(&spec).unwrap();
+        let deserialized: CameraSpec = ron::from_str(&ron_str).unwrap();
+
+        match deserialized {
+            CameraSpec::Bounds { min_x, min_y, max_x, max_y, padding } => {
+                assert_eq!(min_x, -50);
+                assert_eq!(min_y, -30);
+                assert_eq!(max_x, 100);
+                assert_eq!(max_y, 80);
+                assert_eq!(padding, 20);
+            }
+            _ => panic!("Unexpected variant"),
+        }
+    }
+
+    /// Test CameraSpec serialization/deserialization (AutoDetect variant)
+    #[test]
+    fn test_camera_spec_auto_detect_serde() {
+        let spec = CameraSpec::AutoDetect {
+            filter: MaterialFilter::ExcludeTypes(vec![MaterialType::Gas]),
+            padding: 15,
+        };
+
+        let ron_str = ron::to_string(&spec).unwrap();
+        let deserialized: CameraSpec = ron::from_str(&ron_str).unwrap();
+
+        match deserialized {
+            CameraSpec::AutoDetect { filter, padding } => {
+                assert_eq!(padding, 15);
+                match filter {
+                    MaterialFilter::ExcludeTypes(types) => {
+                        assert_eq!(types.len(), 1);
+                        assert_eq!(types[0], MaterialType::Gas);
+                    }
+                    _ => panic!("Unexpected filter variant"),
+                }
+            }
+            _ => panic!("Unexpected variant"),
+        }
+    }
+
+    /// Test CameraSpec serialization/deserialization (Manual variant)
+    #[test]
+    fn test_camera_spec_manual_serde() {
+        let spec = CameraSpec::Manual {
+            center: Vec2::new(123.5, 456.7),
+            zoom: 8.5,
+        };
+
+        let ron_str = ron::to_string(&spec).unwrap();
+        let deserialized: CameraSpec = ron::from_str(&ron_str).unwrap();
+
+        match deserialized {
+            CameraSpec::Manual { center, zoom } => {
+                assert!((center.x - 123.5).abs() < 0.001);
+                assert!((center.y - 456.7).abs() < 0.001);
+                assert!((zoom - 8.5).abs() < 0.001);
+            }
+            _ => panic!("Unexpected variant"),
+        }
+    }
+
+    /// Test MaterialFilter default implementation
+    #[test]
+    fn test_material_filter_default() {
+        let filter = MaterialFilter::default();
+        match filter {
+            MaterialFilter::NonAir => {}
+            _ => panic!("Default should be NonAir"),
+        }
+    }
+
+    /// Test zoom clamping to maximum value
+    #[test]
+    fn test_calculate_camera_zoom_clamp_max() {
+        let bounds = (0, 0, 1, 1); // 2x2 tiny content
+        let padding = 1;
+        let viewport = (1280, 720);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_ok());
+
+        let camera = result.unwrap();
+        // Without clamp, zoom would be 720 / (2 + 2) = 180
+        // Should be clamped to 20.0
+        assert_eq!(camera.zoom, 20.0);
+    }
+
+    /// Test zoom clamping to minimum value
+    #[test]
+    fn test_calculate_camera_zoom_clamp_min() {
+        let bounds = (0, 0, 10000, 10000); // Huge content
+        let padding = 1000;
+        let viewport = (100, 100);
+
+        let result = calculate_camera_from_bounds(bounds, padding, viewport.0, viewport.1);
+        assert!(result.is_ok());
+
+        let camera = result.unwrap();
+        // Without clamp, zoom would be 100 / (10001 + 2000) = 0.00833
+        // Should be clamped to 0.1
+        assert_eq!(camera.zoom, 0.1);
+    }
 }

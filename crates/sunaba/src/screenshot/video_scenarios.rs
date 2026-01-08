@@ -2,7 +2,78 @@
 //!
 //! Defines animated scenarios that demonstrate game features through MP4 videos.
 
+use glam::Vec2;
 use serde::{Deserialize, Serialize};
+
+use crate::simulation::MaterialType;
+
+/// Camera framing specification for video scenarios
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CameraSpec {
+    /// Frame specific rectangular bounds
+    Bounds {
+        /// Minimum X coordinate (world space)
+        min_x: i32,
+        /// Minimum Y coordinate (world space)
+        min_y: i32,
+        /// Maximum X coordinate (world space)
+        max_x: i32,
+        /// Maximum Y coordinate (world space)
+        max_y: i32,
+        /// Padding in world pixels to add around content
+        padding: i32,
+    },
+
+    /// Automatically detect content bounds by scanning world
+    AutoDetect {
+        /// Material filter determining what counts as content
+        filter: MaterialFilter,
+        /// Padding in world pixels around detected content
+        padding: i32,
+    },
+
+    /// Manual center and zoom (backward compatibility)
+    Manual {
+        /// Camera center position (world space)
+        center: Vec2,
+        /// Zoom level (1.0 = 1:1 pixel mapping)
+        zoom: f32,
+    },
+}
+
+/// Filter for determining which materials to include in bounds detection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MaterialFilter {
+    /// Include only non-air materials (default)
+    NonAir,
+
+    /// Include specific material types (Solid, Powder, Liquid, Gas)
+    Types(Vec<MaterialType>),
+
+    /// Exclude specific material types (e.g., exclude Gas to avoid framing steam)
+    ExcludeTypes(Vec<MaterialType>),
+
+    /// Include specific material IDs
+    Ids(Vec<u16>),
+
+    /// Exclude specific material IDs
+    ExcludeIds(Vec<u16>),
+}
+
+impl Default for MaterialFilter {
+    fn default() -> Self {
+        MaterialFilter::NonAir
+    }
+}
+
+/// Result of camera calculation from bounds
+#[derive(Debug, Clone, Copy)]
+pub struct CameraParams {
+    /// Camera center position (world space)
+    pub center: Vec2,
+    /// Zoom level (1.0 = 1:1 pixel mapping)
+    pub zoom: f32,
+}
 
 /// A video scenario that captures game simulation as MP4
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +104,10 @@ pub struct VideoScenario {
 
     /// Actions to perform during the scenario
     pub actions: Vec<ScenarioAction>,
+
+    /// Camera specification (None = default AutoDetect with NonAir filter, 20px padding)
+    #[serde(default)]
+    pub camera: Option<CameraSpec>,
 }
 
 /// Actions that can be performed during a video scenario
@@ -96,6 +171,42 @@ pub enum ScenarioAction {
         /// Duration in frames
         duration_frames: usize,
     },
+
+    /// Set camera to frame a specific rectangular region
+    SetCameraBounds {
+        /// Minimum X coordinate (world space)
+        min_x: i32,
+        /// Minimum Y coordinate (world space)
+        min_y: i32,
+        /// Maximum X coordinate (world space)
+        max_x: i32,
+        /// Maximum Y coordinate (world space)
+        max_y: i32,
+        /// Padding in world pixels
+        padding: i32,
+    },
+
+    /// Set camera center manually
+    SetCameraCenter {
+        /// X coordinate (world space)
+        x: f32,
+        /// Y coordinate (world space)
+        y: f32,
+    },
+
+    /// Set camera zoom manually
+    SetCameraZoom {
+        /// Zoom level (1.0 = 1:1 pixel mapping)
+        zoom: f32,
+    },
+
+    /// Automatically detect bounds and frame content
+    AutoFrameContent {
+        /// Material filter to determine what counts as content
+        filter: MaterialFilter,
+        /// Padding in world pixels
+        padding: i32,
+    },
 }
 
 /// Get all predefined video scenarios
@@ -137,6 +248,7 @@ fn create_fire_spread_scenario() -> VideoScenario {
             // The Inferno level already has fire at the base of wood columns
             ScenarioAction::Wait { frames: 300 }, // 5 seconds @ 60fps physics
         ],
+        camera: None, // Use default AutoDetect
     }
 }
 
@@ -155,6 +267,7 @@ fn create_water_flow_scenario() -> VideoScenario {
             // Let water flow naturally for 5 seconds
             ScenarioAction::Wait { frames: 300 }, // 5 seconds @ 60fps physics
         ],
+        camera: None, // Use default AutoDetect
     }
 }
 
@@ -179,6 +292,7 @@ fn create_bridge_collapse_scenario() -> VideoScenario {
             }, // Remove pillar
             ScenarioAction::Wait { frames: 300 }, // Watch collapse (5 seconds)
         ],
+        camera: None, // Use default AutoDetect
     }
 }
 
@@ -203,6 +317,10 @@ fn create_lava_water_reaction_scenario() -> VideoScenario {
             }, // Remove separator wall
             ScenarioAction::Wait { frames: 270 }, // Watch reaction (4.5 seconds)
         ],
+        camera: Some(CameraSpec::AutoDetect {
+            filter: MaterialFilter::ExcludeTypes(vec![MaterialType::Gas]),
+            padding: 20,
+        }),
     }
 }
 
@@ -227,6 +345,7 @@ fn create_player_mining_scenario() -> VideoScenario {
             }, // Mine for 3 seconds
             ScenarioAction::Wait { frames: 270 }, // Show result (4.5 seconds)
         ],
+        camera: None, // Use default AutoDetect
     }
 }
 
@@ -245,6 +364,7 @@ fn create_smelting_demo_scenario() -> VideoScenario {
             // Let the existing smelting chambers demonstrate the process
             ScenarioAction::Wait { frames: 600 }, // 10 seconds to show reactions
         ],
+        camera: None, // Use default AutoDetect
     }
 }
 
@@ -263,6 +383,7 @@ fn create_plant_growth_scenario() -> VideoScenario {
             // Show plant growth over time
             ScenarioAction::Wait { frames: 480 }, // 8 seconds for growth
         ],
+        camera: None, // Use default AutoDetect
     }
 }
 
@@ -294,6 +415,7 @@ fn create_material_reactions_scenario() -> VideoScenario {
             }, // Fire on top
             ScenarioAction::Wait { frames: 480 }, // Watch reactions (8 seconds)
         ],
+        camera: None, // Use default AutoDetect
     }
 }
 

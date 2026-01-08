@@ -1565,7 +1565,7 @@ impl TrainingEnv {
 
                 // Center camera on creature
                 let center = creature.position;
-                renderer.render(&world, &materials, center, &creatures);
+                renderer.render(&world, &materials, center, &creatures, 1.0);
 
                 // Draw debug overlays
                 let half = (size / 2) as i32;
