@@ -60,7 +60,9 @@ impl ChemistrySystem {
     ) {
         // 1. Add heat to temperature field
         if let Some(chunk) = chunks.get_mut(&chunk_pos) {
-            add_heat_at_pixel(chunk, x, y, 50.0); // Fire adds heat (back to original 50.0 for reliable ignition)
+            // Fire adds significant heat (200°C per frame) to compensate for fast movement
+            // Fire rises quickly as a gas, so it needs high heat output to ignite wood (300°C) before moving away
+            add_heat_at_pixel(chunk, x, y, 200.0);
         }
 
         // 2. Fire behaves like gas (rises)
@@ -185,7 +187,6 @@ impl ChemistrySystem {
 
         // Probability check - material burns gradually
         if rng.check_probability(material.burn_rate) {
-
             // Transform to burns_to material with 80/20 probability split
             // 80% chance of AIR (triggers structural checks for collapse)
             // 20% chance of burn product (preserves ash visual effect)

@@ -418,7 +418,7 @@ pub fn generate_level_9_bridge(world: &mut World) {
                     }
                 }
 
-                // Fire inside wooden center column (5×8 area, overlapping with wood for better heat transfer)
+                // Fire for visual effect (wood is already burning via BURNING flag)
                 for x in 30..=34 {
                     for y in 15..=22 {
                         chunk.set_material(x, y, MaterialId::FIRE);
