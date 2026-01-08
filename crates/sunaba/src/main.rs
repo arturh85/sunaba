@@ -185,17 +185,25 @@ fn main() -> anyhow::Result<()> {
     // Handle --screenshot-ui flag
     #[cfg(all(not(target_arch = "wasm32"), feature = "headless"))]
     if args.screenshot_ui || args.ui_panel.is_some() {
-        eprintln!("UI screenshot mode is currently for documentation purposes.");
-        eprintln!("To capture UI screenshots:");
-        eprintln!("  1. Launch the game normally");
-        eprintln!("  2. Press 'P' to toggle the Parameters panel");
-        eprintln!("  3. Press 'I' to toggle the Inventory panel");
-        eprintln!("  4. Press 'C' to toggle the Crafting panel");
-        eprintln!("  5. Press 'L' to toggle the Logger panel");
-        eprintln!("  6. Press F12 to capture a screenshot (saved to screenshots/)");
-        eprintln!();
-        eprintln!("For headless screenshots without UI, use: --screenshot <level_id>");
-        std::process::exit(1);
+        // Determine which panel to screenshot (default: params)
+        let panel_name = args.ui_panel.as_deref().unwrap_or("params");
+
+        // Parse UI panel scenario
+        let scenario_str = format!("ui:{}", panel_name);
+        let scenario = sunaba::screenshot::ScreenshotScenario::parse(&scenario_str, 0)?;
+
+        // Determine output path
+        let output_path = args.screenshot_output.unwrap_or_else(|| {
+            std::fs::create_dir_all("screenshots").ok();
+            format!("screenshots/{}.png", scenario.name())
+        });
+
+        return sunaba::screenshot::capture_scenario(
+            scenario,
+            output_path,
+            args.screenshot_width,
+            args.screenshot_height,
+        );
     }
 
     // Handle --test-scenario-stdin flag

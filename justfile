@@ -113,6 +113,53 @@ screenshot-all width="1920" height="1080":
     }
     @Write-Host "✅ All screenshots captured in screenshots/"
 
+# List available UI panels for screenshots
+[unix]
+list-ui-panels:
+    cargo run -p sunaba --bin sunaba --release --features headless -- --list-ui-panels
+
+[windows]
+list-ui-panels:
+    cargo run -p sunaba --bin sunaba --release --features headless -- --list-ui-panels
+
+# Capture screenshot of a single UI panel
+# Usage: just screenshot-ui inventory
+# Available panels: params, inventory, crafting, logger, worldgen, levels, multiplayer
+[unix]
+screenshot-ui panel width="1920" height="1080":
+    @mkdir -p screenshots
+    cargo run -p sunaba --bin sunaba --release --features headless -- --screenshot-ui --ui-panel {{panel}} --screenshot-width {{width}} --screenshot-height {{height}}
+    @echo "UI screenshot captured: screenshots/ui_{{panel}}.png"
+
+[windows]
+screenshot-ui panel width="1920" height="1080":
+    @if (-not (Test-Path screenshots)) { New-Item -ItemType Directory -Path screenshots | Out-Null }
+    cargo run -p sunaba --bin sunaba --release --features headless -- --screenshot-ui --ui-panel {{panel}} --screenshot-width {{width}} --screenshot-height {{height}}
+    @Write-Host "UI screenshot captured: screenshots/ui_{{panel}}.png"
+
+# Capture screenshots of all UI panels
+[unix]
+screenshot-ui-all width="1920" height="1080":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p screenshots
+    echo "Capturing screenshots of all UI panels..."
+    for panel in params inventory crafting logger worldgen levels; do
+        echo "  Panel: $panel..."
+        just screenshot-ui $panel {{width}} {{height}} > /dev/null 2>&1 || true
+    done
+    echo "✅ All UI screenshots captured in screenshots/"
+
+[windows]
+screenshot-ui-all width="1920" height="1080":
+    @if (-not (Test-Path screenshots)) { New-Item -ItemType Directory -Path screenshots | Out-Null }
+    @Write-Host "Capturing screenshots of all UI panels..."
+    @foreach ($panel in @("params", "inventory", "crafting", "logger", "worldgen", "levels")) { \
+        Write-Host "  Panel: $panel..."; \
+        just screenshot-ui $panel {{width}} {{height}} | Out-Null; \
+    }
+    @Write-Host "✅ All UI screenshots captured in screenshots/"
+
 # ============================================================================
 # End Screenshot Commands
 # ============================================================================

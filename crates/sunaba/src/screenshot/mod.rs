@@ -282,9 +282,9 @@ fn capture_ui_panel_screenshot(
     Ok(())
 }
 
-/// Render a single panel fullscreen without dock wrapper
+/// Render a single panel in a dock-like side panel
 ///
-/// Bypasses the dock system to render panels at full canvas size for screenshots.
+/// Renders panels in a right-side panel (400px wide) to match the actual in-game dock appearance.
 fn render_panel_fullscreen(
     panel: UiPanel,
     ctx: &egui::Context,
@@ -295,28 +295,70 @@ fn render_panel_fullscreen(
     level_manager: &LevelManager,
     game_mode_desc: &str,
 ) {
-    egui::CentralPanel::default().show(ctx, |ui| match panel {
-        UiPanel::Params => render_params_fullscreen(ui),
-        UiPanel::Inventory => render_inventory_fullscreen(ui, player, materials, tool_registry),
-        UiPanel::Crafting => render_crafting_fullscreen(ui, recipe_registry, materials),
-        UiPanel::Logger => render_logger_fullscreen(ui),
-        UiPanel::LevelSelector => {
-            render_level_selector_fullscreen(ui, level_manager, game_mode_desc)
-        }
-        #[cfg(feature = "multiplayer")]
-        UiPanel::Multiplayer => render_multiplayer_fullscreen(ui),
-        UiPanel::WorldGen => {
-            ui.heading("WorldGen Editor");
-            ui.label("WorldGen screenshot not yet implemented");
-            ui.label("(WorldGen is a separate window, not a dock panel)");
-        }
+    // Render panel in a right-side panel (matching actual dock width)
+    egui::SidePanel::right("screenshot_dock")
+        .default_width(400.0)
+        .resizable(false)
+        .show(ctx, |ui| match panel {
+            UiPanel::Params => render_params_fullscreen(ui),
+            UiPanel::Inventory => render_inventory_fullscreen(ui, player, materials, tool_registry),
+            UiPanel::Crafting => render_crafting_fullscreen(ui, recipe_registry, materials),
+            UiPanel::Logger => render_logger_fullscreen(ui),
+            UiPanel::LevelSelector => {
+                render_level_selector_fullscreen(ui, level_manager, game_mode_desc)
+            }
+            #[cfg(feature = "multiplayer")]
+            UiPanel::Multiplayer => render_multiplayer_fullscreen(ui),
+            UiPanel::WorldGen => {
+                ui.heading("WorldGen Editor");
+                ui.label("WorldGen screenshot not yet implemented");
+                ui.label("(WorldGen is a separate window, not a dock panel)");
+            }
+        });
+
+    // Fill remaining space with background (left side of screen)
+    egui::CentralPanel::default().show(ctx, |_ui| {
+        // Empty background panel
     });
 }
 
 fn render_params_fullscreen(ui: &mut egui::Ui) {
     ui.heading("Parameters");
-    ui.label("Game configuration panel");
-    ui.label("(Shows physics, rendering, and world settings)");
+    ui.separator();
+
+    ui.collapsing("Graphics", |ui| {
+        ui.checkbox(&mut true.clone(), "VSync");
+        ui.checkbox(&mut false.clone(), "Fullscreen");
+        ui.horizontal(|ui| {
+            ui.label("Resolution:");
+            ui.label("1920x1080");
+        });
+    });
+
+    ui.collapsing("Physics", |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Update Rate:");
+            ui.label("60 Hz");
+        });
+        ui.horizontal(|ui| {
+            ui.label("Chunk Update Radius:");
+            ui.label("5");
+        });
+    });
+
+    ui.collapsing("World", |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Seed:");
+            ui.label("12345678");
+        });
+        ui.checkbox(&mut true.clone(), "Auto-save");
+    });
+
+    ui.collapsing("Debug", |ui| {
+        ui.checkbox(&mut false.clone(), "Show FPS");
+        ui.checkbox(&mut false.clone(), "Show Active Chunks");
+        ui.checkbox(&mut false.clone(), "Show Player Stats");
+    });
 }
 
 fn render_inventory_fullscreen(
@@ -398,20 +440,60 @@ fn render_logger_fullscreen(ui: &mut egui::Ui) {
 
 fn render_level_selector_fullscreen(
     ui: &mut egui::Ui,
-    _level_manager: &LevelManager,
+    level_manager: &LevelManager,
     game_mode_desc: &str,
 ) {
-    // Copy from dock.rs::render_level_selector() (lines 238-250)
     ui.heading("Levels");
     ui.label(format!("Current: {}", game_mode_desc));
     ui.separator();
-    ui.label("Demo level active");
+
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        for level in level_manager.levels() {
+            ui.horizontal(|ui| {
+                if ui.button(format!("[{}]", level.id)).clicked() {
+                    // No-op in screenshot mode
+                }
+                ui.label(level.name);
+            });
+            ui.label(format!("  {}", level.description));
+            ui.add_space(4.0);
+        }
+    });
 }
 
 #[cfg(feature = "multiplayer")]
 fn render_multiplayer_fullscreen(ui: &mut egui::Ui) {
     ui.heading("Multiplayer");
-    ui.label("Multiplayer not available in screenshot mode");
+    ui.separator();
+
+    ui.horizontal(|ui| {
+        ui.label("Status:");
+        ui.colored_label(egui::Color32::GREEN, "Connected");
+    });
+
+    ui.horizontal(|ui| {
+        ui.label("Server:");
+        ui.label("localhost:3000");
+    });
+
+    ui.separator();
+    ui.label("Players (4):");
+
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        for i in 0..4 {
+            ui.horizontal(|ui| {
+                let name = match i {
+                    0 => "Alice",
+                    1 => "Bob",
+                    2 => "Charlie",
+                    3 => "Dave",
+                    _ => "Player",
+                };
+                ui.label(format!("👤 {}", name));
+                ui.label(format!("({}, {})", i * 100, i * 50));
+            });
+        }
+    });
 }
 
 /// Capture a screenshot of a UI panel (WASM stub - not supported)

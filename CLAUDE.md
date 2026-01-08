@@ -66,33 +66,58 @@ just spacetime-logs-tail  # Follow logs
 
 **Screenshots (Visual Iteration):**
 ```bash
-# List available levels and UI panels
+# List available screenshots
 just list-levels             # List all available demo levels with IDs
-cargo run --release --features headless -- --list-ui-panels  # List UI panels
+just list-ui-panels          # List all available UI panels
 
-# Headless screenshots (world/materials only, no UI)
+# Headless level screenshots (world/materials only, no UI)
 just screenshot <level_id>   # Capture screenshot of level (1920x1080)
 just screenshot 3 800 600    # Custom resolution (800x600)
 just screenshot-all          # Capture all demo levels at once
+
+# Headless UI panel screenshots (automated, GPU-rendered)
+just screenshot-ui inventory         # Screenshot single panel with sample data
+just screenshot-ui crafting 1280 720 # Custom resolution
+just screenshot-ui-all               # Screenshot all panels at once
 ```
 
-> **Visual Iteration Workflow**:
+> **Visual Iteration Workflows**:
 >
-> **For world/material screenshots (headless)**:
+> **1. World/Material Screenshots (Headless, CPU-rendered)**:
+> - Use for: Testing physics, materials, level layouts
+> - No UI rendered, only world pixels
 > 1. Make changes to your code
 > 2. `just screenshot <level_id>` to capture the result
 > 3. Use the Read tool to view: `screenshots/level_<id>.png`
 > 4. Iterate based on visual feedback
 >
-> **For UI screenshots** (requires manual capture):
-> 1. Claude requests a UI screenshot: "Please capture a screenshot of the Parameters panel"
+> **2. UI Panel Screenshots (Headless, GPU-rendered)** ⭐ **IMPLEMENTED**:
+> - Use for: Testing individual UI panels with sample data
+> - Automated, no game launch required
+> - Panels rendered in dock-like side panel (400px wide, authentic look)
+> - Available panels: `params`, `inventory`, `crafting`, `logger`, `worldgen`, `levels`, `multiplayer`
+> - Sample data: Realistic inventory items, tools with durability, varied stats
+> 1. `just screenshot-ui inventory` to capture panel
+> 2. Use the Read tool to view: `screenshots/ui_inventory.png`
+> 3. Panel shows realistic sample data (10+ materials, 3 tools with varying durability)
+> 4. Iterate on UI changes quickly without launching the game
+>
+> **Future Enhancements (Planned)**:
+> - ⏳ World + UI composite screenshots (world background with UI panels overlaid)
+> - ⏳ Full layout screenshots (multiple panels + HUD + overlays arranged as in-game)
+>
+> **3. Manual Full UI Screenshots** (for complex layouts):
+> - Use for: Testing full UI layouts with multiple panels arranged
+> - Requires launching the game manually
+> - Can capture any arrangement of panels and overlays
+> 1. Claude requests a UI screenshot: "Please capture a screenshot showing the HUD + inventory + crafting panels"
 > 2. User launches the game: `just start` or `just load`
-> 3. User opens the requested panel (see keybindings below)
+> 3. User opens the requested panels (see keybindings below)
 > 4. User captures screenshot with OS tool (Shift+Cmd+5 on Mac, PrintScreen on Windows/Linux)
-> 5. User saves to `screenshots/ui_<panel_name>.png`
+> 5. User saves to `screenshots/ui_custom.png`
 > 6. Claude uses Read tool to view and provide feedback
 >
-> **UI Panel Keybindings**:
+> **UI Panel Keybindings** (for manual screenshots):
 > - **P** - Toggle Parameters/settings panel
 > - **I** - Toggle Inventory panel
 > - **C** - Toggle Crafting panel
