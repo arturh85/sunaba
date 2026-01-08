@@ -32,24 +32,31 @@ impl PlayerPhysicsSystem {
         F: Fn() -> bool,
         G: Fn(f32, f32, f32, f32) -> bool,
     {
-        // 1. Check if grounded
+        // 1. Apply pending knockback (from mining, explosions, etc.)
+        // This is a single-frame velocity impulse that accumulates before being cleared
+        if player.pending_knockback != Vec2::ZERO {
+            player.velocity += player.pending_knockback;
+            player.pending_knockback = Vec2::ZERO; // Clear for next frame
+        }
+
+        // 2. Check if grounded
         player.grounded = is_grounded();
 
-        // 2. Update coyote time (grace period for jumping after leaving ground)
+        // 3. Update coyote time (grace period for jumping after leaving ground)
         if player.grounded {
             player.coyote_time = Player::COYOTE_TIME;
         } else {
             player.coyote_time = (player.coyote_time - dt).max(0.0);
         }
 
-        // 3. Update jump buffer (allows jump input slightly before landing)
+        // 4. Update jump buffer (allows jump input slightly before landing)
         if input.jump_pressed {
             player.jump_buffer = Player::JUMP_BUFFER;
         } else {
             player.jump_buffer = (player.jump_buffer - dt).max(0.0);
         }
 
-        // 4. Horizontal movement (A/D keys) with friction
+        // 5. Horizontal movement (A/D keys) with friction
         const PLAYER_DECELERATION: f32 = 800.0; // px/s² (friction when no input)
 
         let mut horizontal_input = 0.0;
@@ -74,7 +81,7 @@ impl PlayerPhysicsSystem {
         }
         // Note: No friction in air - preserve momentum for better jump control
 
-        // 5. Vertical movement (gravity + jump + flight)
+        // 6. Vertical movement (gravity + jump + flight)
         if player.jump_buffer > 0.0 && player.coyote_time > 0.0 {
             // Jump!
             player.velocity.y = Player::JUMP_VELOCITY;
@@ -98,7 +105,7 @@ impl PlayerPhysicsSystem {
             player.velocity.y = 0.0;
         }
 
-        // 6. Integrate velocity into position with collision
+        // 7. Integrate velocity into position with collision
         let movement = player.velocity * dt;
 
         // Check collision separately for X and Y
@@ -120,7 +127,7 @@ impl PlayerPhysicsSystem {
             player.velocity.y = 0.0;
         }
 
-        // 7. Automatic unstuck mechanic - nudge player out of tight spaces if completely stuck
+        // 8. Automatic unstuck mechanic - nudge player out of tight spaces if completely stuck
         if !can_move_x
             && !can_move_y
             && (input.a_pressed || input.d_pressed || input.w_pressed || input.s_pressed)

@@ -25,6 +25,11 @@ pub struct Player {
     pub equipped_tool: Option<u16>, // Currently equipped tool ID (1000+)
     pub mining_progress: MiningProgress, // Mining progress tracker
     pub is_dead: bool,        // Track death state explicitly
+
+    /// Pending knockback impulse (accumulated this frame, cleared after physics)
+    /// This allows multiple sources to add knockback (mining, explosions, etc.)
+    #[serde(skip)]
+    pub pending_knockback: Vec2,
 }
 
 impl Player {
@@ -55,6 +60,7 @@ impl Player {
             equipped_tool: None,
             mining_progress: MiningProgress::new(),
             is_dead: false,
+            pending_knockback: Vec2::ZERO,
         };
 
         // Give player some starting materials for testing
@@ -94,6 +100,7 @@ impl Player {
             equipped_tool,
             mining_progress,
             is_dead,
+            pending_knockback: Vec2::ZERO, // Runtime physics state
         }
     }
 

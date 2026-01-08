@@ -4,6 +4,7 @@ use super::chunk_manager::ChunkManager;
 use crate::entity::player::Player;
 use crate::entity::tools::ToolRegistry;
 use crate::simulation::{MaterialId, Materials, mining::calculate_mining_time};
+use glam::Vec2;
 
 /// Mining system - static utility methods for mining and placement
 pub struct MiningSystem;
@@ -280,6 +281,12 @@ impl MiningSystem {
         materials: &Materials,
     ) -> Vec<(i32, i32)> {
         let mut positions_to_mine = Vec::new();
+        let mut total_knockback = Vec2::ZERO;
+        let mut knockback_count = 0;
+
+        // Tool speed multiplier (default to 1.0 for debug mining, wood tool equivalent)
+        // TODO: Use actual equipped tool when proper tool system is integrated
+        let tool_speed = 1.0;
 
         // Iterate over square containing circle
         for dy in -radius..=radius {
@@ -305,6 +312,17 @@ impl MiningSystem {
                             continue; // Bedrock/unmineable materials
                         }
 
+                        // Calculate knockback for this pixel
+                        let mining_pos = Vec2::new(x as f32, y as f32);
+                        let knockback = crate::simulation::knockback::calculate_mining_knockback(
+                            player.position,
+                            mining_pos,
+                            material.hardness,
+                            tool_speed,
+                        );
+                        total_knockback += knockback;
+                        knockback_count += 1;
+
                         // Add to inventory and mark for removal
                         if player.mine_material(material_id) {
                             positions_to_mine.push((x, y));
@@ -312,6 +330,12 @@ impl MiningSystem {
                     }
                 }
             }
+        }
+
+        // Apply average knockback to player (accumulates with other sources)
+        if knockback_count > 0 {
+            let avg_knockback = total_knockback / knockback_count as f32;
+            player.pending_knockback += avg_knockback;
         }
 
         log::debug!(

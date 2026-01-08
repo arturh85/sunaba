@@ -54,9 +54,16 @@ impl VideoCapture {
             .context("Failed to create image buffer from renderer data")?;
 
         // Save as PNG with frame number
-        let frame_path = self.frames_dir.path().join(format!("frame_{:05}.png", self.frame_count));
-        img.save(&frame_path)
-            .with_context(|| format!("Failed to save frame {} to {:?}", self.frame_count, frame_path))?;
+        let frame_path = self
+            .frames_dir
+            .path()
+            .join(format!("frame_{:05}.png", self.frame_count));
+        img.save(&frame_path).with_context(|| {
+            format!(
+                "Failed to save frame {} to {:?}",
+                self.frame_count, frame_path
+            )
+        })?;
 
         self.frame_count += 1;
         Ok(())
@@ -107,12 +114,18 @@ impl VideoCapture {
         let status = Command::new("ffmpeg")
             .current_dir(self.frames_dir.path())
             .args(&[
-                "-framerate", &self.fps.to_string(),
-                "-i", "frame_%05d.png",
-                "-c:v", "libx264",
-                "-preset", "medium",
-                "-crf", "23",
-                "-pix_fmt", "yuv420p",
+                "-framerate",
+                &self.fps.to_string(),
+                "-i",
+                "frame_%05d.png",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
                 "-y", // Overwrite output file
                 output_path.to_str().context("Invalid output path")?,
             ])
@@ -157,10 +170,14 @@ mod tests {
         let mut capture = VideoCapture::new(128, 128, 10).expect("Failed to create VideoCapture");
         let renderer = PixelRenderer::new(128, 128);
 
-        capture.capture_frame(&renderer).expect("Failed to capture frame");
+        capture
+            .capture_frame(&renderer)
+            .expect("Failed to capture frame");
         assert_eq!(capture.frame_count(), 1);
 
-        capture.capture_frame(&renderer).expect("Failed to capture frame");
+        capture
+            .capture_frame(&renderer)
+            .expect("Failed to capture frame");
         assert_eq!(capture.frame_count(), 2);
 
         // Verify frame files exist
@@ -178,12 +195,16 @@ mod tests {
 
         // Capture a few frames
         for _ in 0..10 {
-            capture.capture_frame(&renderer).expect("Failed to capture frame");
+            capture
+                .capture_frame(&renderer)
+                .expect("Failed to capture frame");
         }
 
         // Encode to MP4
         let output_path = std::env::temp_dir().join("test_video.mp4");
-        capture.encode_to_mp4(&output_path).expect("Failed to encode MP4");
+        capture
+            .encode_to_mp4(&output_path)
+            .expect("Failed to encode MP4");
 
         // Verify file exists
         assert!(output_path.exists());

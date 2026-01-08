@@ -56,6 +56,9 @@ pub struct World {
     /// Light system (day/night cycle, light propagation, growth timer)
     light_system: LightSystem,
 
+    /// Temporary light manager (mining flashes, explosions, etc.)
+    temporary_lights: crate::simulation::temporary_light_manager::TemporaryLightManager,
+
     /// Resource regeneration system
     regeneration_system: RegenerationSystem,
 
@@ -92,6 +95,8 @@ impl World {
             recipe_registry: RecipeRegistry::new(),
             structural_system: StructuralIntegritySystem::new(),
             light_system: LightSystem::new(),
+            temporary_lights:
+                crate::simulation::temporary_light_manager::TemporaryLightManager::new(),
             regeneration_system: RegenerationSystem::new(),
             debris_system: DebrisSystem::new(),
             creature_manager: crate::creature::spawning::CreatureManager::new(200), // Max 200 creatures
@@ -568,6 +573,35 @@ impl World {
         }
     }
 
+    /// Add a temporary light flash at a world position
+    ///
+    /// These lights expire after a short duration and bypass normal light propagation
+    /// for performance (they directly override the pixel's light level).
+    ///
+    /// # Parameters
+    /// - `world_x`, `world_y` - World position in pixel coordinates
+    /// - `intensity` - Light level (0-15, clamped to max)
+    /// - `duration_seconds` - How long the light lasts (converted to frames at 60 FPS)
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Mining flash: bright (10), short (0.1s)
+    /// world.add_light_flash(100, 50, 10, 0.1);
+    ///
+    /// // Explosion flash: very bright (15), medium (0.3s)
+    /// world.add_light_flash(200, 100, 15, 0.3);
+    /// ```
+    pub fn add_light_flash(
+        &mut self,
+        world_x: i32,
+        world_y: i32,
+        intensity: u8,
+        duration_seconds: f32,
+    ) {
+        self.temporary_lights
+            .add_flash(world_x, world_y, intensity, duration_seconds);
+    }
+
     /// Update simulation
     pub fn update<R: crate::world::WorldRng>(
         &mut self,
@@ -587,6 +621,9 @@ impl World {
 
         // Update light system (day/night cycle, growth timer)
         self.light_system.update(dt);
+
+        // Update temporary lights (decrement frame counters, remove expired)
+        self.temporary_lights.update();
 
         self.time_accumulator += dt;
 
@@ -684,6 +721,11 @@ impl World {
             &self.materials,
             &active_chunks,
         );
+
+        // 4.5. Apply temporary lights (mining flashes, explosions, etc.)
+        // These bypass propagation for performance - direct overrides only
+        self.temporary_lights
+            .apply_to_chunks(&mut self.chunk_manager.chunks);
 
         // 5. State changes based on temperature
         for i in 0..self.chunk_manager.active_chunks.len() {

@@ -129,10 +129,7 @@ impl AnimatedCamera {
                 let angle = rng.gen_range(0.0..std::f32::consts::TAU);
                 let radius = rng.gen_range(0.0..current_intensity);
 
-                self.shake_offset = Vec2::new(
-                    radius * angle.cos(),
-                    radius * angle.sin(),
-                );
+                self.shake_offset = Vec2::new(radius * angle.cos(), radius * angle.sin());
             } else {
                 self.shake_offset = Vec2::ZERO;
             }

@@ -1,12 +1,14 @@
 //! Simulation systems - materials, reactions, temperature, pressure
 
 pub mod falling_chunks;
+pub mod knockback;
 pub mod light;
 pub mod mining;
 pub mod regeneration;
 pub mod state_changes;
 pub mod structural;
 pub mod temperature;
+pub mod temporary_light_manager;
 
 // Re-export from sunaba-simulation for backward compatibility
 pub use sunaba_simulation::{

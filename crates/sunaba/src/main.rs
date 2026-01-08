@@ -244,13 +244,17 @@ fn main() -> anyhow::Result<()> {
         let scenarios = sunaba::screenshot::get_all_video_scenarios();
         let total = scenarios.len();
 
-        log::info!("Generating {} video scenarios to: {}", total, args.video_output_dir);
+        log::info!(
+            "Generating {} video scenarios to: {}",
+            total,
+            args.video_output_dir
+        );
 
         for (i, scenario) in scenarios.iter().enumerate() {
             log::info!("=== Video {}/{}: {} ===", i + 1, total, scenario.name);
 
-            let output_path = PathBuf::from(&args.video_output_dir)
-                .join(format!("{}.mp4", scenario.id));
+            let output_path =
+                PathBuf::from(&args.video_output_dir).join(format!("{}.mp4", scenario.id));
 
             match sunaba::screenshot::capture_video_scenario(scenario, &output_path) {
                 Ok(_) => log::info!("✓ Successfully generated: {:?}", output_path),
@@ -285,8 +289,8 @@ fn main() -> anyhow::Result<()> {
         std::fs::create_dir_all(&args.video_output_dir)?;
 
         // Determine output path
-        let output_path = PathBuf::from(&args.video_output_dir)
-            .join(format!("{}.mp4", scenario.id));
+        let output_path =
+            PathBuf::from(&args.video_output_dir).join(format!("{}.mp4", scenario.id));
 
         log::info!("Generating video scenario: {}", scenario.name);
 

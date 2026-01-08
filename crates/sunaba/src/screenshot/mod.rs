@@ -50,7 +50,10 @@ use crate::entity::{
 
 pub use scenario::{ScreenshotScenario, list_all_scenarios};
 pub use video_capture::VideoCapture;
-pub use video_scenarios::{VideoScenario, ScenarioAction, get_all_scenarios as get_all_video_scenarios, get_scenario_by_id as get_video_scenario_by_id};
+pub use video_scenarios::{
+    ScenarioAction, VideoScenario, get_all_scenarios as get_all_video_scenarios,
+    get_scenario_by_id as get_video_scenario_by_id,
+};
 
 /// Screenshot configuration
 pub struct ScreenshotConfig {
@@ -710,7 +713,11 @@ pub fn capture_video_scenario(
     log::info!("Capturing video scenario: {}", scenario.name);
     log::info!("  Description: {}", scenario.description);
     log::info!("  Resolution: {}x{}", scenario.width, scenario.height);
-    log::info!("  Duration: {}s @ {}fps", scenario.duration_seconds, scenario.fps);
+    log::info!(
+        "  Duration: {}s @ {}fps",
+        scenario.duration_seconds,
+        scenario.fps
+    );
     log::info!("  Actions: {}", scenario.actions.len());
 
     // Initialize video capture
@@ -751,7 +758,11 @@ pub fn capture_video_scenario(
     let mut stats = NoopStats;
     let mut rng = thread_rng();
 
-    log::info!("Simulating {} frames ({} captures)...", total_frames, total_frames / capture_interval);
+    log::info!(
+        "Simulating {} frames ({} captures)...",
+        total_frames,
+        total_frames / capture_interval
+    );
 
     // Build action timeline (frame number -> actions to execute)
     let action_timeline = build_action_timeline(&scenario.actions);
@@ -776,7 +787,12 @@ pub fn capture_video_scenario(
 
         // Progress logging every second
         if frame % 60 == 0 {
-            log::debug!("  Frame {}/{} ({:.1}s)", frame, total_frames, frame as f32 / 60.0);
+            log::debug!(
+                "  Frame {}/{} ({:.1}s)",
+                frame,
+                total_frames,
+                frame as f32 / 60.0
+            );
         }
     }
 
@@ -791,7 +807,9 @@ pub fn capture_video_scenario(
 ///
 /// Converts a sequence of actions (with Wait actions) into a frame-based timeline.
 /// Returns a map of frame number -> actions to execute at that frame.
-fn build_action_timeline(actions: &[ScenarioAction]) -> std::collections::HashMap<usize, Vec<ScenarioAction>> {
+fn build_action_timeline(
+    actions: &[ScenarioAction],
+) -> std::collections::HashMap<usize, Vec<ScenarioAction>> {
     use std::collections::HashMap;
 
     let mut timeline: HashMap<usize, Vec<ScenarioAction>> = HashMap::new();
@@ -834,11 +852,21 @@ fn execute_video_action(action: &ScenarioAction, world: &mut World, frame: usize
             world.debug_mine_circle(*x, *y, *radius);
         }
 
-        ScenarioAction::PlaceMaterial { x, y, material, radius } => {
+        ScenarioAction::PlaceMaterial {
+            x,
+            y,
+            material,
+            radius,
+        } => {
             world.place_material_debug(*x, *y, *material, *radius as u32);
         }
 
-        ScenarioAction::RemoveSupport { x, y, width, height } => {
+        ScenarioAction::RemoveSupport {
+            x,
+            y,
+            width,
+            height,
+        } => {
             // Remove all materials in the rectangular area (set to AIR)
             const AIR: u16 = 0;
             for dy in 0..*height {
@@ -853,13 +881,19 @@ fn execute_video_action(action: &ScenarioAction, world: &mut World, frame: usize
         ScenarioAction::TeleportPlayer { .. } => {
             // TODO: Implement player teleport in headless mode
             // For now, skip this action since headless mode doesn't have a player entity
-            log::warn!("TeleportPlayer action not yet implemented in headless video capture (frame {})", frame);
+            log::warn!(
+                "TeleportPlayer action not yet implemented in headless video capture (frame {})",
+                frame
+            );
         }
 
         ScenarioAction::SimulatePlayerMining { .. } => {
             // TODO: Implement player mining simulation in headless mode
             // For now, skip this action
-            log::warn!("SimulatePlayerMining action not yet implemented in headless video capture (frame {})", frame);
+            log::warn!(
+                "SimulatePlayerMining action not yet implemented in headless video capture (frame {})",
+                frame
+            );
         }
     }
 }

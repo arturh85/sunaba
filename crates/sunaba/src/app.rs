@@ -15,7 +15,7 @@ use crate::config::GameConfig;
 use crate::entity::InputState;
 use crate::levels::LevelManager;
 use crate::render::{ParticleSystem, Renderer};
-use crate::simulation::MaterialType;
+use crate::simulation::{MaterialId, MaterialTag, MaterialType};
 use crate::ui::UiState;
 use crate::world::World;
 
@@ -940,7 +940,8 @@ impl App {
                 // Shake intensity scales with fall speed
                 let shake_intensity = (fall_velocity.abs() / 100.0).min(5.0);
                 let shake_duration = 0.1 + (shake_intensity * 0.05);
-                self.renderer.add_camera_shake(shake_intensity, shake_duration);
+                self.renderer
+                    .add_camera_shake(shake_intensity, shake_duration);
             }
             self.was_grounded = is_grounded;
 
@@ -1001,6 +1002,25 @@ impl App {
                 let player_pos = self.world.player.position;
                 let center_x = player_pos.x as i32;
                 let center_y = player_pos.y as i32;
+
+                // Sample material at mining center for particle color (before mining)
+                let mined_material = self
+                    .world
+                    .get_pixel(center_x, center_y)
+                    .map(|pixel| pixel.material_id)
+                    .unwrap_or(MaterialId::STONE); // Fallback to stone color if air
+
+                // Extract material properties (scoped to drop borrow before mining)
+                let (material_color, is_hard_material, is_metallic, is_organic) = {
+                    let material_def = self.world.materials.get(mined_material);
+                    (
+                        material_def.color,
+                        material_def.hardness.map(|h| h >= 5).unwrap_or(false),
+                        material_def.tags.contains(&MaterialTag::Metallic),
+                        material_def.tags.contains(&MaterialTag::Organic),
+                    )
+                };
+
                 self.world.debug_mine_circle(center_x, center_y, 16);
 
                 // Send mining action to server (multiplayer only)
@@ -1015,11 +1035,27 @@ impl App {
                     }
                 }
 
-                // Spawn dust particles at mining location
-                self.particle_system.spawn_dust_cloud(
-                    player_pos,
-                    [140, 130, 120, 255], // Generic dusty color
-                );
+                // Material-tag-aware particle spawning
+                if is_metallic {
+                    // Metallic materials: enhanced sparks + light flash
+                    self.particle_system
+                        .spawn_metal_sparks(player_pos, material_color);
+                    self.world.add_light_flash(center_x, center_y, 10, 0.1);
+                } else if is_organic {
+                    // Organic materials: wood chips (no flash)
+                    self.particle_system
+                        .spawn_wood_chips(player_pos, material_color);
+                } else {
+                    // Default: dust cloud
+                    self.particle_system
+                        .spawn_dust_cloud(player_pos, material_color);
+
+                    // Add sparks + flash for hard materials (stone, mineral)
+                    if is_hard_material {
+                        self.particle_system.spawn_sparks(player_pos);
+                        self.world.add_light_flash(center_x, center_y, 10, 0.1);
+                    }
+                }
 
                 // Add small screen shake while mining (throttled per frame)
                 self.renderer.add_camera_shake(0.5, 0.05);
@@ -1066,6 +1102,9 @@ impl App {
                 } else {
                     self.particle_system.spawn_impact_burst(pos, color);
                 }
+
+                // Add placement flash (subtle, brief light)
+                self.world.add_light_flash(wx, wy, 8, 0.05);
             }
 
             // Update simulation with timing (disabled when connected to multiplayer - server is authoritative)

@@ -171,7 +171,12 @@ fn create_bridge_collapse_scenario() -> VideoScenario {
         height: 720,
         actions: vec![
             ScenarioAction::Wait { frames: 60 }, // Wait 1 second
-            ScenarioAction::RemoveSupport { x: -5, y: 40, width: 10, height: 50 }, // Remove pillar
+            ScenarioAction::RemoveSupport {
+                x: -5,
+                y: 40,
+                width: 10,
+                height: 50,
+            }, // Remove pillar
             ScenarioAction::Wait { frames: 300 }, // Watch collapse (5 seconds)
         ],
     }
@@ -190,7 +195,12 @@ fn create_lava_water_reaction_scenario() -> VideoScenario {
         height: 720,
         actions: vec![
             ScenarioAction::Wait { frames: 30 }, // Wait 0.5 seconds
-            ScenarioAction::RemoveSupport { x: -10, y: 50, width: 20, height: 80 }, // Remove separator wall
+            ScenarioAction::RemoveSupport {
+                x: -10,
+                y: 50,
+                width: 20,
+                height: 80,
+            }, // Remove separator wall
             ScenarioAction::Wait { frames: 270 }, // Watch reaction (4.5 seconds)
         ],
     }
@@ -270,8 +280,18 @@ fn create_material_reactions_scenario() -> VideoScenario {
         actions: vec![
             ScenarioAction::Wait { frames: 120 }, // Let initial reactions settle
             // Trigger gunpowder explosion (if present in level)
-            ScenarioAction::PlaceMaterial { x: -50, y: 80, material: 22, radius: 3 }, // Gunpowder (material ID 22)
-            ScenarioAction::PlaceMaterial { x: -50, y: 83, material: 5, radius: 1 }, // Fire on top
+            ScenarioAction::PlaceMaterial {
+                x: -50,
+                y: 80,
+                material: 22,
+                radius: 3,
+            }, // Gunpowder (material ID 22)
+            ScenarioAction::PlaceMaterial {
+                x: -50,
+                y: 83,
+                material: 5,
+                radius: 1,
+            }, // Fire on top
             ScenarioAction::Wait { frames: 480 }, // Watch reactions (8 seconds)
         ],
     }

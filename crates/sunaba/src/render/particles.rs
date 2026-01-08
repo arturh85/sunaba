@@ -114,8 +114,8 @@ impl ParticleSystem {
     pub fn spawn_impact_burst(&mut self, position: Vec2, color: [u8; 4]) {
         let mut rng = rand::thread_rng();
 
-        // Spawn 3-6 particles in a radial burst
-        let count = rng.gen_range(3..=6);
+        // Spawn 8-12 particles in a radial burst
+        let count = rng.gen_range(8..=12);
         for _ in 0..count {
             let angle = rng.gen_range(0.0..std::f32::consts::TAU);
             let speed = rng.gen_range(30.0..80.0);
@@ -138,8 +138,8 @@ impl ParticleSystem {
     pub fn spawn_liquid_splash(&mut self, position: Vec2, color: [u8; 4]) {
         let mut rng = rand::thread_rng();
 
-        // Spawn 4-8 droplets arcing upward then falling
-        let count = rng.gen_range(4..=8);
+        // Spawn 8-12 droplets arcing upward then falling
+        let count = rng.gen_range(8..=12);
         for _ in 0..count {
             let angle: f32 = rng.gen_range(-2.5..-0.6); // Mostly upward arc
             let speed = rng.gen_range(40.0..100.0);
@@ -206,6 +206,59 @@ impl ParticleSystem {
 
             let lifetime = rng.gen_range(0.1..0.25);
             self.spawn(position, velocity, color, lifetime);
+        }
+    }
+
+    /// Spawn wood chip particles for organic materials (wood, plants)
+    pub fn spawn_wood_chips(&mut self, position: Vec2, color: [u8; 4]) {
+        let mut rng = rand::thread_rng();
+
+        // Spawn 4-8 wood chips flying out
+        let count = rng.gen_range(4..=8);
+        for _ in 0..count {
+            let offset = Vec2::new(rng.gen_range(-3.0..3.0), rng.gen_range(-3.0..3.0));
+            let pos = position + offset;
+
+            // Medium speed in random direction (less violent than sparks)
+            let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+            let speed = rng.gen_range(60.0..120.0);
+            let velocity = Vec2::new(angle.cos() * speed, angle.sin() * speed);
+
+            // Use material color but darken slightly for wood chip appearance
+            let chip_color = [
+                ((color[0] as u16 * 80) / 100).min(255) as u8,
+                ((color[1] as u16 * 80) / 100).min(255) as u8,
+                ((color[2] as u16 * 80) / 100).min(255) as u8,
+                color[3],
+            ];
+
+            let lifetime = rng.gen_range(0.2..0.4);
+            self.spawn(pos, velocity, chip_color, lifetime);
+        }
+    }
+
+    /// Spawn metallic sparks (enhanced version for ore/metal mining)
+    pub fn spawn_metal_sparks(&mut self, position: Vec2, color: [u8; 4]) {
+        let mut rng = rand::thread_rng();
+
+        // Spawn more sparks (5-10) than regular sparks for dramatic effect
+        let count = rng.gen_range(5..=10);
+        for _ in 0..count {
+            let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+            let speed = rng.gen_range(100.0..250.0); // Faster than regular sparks
+            let velocity = Vec2::new(angle.cos() * speed, angle.sin() * speed);
+
+            // Mix material color with bright yellow-white for metallic look
+            let spark_brightness = rng.gen_range(200..=255);
+            let spark_color = [
+                ((color[0] as u16 + spark_brightness as u16) / 2).min(255) as u8,
+                ((color[1] as u16 + spark_brightness as u16) / 2).min(255) as u8,
+                ((color[2] as u16 + 200) / 2).min(255) as u8, // Bias toward warm colors
+                255,
+            ];
+
+            let lifetime = rng.gen_range(0.15..0.35); // Longer than regular sparks
+            self.spawn(position, velocity, spark_color, lifetime);
         }
     }
 
