@@ -120,6 +120,8 @@ pub struct App {
     game_mode: GameMode,
     last_autosave: Instant,
     particle_system: ParticleSystem,
+    paused: bool,         // Game pause state (Escape menu)
+    quit_requested: bool, // Quit request from menu
     #[cfg(not(target_arch = "wasm32"))]
     config: GameConfig,
     /// Hot reload manager for config and materials.
@@ -177,6 +179,20 @@ impl App {
         {
             1.1 // Default zoom speed for WASM
         }
+    }
+
+    /// Check if game should pause simulation (escape menu open)
+    #[inline]
+    fn should_pause(&self) -> bool {
+        #[cfg(feature = "multiplayer")]
+        {
+            // Don't pause in multiplayer
+            if self.multiplayer_manager.is_some() {
+                return false;
+            }
+        }
+
+        self.paused // Pause in singleplayer when menu open
     }
 
     pub async fn new() -> Result<(Self, EventLoop<()>)> {
@@ -306,6 +322,8 @@ impl App {
             game_mode,
             last_autosave: Instant::now(),
             particle_system: ParticleSystem::new(),
+            paused: false,
+            quit_requested: false,
             #[cfg(not(target_arch = "wasm32"))]
             config,
             hot_reload: crate::hot_reload::HotReloadManager::new(),
@@ -884,8 +902,9 @@ impl App {
         #[cfg(not(feature = "multiplayer"))]
         let is_loading_chunks = false;
 
-        if is_loading_chunks {
+        if is_loading_chunks || self.should_pause() {
             // Skip player update, world update, input processing
+            // Either loading chunks OR game is paused (Escape menu open)
             // Jump directly to rendering (after world update section)
         } else {
             // Process remote control commands (non-blocking)
@@ -1128,7 +1147,7 @@ impl App {
             let in_persistent_world = matches!(self.game_mode, GameMode::PersistentWorld);
 
             #[cfg(not(target_arch = "wasm32"))]
-            self.ui_state.render(
+            let menu_action = self.ui_state.render(
                 ctx,
                 cursor_pos,
                 self.input_state.selected_material,
@@ -1146,7 +1165,7 @@ impl App {
             );
 
             #[cfg(target_arch = "wasm32")]
-            self.ui_state.render(
+            let menu_action = self.ui_state.render(
                 ctx,
                 cursor_pos,
                 self.input_state.selected_material,
@@ -1161,6 +1180,24 @@ impl App {
                 #[cfg(feature = "multiplayer")]
                 self.multiplayer_manager.as_ref(),
             );
+
+            // Handle escape menu actions
+            if menu_action.resume {
+                self.ui_state.escape_menu.hide();
+                self.paused = false;
+            }
+
+            if menu_action.quit {
+                self.quit_requested = true;
+            }
+
+            if menu_action.save {
+                // Manual save trigger
+                if matches!(self.game_mode, GameMode::PersistentWorld) {
+                    self.world.save_all_dirty_chunks();
+                    self.ui_state.show_toast("Game saved");
+                }
+            }
 
             // Draw active chunks overlay if enabled
             if let Some((window_size, camera_pos, camera_zoom, active_chunks)) = &active_chunks_data
@@ -1878,6 +1915,12 @@ impl ApplicationHandler for App {
         // Let egui handle events first
         let _ = self.egui_state.on_window_event(&self.window, &event);
 
+        // Check if quit was requested from menu
+        if self.quit_requested {
+            event_loop.exit();
+            return;
+        }
+
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -1998,6 +2041,28 @@ impl ApplicationHandler for App {
                                     self.select_debug_material(9);
                                 } else {
                                     self.select_hotbar_slot(8);
+                                }
+                            }
+                        }
+
+                        // Escape key - Close panels or toggle pause menu
+                        KeyCode::Escape => {
+                            if pressed {
+                                // Priority: Close panels first, then open menu
+
+                                // Check if any debug panel is active
+                                if self.ui_state.panels.active_panel.is_some() {
+                                    // Close active panel
+                                    self.ui_state.panels.active_panel = None;
+                                }
+                                // Check if worldgen editor is open
+                                else if self.ui_state.worldgen_editor.open {
+                                    self.ui_state.worldgen_editor.open = false;
+                                }
+                                // No panels open - toggle escape menu
+                                else {
+                                    self.ui_state.escape_menu.toggle();
+                                    self.paused = self.ui_state.escape_menu.is_visible();
                                 }
                             }
                         }

@@ -36,6 +36,63 @@ impl std::fmt::Display for DockTab {
     }
 }
 
+impl DockTab {
+    /// Get all tab variants (for menu iteration)
+    pub fn all_variants() -> Vec<Self> {
+        vec![
+            Self::Stats,
+            Self::Controls,
+            Self::LevelSelector,
+            Self::Inventory,
+            Self::Crafting,
+            Self::Logger,
+            Self::Parameters,
+            #[cfg(feature = "multiplayer")]
+            Self::MultiplayerStats,
+            #[cfg(feature = "profiling")]
+            Self::Profiler,
+        ]
+    }
+
+    /// Check if tab is available on current platform
+    pub fn is_available(&self) -> bool {
+        match self {
+            Self::Parameters => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    false
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    true
+                }
+            }
+            #[cfg(feature = "profiling")]
+            Self::Profiler => true,
+            #[cfg(feature = "multiplayer")]
+            Self::MultiplayerStats => true,
+            _ => true, // All other panels always available
+        }
+    }
+
+    /// Get Unicode icon for panel (optional styling)
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::Stats => "📊",
+            Self::Controls => "⌨️",
+            Self::LevelSelector => "🎮",
+            Self::Inventory => "📦",
+            Self::Crafting => "🔨",
+            Self::Logger => "📋",
+            Self::Parameters => "⚙️",
+            #[cfg(feature = "multiplayer")]
+            Self::MultiplayerStats => "🌐",
+            #[cfg(feature = "profiling")]
+            Self::Profiler => "🔍",
+        }
+    }
+}
+
 /// Dock state manager
 pub struct DockManager {
     pub dock_state: DockState<DockTab>,
@@ -182,7 +239,7 @@ impl<'a> TabViewer for DockTabViewer<'a> {
 }
 
 impl<'a> DockTabViewer<'a> {
-    fn render_stats(&self, ui: &mut egui::Ui) {
+    pub fn render_stats(&self, ui: &mut egui::Ui) {
         let stats = self.ctx.stats;
 
         ui.heading("Performance");
@@ -207,7 +264,7 @@ impl<'a> DockTabViewer<'a> {
         ui.label(format!("Average: {:.1}°C", stats.avg_temp));
     }
 
-    fn render_controls(&self, ui: &mut egui::Ui) {
+    pub fn render_controls(&self, ui: &mut egui::Ui) {
         ui.heading("Movement");
         ui.label("W/A/S/D - Move player");
         ui.label("Space - Jump");
@@ -235,7 +292,7 @@ impl<'a> DockTabViewer<'a> {
         ));
     }
 
-    fn render_level_selector(&self, ui: &mut egui::Ui) {
+    pub fn render_level_selector(&self, ui: &mut egui::Ui) {
         ui.heading("Levels");
         ui.label(format!("Current: {}", self.ctx.game_mode_desc));
 
@@ -249,7 +306,7 @@ impl<'a> DockTabViewer<'a> {
         }
     }
 
-    fn render_inventory(&self, ui: &mut egui::Ui) {
+    pub fn render_inventory(&self, ui: &mut egui::Ui) {
         ui.heading("Inventory");
 
         let inventory = &self.ctx.player.inventory;
@@ -291,7 +348,7 @@ impl<'a> DockTabViewer<'a> {
         }
     }
 
-    fn render_crafting(&self, ui: &mut egui::Ui) {
+    pub fn render_crafting(&self, ui: &mut egui::Ui) {
         ui.heading("Crafting");
         ui.label("Available recipes:");
 
@@ -309,23 +366,23 @@ impl<'a> DockTabViewer<'a> {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn render_logger(&self, ui: &mut egui::Ui) {
+    pub fn render_logger(&self, ui: &mut egui::Ui) {
         egui_logger::logger_ui().show(ui);
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn render_logger(&self, ui: &mut egui::Ui) {
+    pub fn render_logger(&self, ui: &mut egui::Ui) {
         ui.label("See Logger panel in dock (press F6 to toggle)");
     }
 
-    fn render_parameters(&mut self, ui: &mut egui::Ui) {
+    pub fn render_parameters(&mut self, ui: &mut egui::Ui) {
         ui.heading("Parameters");
         ui.label("Press F4 to open the standalone Parameters panel");
         ui.label("(This dock tab is a quick reference)");
     }
 
     #[cfg(feature = "multiplayer")]
-    fn render_multiplayer_stats(&mut self, ui: &mut egui::Ui) {
+    pub fn render_multiplayer_stats(&mut self, ui: &mut egui::Ui) {
         if let Some(manager) = self.ctx.multiplayer_manager {
             super::multiplayer_panel::render_multiplayer_panel(
                 ui,
@@ -340,7 +397,7 @@ impl<'a> DockTabViewer<'a> {
     }
 
     #[cfg(feature = "profiling")]
-    fn render_profiler(&self, ui: &mut egui::Ui) {
+    pub fn render_profiler(&self, ui: &mut egui::Ui) {
         puffin_egui::profiler_ui(ui);
     }
 }

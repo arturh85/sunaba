@@ -2,7 +2,9 @@
 
 pub mod controls_help;
 pub mod crafting_ui;
+pub mod debug_panel;
 pub mod dock;
+pub mod escape_menu;
 pub mod game_over_panel;
 pub mod hud;
 pub mod inventory_ui;
@@ -20,7 +22,9 @@ pub mod worldgen_editor;
 
 pub use controls_help::ControlsHelpState;
 pub use crafting_ui::CraftingUI;
-pub use dock::{DockManager, DockTab};
+pub use debug_panel::DebugPanelManager;
+pub use dock::DockTab;
+pub use escape_menu::{EscapeMenu, EscapeMenuAction};
 pub use game_over_panel::GameOverPanelState;
 pub use hud::Hud;
 pub use inventory_ui::InventoryPanel;

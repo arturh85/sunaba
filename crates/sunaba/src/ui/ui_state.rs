@@ -1,6 +1,8 @@
 //! Central UI state management
 
-use super::dock::{DockManager, DockTab};
+use super::debug_panel::DebugPanelManager;
+use super::dock::DockTab;
+use super::escape_menu::{EscapeMenu, EscapeMenuAction};
 use super::hud::Hud;
 use super::stats::{SimulationStats, StatsCollector};
 use super::theme::SunabaTheme;
@@ -40,8 +42,11 @@ pub struct UiState {
     /// Toast notification manager
     pub toasts: ToastManager,
 
-    /// Dock manager for dockable panels
-    pub dock: DockManager,
+    /// Debug panel manager (vertical menu system)
+    pub panels: DebugPanelManager,
+
+    /// Escape menu (pause menu)
+    pub escape_menu: EscapeMenu,
 
     /// Track if parameters were changed (for propagation to renderer)
     #[cfg(not(target_arch = "wasm32"))]
@@ -85,7 +90,8 @@ impl UiState {
             tooltip: TooltipState::new(),
             hud: Hud::new(),
             toasts: ToastManager::new(),
-            dock: DockManager::new(),
+            panels: DebugPanelManager::new(),
+            escape_menu: EscapeMenu::new(),
             params_changed: false,
             #[cfg(feature = "multiplayer")]
             metrics_collector: None,
@@ -106,7 +112,8 @@ impl UiState {
             tooltip: TooltipState::new(),
             hud: Hud::new(),
             toasts: ToastManager::new(),
-            dock: DockManager::new(),
+            panels: DebugPanelManager::new(),
+            escape_menu: EscapeMenu::new(),
             #[cfg(feature = "multiplayer")]
             metrics_collector: None,
             #[cfg(feature = "multiplayer")]
@@ -119,7 +126,7 @@ impl UiState {
 
     /// Toggle a dock tab (H, L, I, C hotkeys)
     pub fn toggle_tab(&mut self, tab: DockTab) {
-        self.dock.toggle_tab(tab);
+        self.panels.toggle_tab(tab);
     }
 
     /// Take the params_changed flag (resets it to false)
@@ -184,14 +191,14 @@ impl UiState {
         #[cfg(feature = "multiplayer")] multiplayer_manager: Option<
             &crate::multiplayer::MultiplayerManager,
         >,
-    ) {
+    ) -> EscapeMenuAction {
         // Update stats display (throttled)
         if self.last_stats_update.elapsed().as_millis() >= Self::STATS_UPDATE_INTERVAL_MS {
             self.display_stats = self.stats.stats().clone();
             self.last_stats_update = Instant::now();
         }
 
-        // Render dock with all panels
+        // Render debug panels with vertical menu
         let dock_ctx = super::dock::DockContext {
             stats: &self.display_stats,
             selected_material,
@@ -211,7 +218,7 @@ impl UiState {
             #[cfg(feature = "multiplayer")]
             multiplayer_panel_state: &mut self.multiplayer_panel,
         };
-        super::dock::render_dock(ctx, &mut self.dock, dock_ctx);
+        super::debug_panel::render_debug_panels(ctx, &mut self.panels, dock_ctx);
 
         // Render overlays (outside dock)
         let material_names: Vec<&str> = (0..15).map(|id| materials.get(id).name.as_str()).collect();
@@ -234,6 +241,9 @@ impl UiState {
         if show_game_over {
             self.game_over_panel.render(ctx, &self.theme.game);
         }
+
+        // Render escape menu (last - on top of everything)
+        super::escape_menu::render_escape_menu(ctx, &mut self.escape_menu, &mut self.panels)
     }
 
     /// Render all UI elements (WASM version)
@@ -255,14 +265,14 @@ impl UiState {
         #[cfg(feature = "multiplayer")] multiplayer_manager: Option<
             &crate::multiplayer::MultiplayerManager,
         >,
-    ) {
+    ) -> EscapeMenuAction {
         // Update stats display (throttled)
         if self.last_stats_update.elapsed().as_millis() >= Self::STATS_UPDATE_INTERVAL_MS {
             self.display_stats = self.stats.stats().clone();
             self.last_stats_update = Instant::now();
         }
 
-        // Render dock with all panels (WASM - no params)
+        // Render debug panels with vertical menu (WASM - no params)
         let dock_ctx = super::dock::DockContext {
             stats: &self.display_stats,
             selected_material,
@@ -280,7 +290,7 @@ impl UiState {
             #[cfg(feature = "multiplayer")]
             multiplayer_panel_state: &mut self.multiplayer_panel,
         };
-        super::dock::render_dock(ctx, &mut self.dock, dock_ctx);
+        super::debug_panel::render_debug_panels(ctx, &mut self.panels, dock_ctx);
 
         // Render overlays (outside dock)
         let material_names: Vec<&str> = (0..15).map(|id| materials.get(id).name.as_str()).collect();
@@ -303,6 +313,9 @@ impl UiState {
         if show_game_over {
             self.game_over_panel.render(ctx, &self.theme.game);
         }
+
+        // Render escape menu (last - on top of everything)
+        super::escape_menu::render_escape_menu(ctx, &mut self.escape_menu, &mut self.panels)
     }
 
     /// Render fullscreen loading overlay for multiplayer chunk loading
