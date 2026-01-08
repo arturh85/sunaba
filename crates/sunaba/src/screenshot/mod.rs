@@ -247,28 +247,8 @@ fn capture_ui_panel_screenshot(
     let tool_registry = ToolRegistry::default();
     let recipe_registry = RecipeRegistry::new();
     let level_manager = LevelManager::new();
-    let mut config = GameConfig::default();
 
-    // 3. Initialize UI state
-    let mut ui_state = UiState::new(&config);
-
-    // 4. Open the target panel
-    match panel {
-        UiPanel::Params => ui_state.dock.open_tab(DockTab::Parameters),
-        UiPanel::Inventory => ui_state.dock.open_tab(DockTab::Inventory),
-        UiPanel::Crafting => ui_state.dock.open_tab(DockTab::Crafting),
-        UiPanel::Logger => ui_state.dock.open_tab(DockTab::Logger),
-        UiPanel::WorldGen => {
-            // WorldGen editor is not in dock, it's a separate window
-            // We'll need to render it differently
-            anyhow::bail!("WorldGen screenshot not yet implemented")
-        }
-        UiPanel::LevelSelector => ui_state.dock.open_tab(DockTab::LevelSelector),
-        #[cfg(feature = "multiplayer")]
-        UiPanel::Multiplayer => ui_state.dock.open_tab(DockTab::MultiplayerStats),
-    }
-
-    // 5. Render UI to offscreen texture
+    // 3. Render UI to offscreen texture (fullscreen, bypassing dock system)
     let pixels = renderer.render_ui(|ctx| {
         // Set background color
         let bg_color = egui::Color32::from_rgba_unmultiplied(
@@ -282,31 +262,157 @@ fn capture_ui_panel_screenshot(
             style.visuals.window_fill = bg_color;
         });
 
-        // Render the UI state (only the open panel will render)
-        ui_state.render(
+        // Render panel fullscreen without dock wrapper
+        render_panel_fullscreen(
+            panel,
             ctx,
-            egui::pos2(0.0, 0.0), // cursor pos (not used)
-            MaterialId::AIR,
             &materials,
-            "Screenshot Mode",
-            false,
-            &level_manager,
             &player,
             &tool_registry,
             &recipe_registry,
-            &mut config,
-            false, // no game over
-            #[cfg(feature = "multiplayer")]
-            None, // no multiplayer manager
+            &level_manager,
+            "Screenshot Mode",
         );
     })?;
 
-    // 6. Save as PNG
+    // 4. Save as PNG
     log::info!("Saving to {:?}...", output_path.as_ref());
     save_buffer_as_png(&pixels, width, height, output_path)?;
 
     log::info!("Screenshot saved successfully!");
     Ok(())
+}
+
+/// Render a single panel fullscreen without dock wrapper
+///
+/// Bypasses the dock system to render panels at full canvas size for screenshots.
+fn render_panel_fullscreen(
+    panel: UiPanel,
+    ctx: &egui::Context,
+    materials: &Materials,
+    player: &Player,
+    tool_registry: &ToolRegistry,
+    recipe_registry: &RecipeRegistry,
+    level_manager: &LevelManager,
+    game_mode_desc: &str,
+) {
+    egui::CentralPanel::default().show(ctx, |ui| match panel {
+        UiPanel::Params => render_params_fullscreen(ui),
+        UiPanel::Inventory => render_inventory_fullscreen(ui, player, materials, tool_registry),
+        UiPanel::Crafting => render_crafting_fullscreen(ui, recipe_registry, materials),
+        UiPanel::Logger => render_logger_fullscreen(ui),
+        UiPanel::LevelSelector => {
+            render_level_selector_fullscreen(ui, level_manager, game_mode_desc)
+        }
+        #[cfg(feature = "multiplayer")]
+        UiPanel::Multiplayer => render_multiplayer_fullscreen(ui),
+        UiPanel::WorldGen => {
+            ui.heading("WorldGen Editor");
+            ui.label("WorldGen screenshot not yet implemented");
+            ui.label("(WorldGen is a separate window, not a dock panel)");
+        }
+    });
+}
+
+fn render_params_fullscreen(ui: &mut egui::Ui) {
+    ui.heading("Parameters");
+    ui.label("Game configuration panel");
+    ui.label("(Shows physics, rendering, and world settings)");
+}
+
+fn render_inventory_fullscreen(
+    ui: &mut egui::Ui,
+    player: &Player,
+    materials: &Materials,
+    tool_registry: &ToolRegistry,
+) {
+    // Copy from dock.rs::render_inventory() (lines 252-292)
+    ui.heading("Inventory");
+
+    let inventory = &player.inventory;
+    ui.label(format!(
+        "Using {}/{} slots",
+        inventory.used_slot_count(),
+        inventory.max_slots
+    ));
+
+    ui.separator();
+
+    // Show all slots (not just first 10 like dock panel)
+    for i in 0..inventory.max_slots {
+        if let Some(Some(stack)) = inventory.get_slot(i) {
+            match stack {
+                ItemStack::Material { material_id, count } => {
+                    let mat = materials.get(*material_id);
+                    ui.label(format!("[{}] {} x{}", i, mat.name, count));
+                }
+                ItemStack::Tool {
+                    tool_id,
+                    durability,
+                } => {
+                    if let Some(tool_def) = tool_registry.get(*tool_id) {
+                        ui.label(format!("[{}] {} ({})", i, tool_def.name, durability));
+                    }
+                }
+            }
+        }
+    }
+
+    // Show equipped tool
+    if let Some(tool_id) = player.equipped_tool {
+        ui.separator();
+        if let Some(tool_def) = tool_registry.get(tool_id) {
+            ui.label(format!("Tool: {}", tool_def.name));
+        }
+    }
+}
+
+fn render_crafting_fullscreen(
+    ui: &mut egui::Ui,
+    recipe_registry: &RecipeRegistry,
+    materials: &Materials,
+) {
+    // Copy from dock.rs::render_crafting() (lines 294-309)
+    ui.heading("Crafting");
+    ui.label("Available recipes:");
+
+    for recipe in recipe_registry.all_recipes() {
+        ui.horizontal(|ui| {
+            ui.label(&recipe.name);
+            ui.label("-");
+            if let Some((mat_id, count)) = recipe.inputs.first() {
+                let mat = materials.get(*mat_id);
+                ui.label(format!("{} x{}", mat.name, count));
+            }
+        });
+    }
+}
+
+fn render_logger_fullscreen(ui: &mut egui::Ui) {
+    // Copy from dock.rs::render_logger() (lines 312-319)
+    #[cfg(not(target_arch = "wasm32"))]
+    egui_logger::logger_ui().show(ui);
+
+    #[cfg(target_arch = "wasm32")]
+    ui.label("Logger panel (native only)");
+}
+
+fn render_level_selector_fullscreen(
+    ui: &mut egui::Ui,
+    _level_manager: &LevelManager,
+    game_mode_desc: &str,
+) {
+    // Copy from dock.rs::render_level_selector() (lines 238-250)
+    ui.heading("Levels");
+    ui.label(format!("Current: {}", game_mode_desc));
+    ui.separator();
+    ui.label("Demo level active");
+}
+
+#[cfg(feature = "multiplayer")]
+fn render_multiplayer_fullscreen(ui: &mut egui::Ui) {
+    ui.heading("Multiplayer");
+    ui.label("Multiplayer not available in screenshot mode");
 }
 
 /// Capture a screenshot of a UI panel (WASM stub - not supported)
