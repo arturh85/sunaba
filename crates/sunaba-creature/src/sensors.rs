@@ -639,12 +639,14 @@ pub fn sense_gap_info(
         }
 
         // Detect gap end (air → solid)
-        if !on_solid && is_solid
-            && let Some(gap_start_val) = gap_start {
-                let gap_distance = (gap_start_val as f32 / max_distance).min(1.0);
-                let gap_width = ((step - gap_start_val) as f32 / max_width).min(1.0);
-                return (gap_distance, gap_width);
-            }
+        if !on_solid
+            && is_solid
+            && let Some(gap_start_val) = gap_start
+        {
+            let gap_distance = (gap_start_val as f32 / max_distance).min(1.0);
+            let gap_width = ((step - gap_start_val) as f32 / max_width).min(1.0);
+            return (gap_distance, gap_width);
+        }
 
         on_solid = is_solid;
     }

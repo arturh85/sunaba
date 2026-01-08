@@ -30,6 +30,10 @@ pub struct Chunk {
     #[serde(with = "serde_big_array::BigArray")]
     pub pressure: [f32; 64],
 
+    /// Electrical potential per coarse cell (8x8 grid, 0.0-10.0 volts) (Phase 6 - Powder Game)
+    #[serde(with = "serde_big_array::BigArray")]
+    pub electrical_potential: [f32; 64],
+
     /// Light levels per pixel (0-15, where 0=dark, 15=full light)
     #[serde(with = "serde_big_array::BigArray")]
     pub light_levels: [u8; CHUNK_AREA],
@@ -85,11 +89,12 @@ impl Chunk {
             x,
             y,
             pixels: [Pixel::AIR; CHUNK_AREA],
-            background: [0; CHUNK_AREA],   // 0 = no background (air)
-            temperature: [20.0; 64],       // Room temperature (Celsius)
-            pressure: [1.0; 64],           // Atmospheric pressure
-            light_levels: [0; CHUNK_AREA], // Start dark, will be calculated
-            light_dirty: true,             // Needs initial light calculation
+            background: [0; CHUNK_AREA],     // 0 = no background (air)
+            temperature: [20.0; 64],         // Room temperature (Celsius)
+            pressure: [1.0; 64],             // Atmospheric pressure
+            electrical_potential: [0.0; 64], // No voltage initially
+            light_levels: [0; CHUNK_AREA],   // Start dark, will be calculated
+            light_dirty: true,               // Needs initial light calculation
             dirty: false,
             dirty_rect: None,
             simulation_active: false,

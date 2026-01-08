@@ -143,6 +143,18 @@ pub struct MaterialDef {
     pub structural: bool,
     pub conducts_electricity: bool,
 
+    // Electrical properties (Phase 6 - Powder Game)
+    /// How well material conducts electricity (0.0-1.0)
+    pub electrical_conductivity: f32,
+    /// Heat generated from electrical current (Ohms)
+    pub electrical_resistance: f32,
+    /// Voltage required to arc/jump gaps (Thunder)
+    pub spark_threshold: f32,
+    /// Volts per second for power sources (Batteries)
+    pub power_generation: f32,
+    /// Battery depletion rate (1.0 = depletes quickly)
+    pub power_decay_rate: f32,
+
     // Creature interaction properties (Phase 5)
     /// Food value when consumed (0-100 calories)
     pub nutritional_value: Option<f32>,
@@ -182,6 +194,11 @@ impl Default for MaterialDef {
             flammable: false,
             structural: false,
             conducts_electricity: false,
+            electrical_conductivity: 0.0,
+            electrical_resistance: 0.0,
+            spark_threshold: 0.0,
+            power_generation: 0.0,
+            power_decay_rate: 0.0,
             nutritional_value: None,
             toxicity: None,
             hardness_multiplier: 1.0,

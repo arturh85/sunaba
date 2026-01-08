@@ -44,6 +44,11 @@ pub mod pixel_flags {
     pub const BURNING: u16 = 1 << 1; // Currently on fire
     pub const FALLING: u16 = 1 << 2; // In free-fall
     pub const PLAYER_PLACED: u16 = 1 << 3; // Placed by player/creature, not world-generated
+
+    // Electrical flags (Phase 6 - Powder Game)
+    pub const CONDUCTIVE: u16 = 1 << 4; // Can conduct electricity
+    pub const POWERED: u16 = 1 << 5; // Currently has electrical charge
+    pub const SPARK_SOURCE: u16 = 1 << 6; // Battery/active power source
 }
 
 #[cfg(test)]
