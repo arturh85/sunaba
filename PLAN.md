@@ -82,13 +82,15 @@
 ### Phase 4: World Persistence ✅ COMPLETED
 - [x] Chunk serialization (bincode + lz4 compression)
 - [x] Auto-save on chunk unload + periodic (60s) + manual (F5)
+- [x] Background threaded autosave (eliminates freeze during saves)
+- [x] Incremental save system (saves only dirty chunks)
 - [x] Cave generation with multi-octave Perlin noise
 - [x] Spawn point persistence in world metadata
 - [x] Command-line --regenerate flag
 - [x] Game mode separation (Persistent World vs Demo Levels)
 - [x] Level selector UI (L key) with dropdown menu
 
-### Phase 5: World Enhancement for Creatures
+### Phase 5: World Enhancement for Creatures ✅ COMPLETED
 - [x] Extended material properties (nutritional_value, toxicity, structural_strength)
 - [x] Ore materials and mining mechanics
 - [x] Organic materials (plant_matter, flesh, bone)
@@ -98,6 +100,45 @@
 - [x] Advanced structural mechanics for creature-built structures
 - [x] **Player inventory system** (resource collection and storage)
 - [x] **Basic crafting mechanics** (material transformation)
+
+### Game Feel Improvements ✅ COMPLETED
+- [x] **Phase 1: Screen Shake Foundation** (hard landings, camera shake system)
+- [x] **Phase 2: Mining & Building Juice** (knockback, material-aware particles, light flashes)
+- [x] **Phase 3A: Dash Mechanic** (double-tap A/D, Shift+direction, air dash limit)
+  - Double-tap detection (200ms window)
+  - Dash physics (400 px/s, 0.15s duration, 0.5s cooldown)
+  - Air dash limit (once per jump, resets on landing)
+  - Visual effects (screen shake, dash trail particles, impact burst)
+  - Controls: Double-tap A/D or Shift+A/D/W/S to dash
+
+### UI System Enhancements ✅ COMPLETED
+- [x] **Comprehensive theme system** (Catppuccin integration, custom fonts)
+- [x] **Vertical debug panel menu** (replaces horizontal tabs)
+- [x] **Escape pause menu** (clean UI navigation)
+- [x] **Screenshot automation system:**
+  - Headless level screenshots (world/materials only, no UI)
+  - GPU-rendered UI panel screenshots (individual panels with sample data)
+  - Composite screenshots (world + UI panels)
+  - Layout screenshots (predefined panel arrangements)
+  - Automated video generation (MP4 exports for documentation)
+- [x] **Tooltip improvements** (hide when over UI panels)
+- [x] **Opaque panel backgrounds** (improved readability)
+
+### Testing & Development Infrastructure ✅ COMPLETED
+- [x] **Scenario testing system** (RON-based automated tests)
+  - Hybrid testing (fast smoke tests + comprehensive integration tests)
+  - CLI scenario runner (`just test-scenario <file>`)
+  - Scenario verification (material counts, player state, etc.)
+  - Test integration with Rust test framework
+- [x] **TCP remote control** (port 7453)
+  - Live game control via netcat/telnet
+  - RON command protocol (TeleportPlayer, MineCircle, PlaceMaterial)
+  - JSON response format
+  - Useful for debugging and live testing
+- [x] **Development workflow improvements**
+  - Fast iteration with `just run` (instant launch with hot reload)
+  - Comprehensive validation with `just test-all`
+  - Scenario tests integration (`just test-scenarios`)
 
 ### Phase 6: Creature Architecture ✅ COMPLETED
 - [x] Make sure the world is ready for creatures, think of a few example behaviors we want to evolve. Expand the materials, reaction or whatever else as needed.
@@ -127,14 +168,23 @@ This phase is iterative experimentation, not linear completion. Success is measu
 - [x] Training scenarios (Locomotion, SimpleLocomotion, Foraging, Survival, Balanced, Parcour)
 - [x] Parallel simulation (rayon), checkpoints (bincode), HTML reports, GIF capture
 - [x] CLI training (`--train`, `--scenario`, `--generations`, `--population`, `--output`)
+- [x] **Terrain-aware sensors** (slope detection, gap sensing, clearance sensing, surface material)
+- [x] **Biome specialist training** (terrain-specific fitness, enhanced analytics, diversity metrics)
 
 #### 7a: Locomotion Research 🔬
 Goal: Creatures that reliably move across flat terrain.
+- [x] Terrain-aware sensor integration (slope, gap, clearance detection)
+- [x] Biome-specific training scenarios (flat, hilly, cavernous terrains)
 - [ ] Motor control tuning (joint forces, damping, friction)
 - [ ] Body physics calibration (mass distribution, ground contact)
 - [ ] Simple morphology experiments (biped, quadruped, worm)
 - [ ] Fitness function refinement (distance vs energy efficiency)
 - [ ] Baseline: creature moves >100px in 30 seconds consistently in a chosen direction.
+
+**Recent Progress:**
+- Terrain sensors provide creatures with ground slope, gap detection, and clearance information
+- Biome specialist training allows evolution of terrain-specific locomotion strategies
+- Enhanced analytics track diversity metrics and behavioral characterization
 
 #### 7b: Self-Sustaining Creatures 🔬
 Goal: Creatures that find food and survive without intervention.
