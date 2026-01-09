@@ -684,7 +684,7 @@ just web-powder  # New justfile command
      - Implemented a more advanced electrical simulation in `sunaba-core` with potential grid, propagation, and heat generation.
      - The initial idea to place this in `sunaba-simulation` was flawed due to crate dependencies (`Chunk` is in `sunaba-core`).
      - The system is now correctly located in `sunaba-core/src/world/electrical_system.rs` and integrated into the main world update loop.
-   - ⏳ **Phase 1.3**: Add 5 electrical materials
+   - ✅ **Phase 1.3**: Add 5 electrical materials (2024-01-09)
    - ⏳ **Phase 1.4**: Add electrical reactions
    - ⏳ **Phase 1.5**: Implement special behaviors (Spark/Thunder)
    - ⏳ **Phase 1.6**: Testing & validation

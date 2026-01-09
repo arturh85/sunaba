@@ -56,6 +56,13 @@ impl MaterialId {
     pub const BASALT: u16 = 35;
     pub const GLOWING_MUSHROOM: u16 = 36;
     pub const OBSIDIAN: u16 = 37;
+
+    // Powder Game materials
+    pub const SPARK: u16 = 38;
+    pub const THUNDER: u16 = 39;
+    pub const LASER: u16 = 40;
+    pub const BATTERY: u16 = 41;
+    pub const WIRE: u16 = 42;
 }
 
 /// How a material behaves physically
@@ -826,6 +833,78 @@ impl Materials {
             tags: vec![MaterialTag::Mineral],
             ..Default::default()
         });
+
+        // ===== POWDER GAME MATERIALS =====
+
+        // Spark - electricity carrier
+        self.register(MaterialDef {
+            id: MaterialId::SPARK,
+            name: "spark".to_string(),
+            material_type: MaterialType::Gas,
+            color: [255, 255, 0, 255], // Yellow
+            density: 0.1,
+            hardness: None,
+            heat_conductivity: 0.9,
+            conducts_electricity: true,
+            electrical_conductivity: 1.0,
+            ..Default::default()
+        });
+
+        // Thunder - instant electrical destruction
+        self.register(MaterialDef {
+            id: MaterialId::THUNDER,
+            name: "thunder".to_string(),
+            material_type: MaterialType::Gas,
+            color: [255, 255, 200, 255], // Pale yellow
+            density: 0.001,
+            hardness: None,
+            heat_conductivity: 1.0,
+            conducts_electricity: true,
+            electrical_conductivity: 1.0,
+            spark_threshold: 1.0, // Arcs easily
+            ..Default::default()
+        });
+
+        // Laser - ray-traced beam
+        self.register(MaterialDef {
+            id: MaterialId::LASER,
+            name: "laser".to_string(),
+            material_type: MaterialType::Gas, // Special behavior
+            color: [255, 0, 0, 255],          // Red
+            density: 0.0,
+            hardness: None,
+            ..Default::default()
+        });
+
+        // Battery - electrical power source
+        self.register(MaterialDef {
+            id: MaterialId::BATTERY,
+            name: "battery".to_string(),
+            material_type: MaterialType::Solid,
+            color: [100, 120, 100, 255], // Greenish metal
+            density: 3.0,
+            hardness: Some(4),
+            structural: true,
+            conducts_electricity: true,
+            power_generation: 100.0, // Generates 100V
+            power_decay_rate: 0.01,
+            ..Default::default()
+        });
+
+        // Wire - high conductivity for electricity
+        self.register(MaterialDef {
+            id: MaterialId::WIRE,
+            name: "wire".to_string(),
+            material_type: MaterialType::Solid,
+            color: [200, 150, 50, 255], // Copper/gold color
+            density: 8.9,               // Copper density
+            hardness: Some(2),
+            structural: false, // Wires are thin and not structural
+            conducts_electricity: true,
+            electrical_conductivity: 0.98,
+            electrical_resistance: 0.02,
+            ..Default::default()
+        });
     }
 
     fn register(&mut self, material: MaterialDef) {
@@ -1180,5 +1259,50 @@ mod tests {
         let obsidian = materials.get(MaterialId::OBSIDIAN);
         assert_eq!(obsidian.name, "obsidian");
         assert!(obsidian.hardness.unwrap() > materials.get(MaterialId::STONE).hardness.unwrap());
+    }
+
+    #[test]
+    fn test_powder_game_materials() {
+        assert_eq!(MaterialId::SPARK, 38);
+        assert_eq!(MaterialId::THUNDER, 39);
+        assert_eq!(MaterialId::LASER, 40);
+        assert_eq!(MaterialId::BATTERY, 41);
+        assert_eq!(MaterialId::WIRE, 42);
+
+        let materials = Materials::new();
+
+        // Spark
+        let spark = materials.get(MaterialId::SPARK);
+        assert_eq!(spark.name, "spark");
+        assert_eq!(spark.material_type, MaterialType::Gas);
+        assert!(spark.conducts_electricity);
+        assert_eq!(spark.electrical_conductivity, 1.0);
+
+        // Thunder
+        let thunder = materials.get(MaterialId::THUNDER);
+        assert_eq!(thunder.name, "thunder");
+        assert_eq!(thunder.material_type, MaterialType::Gas);
+        assert!(thunder.conducts_electricity);
+        assert_eq!(thunder.spark_threshold, 1.0);
+
+        // Laser
+        let laser = materials.get(MaterialId::LASER);
+        assert_eq!(laser.name, "laser");
+        assert_eq!(laser.material_type, MaterialType::Gas);
+        assert_eq!(laser.density, 0.0);
+
+        // Battery
+        let battery = materials.get(MaterialId::BATTERY);
+        assert_eq!(battery.name, "battery");
+        assert_eq!(battery.material_type, MaterialType::Solid);
+        assert!(battery.conducts_electricity);
+        assert_eq!(battery.power_generation, 100.0);
+
+        // Wire
+        let wire = materials.get(MaterialId::WIRE);
+        assert_eq!(wire.name, "wire");
+        assert_eq!(wire.material_type, MaterialType::Solid);
+        assert!(wire.conducts_electricity);
+        assert_eq!(wire.electrical_conductivity, 0.98);
     }
 }
