@@ -929,6 +929,11 @@ impl Materials {
     pub fn get_color(&self, id: u16) -> [u8; 4] {
         self.get(id).color
     }
+
+    /// Get all material definitions
+    pub fn all_materials(&self) -> impl Iterator<Item = &MaterialDef> {
+        self.materials.iter()
+    }
 }
 
 impl Default for Materials {

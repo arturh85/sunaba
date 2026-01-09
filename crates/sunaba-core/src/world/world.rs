@@ -90,11 +90,14 @@ pub struct World {
 
 impl World {
     pub fn new(#[allow(unused_variables)] skip_initial_creatures: bool) -> Self {
+        let materials = Materials::new(); // Create Materials instance
+        let reactions = ReactionRegistry::new(&materials); // Create ReactionRegistry using a reference to materials
+
         let mut world = Self {
             chunk_manager: ChunkManager::new(),
-            materials: Materials::new(),
+            materials, // Move materials into world struct
             temperature_sim: TemperatureSimulator::new(),
-            reactions: ReactionRegistry::new(),
+            reactions, // Move reactions into world struct
             tool_registry: ToolRegistry::new(),
             recipe_registry: RecipeRegistry::new(),
             structural_system: StructuralIntegritySystem::new(),

@@ -4,6 +4,7 @@
 //! Examples: water + lava → steam + stone, acid + metal → air + air (corrosion)
 
 use crate::MaterialId;
+use crate::materials::Materials;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -50,16 +51,16 @@ pub struct ReactionRegistry {
 }
 
 impl ReactionRegistry {
-    pub fn new() -> Self {
+    pub fn new(materials: &Materials) -> Self {
         let mut registry = Self {
             reactions: HashMap::new(),
         };
-        registry.register_default_reactions();
+        registry.register_default_reactions(materials);
         registry
     }
 
     /// Register all default reactions
-    fn register_default_reactions(&mut self) {
+    fn register_default_reactions(&mut self, materials: &Materials) {
         // ===== ORIGINAL REACTIONS (updated with new fields) =====
 
         // Water + Lava → Steam + Stone
@@ -501,6 +502,74 @@ impl ReactionRegistry {
         });
 
         // Total: 5 original + 21 new = 26 reactions!
+
+        // === ELECTRICAL REACTIONS ===
+
+        for mat_def in materials.all_materials() {
+            if mat_def.flammable
+                && mat_def.id != MaterialId::FIRE
+                && mat_def.id != MaterialId::SPARK
+            {
+                self.register(Reaction {
+                    name: format!("spark_ignite_{}", mat_def.name),
+                    input_a: MaterialId::SPARK,
+                    input_b: mat_def.id,
+                    min_temp: None,
+                    max_temp: None,
+                    requires_contact: true,
+                    requires_light: None,
+                    min_pressure: None,
+                    catalyst: None,
+                    output_a: MaterialId::AIR,  // Spark is consumed
+                    output_b: MaterialId::FIRE, // Flammable material catches fire
+                    probability: 0.8,
+                    energy_released: 50.0, // Exothermic
+                });
+            }
+        }
+
+        // Spark + Water -> Steam
+        self.register(Reaction {
+            name: "spark_water_steam".to_string(),
+            input_a: MaterialId::SPARK,
+            input_b: MaterialId::WATER,
+            min_temp: None,
+            max_temp: None,
+            requires_contact: true,
+            requires_light: None,
+            min_pressure: None,
+            catalyst: None,
+            output_a: MaterialId::AIR,
+            output_b: MaterialId::STEAM,
+            probability: 0.5,
+            energy_released: -20.0, // Endothermic
+        });
+
+        // Thunder + Non-Conductor -> Air
+        for mat_def in materials.all_materials() {
+            if !mat_def.conducts_electricity
+                && mat_def.id != MaterialId::AIR
+                && mat_def.id != MaterialId::THUNDER
+                && mat_def.id != MaterialId::LASER
+            {
+                self.register(Reaction {
+                    name: format!("thunder_destroy_{}", mat_def.name),
+                    input_a: MaterialId::THUNDER,
+                    input_b: mat_def.id,
+                    min_temp: None,
+                    max_temp: None,
+                    requires_contact: true,
+                    requires_light: None,
+                    min_pressure: None,
+                    catalyst: None,
+                    output_a: MaterialId::AIR, // Thunder is consumed
+                    output_b: MaterialId::AIR, // Non-conductor is destroyed
+                    probability: 0.95,
+                    energy_released: 200.0, // Highly exothermic
+                });
+            }
+        }
+        // Total: 5 original + 21 new + electrical = approximately 50+ reactions!
     }
 
     /// Register a new reaction
@@ -602,19 +671,15 @@ impl ReactionRegistry {
     }
 }
 
-impl Default for ReactionRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::materials::Materials;
 
     #[test]
     fn test_find_reaction_forward() {
-        let registry = ReactionRegistry::new();
+        let materials = Materials::new();
+        let registry = ReactionRegistry::new(&materials);
 
         // Water + Lava should find reaction
         let reaction =
@@ -625,7 +690,8 @@ mod tests {
 
     #[test]
     fn test_find_reaction_backward() {
-        let registry = ReactionRegistry::new();
+        let materials = Materials::new();
+        let registry = ReactionRegistry::new(&materials);
 
         // Lava + Water should also find reaction (order doesn't matter)
         let reaction =
@@ -636,7 +702,8 @@ mod tests {
 
     #[test]
     fn test_no_reaction() {
-        let registry = ReactionRegistry::new();
+        let materials = Materials::new();
+        let registry = ReactionRegistry::new(&materials);
 
         // Sand + Water has no reaction
         let reaction =
@@ -646,7 +713,8 @@ mod tests {
 
     #[test]
     fn test_get_outputs() {
-        let registry = ReactionRegistry::new();
+        let materials = Materials::new();
+        let registry = ReactionRegistry::new(&materials);
 
         let reaction = registry
             .find_reaction(MaterialId::WATER, MaterialId::LAVA, 20.0, 0, 1.0, &[])
@@ -665,9 +733,8 @@ mod tests {
 
     #[test]
     fn test_catalyst_required() {
-        let mut registry = ReactionRegistry {
-            reactions: std::collections::HashMap::new(),
-        };
+        let materials = Materials::new();
+        let mut registry = ReactionRegistry::new(&materials); // Using new constructor
 
         // Create a test reaction that requires a catalyst
         registry.register(Reaction {
@@ -712,9 +779,8 @@ mod tests {
 
     #[test]
     fn test_pressure_required() {
-        let mut registry = ReactionRegistry {
-            reactions: std::collections::HashMap::new(),
-        };
+        let materials = Materials::new();
+        let mut registry = ReactionRegistry::new(&materials); // Using new constructor
 
         // Create a test reaction that requires minimum pressure
         registry.register(Reaction {
