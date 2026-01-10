@@ -668,37 +668,55 @@ impl World {
         puffin::profile_function!();
 
         // 0. Update active chunks (remove distant, re-activate nearby)
-        self.update_active_chunks();
+        {
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("update_active_chunks").entered();
+            self.update_active_chunks();
+        }
 
         // 0.5. Dynamic chunk loading when player enters new chunk
-        let current_chunk = IVec2::new(
-            (self.player.position.x as i32).div_euclid(CHUNK_SIZE as i32),
-            (self.player.position.y as i32).div_euclid(CHUNK_SIZE as i32),
-        );
+        {
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("chunk_loading").entered();
 
-        if self.chunk_manager.last_load_chunk_pos != Some(current_chunk) {
-            self.persistence_system
-                .load_nearby_chunks(&mut self.chunk_manager, self.player.position);
-            self.chunk_manager.last_load_chunk_pos = Some(current_chunk);
+            let current_chunk = IVec2::new(
+                (self.player.position.x as i32).div_euclid(CHUNK_SIZE as i32),
+                (self.player.position.y as i32).div_euclid(CHUNK_SIZE as i32),
+            );
+
+            if self.chunk_manager.last_load_chunk_pos != Some(current_chunk) {
+                self.persistence_system
+                    .load_nearby_chunks(&mut self.chunk_manager, self.player.position);
+                self.chunk_manager.last_load_chunk_pos = Some(current_chunk);
+            }
         }
 
         // 1. Clear update flags
-        for pos in &self.chunk_manager.active_chunks {
-            if let Some(chunk) = self.chunk_manager.chunks.get_mut(pos) {
-                chunk.clear_update_flags();
+        {
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("clear_update_flags").entered();
+
+            for pos in &self.chunk_manager.active_chunks {
+                if let Some(chunk) = self.chunk_manager.chunks.get_mut(pos) {
+                    chunk.clear_update_flags();
+                }
             }
         }
 
         // 2. CA updates (movement) - only process chunks that need updating
         // A chunk needs updating if it or any of its 8 neighbors had changes last frame
-        let chunk_manager = &self.chunk_manager; // Immutable borrow
+        let chunks_to_update: Vec<IVec2> = {
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("filter_chunks_to_update").entered();
 
-        let chunks_to_update: Vec<IVec2> = chunk_manager
-            .active_chunks
-            .iter()
-            .copied()
-            .filter(|&pos| ChunkStatus::needs_ca_update(chunk_manager, pos))
-            .collect();
+            let chunk_manager = &self.chunk_manager; // Immutable borrow
+            chunk_manager
+                .active_chunks
+                .iter()
+                .copied()
+                .filter(|&pos| ChunkStatus::needs_ca_update(chunk_manager, pos))
+                .collect()
+        };
         // 2.5. Electrical system update (before CA movement)
         {
             #[cfg(feature = "profiling")]
@@ -728,15 +746,23 @@ impl World {
 
         // Clear simulation_active for chunks we're about to update
         // It will be re-set by try_move_world() if any material actually moves
-        for pos in &chunks_to_update {
-            if let Some(chunk) = self.chunk_manager.chunks.get_mut(pos) {
-                chunk.set_simulation_active(false);
+        {
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("clear_simulation_active").entered();
+
+            for pos in &chunks_to_update {
+                if let Some(chunk) = self.chunk_manager.chunks.get_mut(pos) {
+                    chunk.set_simulation_active(false);
+                }
             }
         }
 
         {
             #[cfg(feature = "profiling")]
             puffin::profile_scope!("ca_updates");
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("ca_updates").entered();
+
             for pos in &chunks_to_update {
                 self.update_chunk_ca(*pos, stats, rng);
             }
@@ -753,29 +779,49 @@ impl World {
         }
 
         // 4. Light propagation (15fps throttled) - active chunks only
-        let active_chunks = self.chunk_manager.active_chunks.clone();
-        self.light_system.update_light_propagation(
-            &mut self.chunk_manager,
-            &self.materials,
-            &active_chunks,
-        );
+        {
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("light_propagation").entered();
+
+            let active_chunks = self.chunk_manager.active_chunks.clone();
+            self.light_system.update_light_propagation(
+                &mut self.chunk_manager,
+                &self.materials,
+                &active_chunks,
+            );
+        }
 
         // 4.5. Apply temporary lights (mining flashes, explosions, etc.)
         // These bypass propagation for performance - direct overrides only
-        self.temporary_lights
-            .apply_to_chunks(&mut self.chunk_manager.chunks);
+        {
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("apply_temporary_lights").entered();
+
+            self.temporary_lights
+                .apply_to_chunks(&mut self.chunk_manager.chunks);
+        }
 
         // 5. State changes based on temperature
-        for i in 0..self.chunk_manager.active_chunks.len() {
-            let pos = self.chunk_manager.active_chunks[i];
-            self.check_chunk_state_changes(pos, stats);
+        {
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("state_changes").entered();
+
+            for i in 0..self.chunk_manager.active_chunks.len() {
+                let pos = self.chunk_manager.active_chunks[i];
+                self.check_chunk_state_changes(pos, stats);
+            }
         }
 
         // 6. Process structural integrity checks
-        let positions = self.structural_system.drain_queue();
-        let checks_processed = StructuralIntegritySystem::process_checks(self, positions);
-        if checks_processed > 0 {
-            log::debug!("Processed {} structural integrity checks", checks_processed);
+        {
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("structural_integrity").entered();
+
+            let positions = self.structural_system.drain_queue();
+            let checks_processed = StructuralIntegritySystem::process_checks(self, positions);
+            if checks_processed > 0 {
+                log::debug!("Processed {} structural integrity checks", checks_processed);
+            }
         }
 
         // 7. Update falling chunks (kinematic debris physics)
@@ -792,11 +838,16 @@ impl World {
         self.debris_system = debris_system;
 
         // 9. Resource regeneration (fruit spawning)
-        self.regeneration_system.update(
-            &mut self.chunk_manager.chunks,
-            &self.chunk_manager.active_chunks,
-            1.0 / 60.0,
-        );
+        {
+            #[cfg(feature = "detailed_profiling")]
+            let _span = tracing::info_span!("regeneration").entered();
+
+            self.regeneration_system.update(
+                &mut self.chunk_manager.chunks,
+                &self.chunk_manager.active_chunks,
+                1.0 / 60.0,
+            );
+        }
 
         // 10. Update creatures (sensing, planning, neural control)
         // Skip creature updates when connected to multiplayer (server is authoritative)
@@ -832,6 +883,9 @@ impl World {
         stats: &mut dyn crate::world::SimStats,
         rng: &mut R,
     ) {
+        #[cfg(feature = "detailed_profiling")]
+        let _span = tracing::info_span!("update_chunk_ca").entered();
+
         // Update from bottom to top so falling works correctly
         for y in 0..CHUNK_SIZE {
             // Alternate direction each row for symmetry

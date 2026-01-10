@@ -4467,6 +4467,7 @@ dependencies = [
  "puffin",
  "rand 0.8.5",
  "rand_xoshiro",
+ "rayon",
  "ron",
  "rstar",
  "serde",
@@ -4475,6 +4476,7 @@ dependencies = [
  "sunaba-creature",
  "sunaba-simulation",
  "thiserror 1.0.69",
+ "tracing",
  "web-time",
 ]
 

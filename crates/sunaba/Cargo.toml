@@ -31,7 +31,7 @@ multiplayer_native = [
 ]  # Rust SDK + OAuth for native builds (depends on multiplayer)
 multiplayer_wasm = ["multiplayer"]                       # TypeScript SDK via JS for WASM builds (depends on multiplayer)
 profiling = ["puffin", "puffin_egui", "sunaba-core/profiling"]
-detailed_profiling = ["tracing", "tracing-subscriber", "tracing-chrome"]  # Detailed flamegraph profiling for scenarios
+detailed_profiling = ["tracing", "tracing-subscriber", "tracing-chrome", "sunaba-core/detailed_profiling"]  # Detailed flamegraph profiling for scenarios
 
 [dependencies]
 sunaba-core = { path = "../sunaba-core" }

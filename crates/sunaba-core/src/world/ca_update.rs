@@ -12,6 +12,7 @@ pub struct CellularAutomataUpdater;
 
 impl CellularAutomataUpdater {
     /// Update powder material (falls down, disperses diagonally)
+    #[inline]
     pub fn update_powder<R: WorldRng>(
         chunks: &mut HashMap<IVec2, Chunk>,
         chunk_pos: IVec2,
@@ -64,6 +65,7 @@ impl CellularAutomataUpdater {
     }
 
     /// Update liquid material (flows horizontally and down)
+    #[inline]
     pub fn update_liquid<R: WorldRng>(
         chunks: &mut HashMap<IVec2, Chunk>,
         chunk_pos: IVec2,
@@ -141,6 +143,7 @@ impl CellularAutomataUpdater {
     }
 
     /// Update gas material (rises up, disperses)
+    #[inline]
     pub fn update_gas<R: WorldRng>(
         chunks: &mut HashMap<IVec2, Chunk>,
         chunk_pos: IVec2,
@@ -219,6 +222,7 @@ impl CellularAutomataUpdater {
 
     /// Try to move a pixel from one position to another
     /// Returns true if the move succeeded
+    #[inline]
     fn try_move(
         chunks: &mut HashMap<IVec2, Chunk>,
         from_x: i32,
@@ -235,6 +239,38 @@ impl CellularAutomataUpdater {
         let (dst_chunk_pos, dst_local_x, dst_local_y) =
             ChunkManager::world_to_chunk_coords(to_x, to_y);
 
+        // Fast path: same chunk movement (most common case)
+        if src_chunk_pos == dst_chunk_pos {
+            let chunk = match chunks.get_mut(&src_chunk_pos) {
+                Some(c) => c,
+                None => return false,
+            };
+
+            let src_pixel = chunk.get_pixel(src_local_x, src_local_y);
+            let dst_pixel = chunk.get_pixel(dst_local_x, dst_local_y);
+
+            // Check if move is valid
+            let src_material = materials.get(src_pixel.material_id);
+            let dst_material = materials.get(dst_pixel.material_id);
+
+            // Can't move into solid
+            if dst_material.material_type == MaterialType::Solid {
+                return false;
+            }
+
+            // Can only move into lighter material or empty space
+            if !dst_pixel.is_empty() && dst_material.density >= src_material.density {
+                return false;
+            }
+
+            // Perform the swap
+            chunk.swap_pixels(src_local_x, src_local_y, dst_local_x, dst_local_y);
+            chunk.set_simulation_active(true);
+            stats.record_pixel_moved();
+            return true;
+        }
+
+        // Slow path: cross-chunk movement
         // Get source pixel
         let src_pixel = match chunks.get(&src_chunk_pos) {
             Some(chunk) => chunk.get_pixel(src_local_x, src_local_y),
@@ -261,46 +297,33 @@ impl CellularAutomataUpdater {
             return false;
         }
 
-        // Perform the swap (same chunk or cross-chunk)
-        if src_chunk_pos == dst_chunk_pos {
-            // Same chunk - simple swap
-            if let Some(chunk) = chunks.get_mut(&src_chunk_pos) {
-                chunk.swap_pixels(src_local_x, src_local_y, dst_local_x, dst_local_y);
-                chunk.set_simulation_active(true);
-                stats.record_pixel_moved();
-                return true;
-            }
+        // Cross-chunk swap - need to handle carefully
+        // First, copy the pixels
+        let src_copy = src_pixel;
+        let dst_copy = dst_pixel;
+
+        // Update source chunk
+        if let Some(src_chunk) = chunks.get_mut(&src_chunk_pos) {
+            src_chunk.set_pixel(src_local_x, src_local_y, dst_copy);
+            src_chunk.set_simulation_active(true);
         } else {
-            // Cross-chunk swap - need to handle carefully
-            // First, copy the pixels
-            let src_copy = src_pixel;
-            let dst_copy = dst_pixel;
-
-            // Update source chunk
-            if let Some(src_chunk) = chunks.get_mut(&src_chunk_pos) {
-                src_chunk.set_pixel(src_local_x, src_local_y, dst_copy);
-                src_chunk.set_simulation_active(true);
-            } else {
-                return false;
-            }
-
-            // Update destination chunk
-            if let Some(dst_chunk) = chunks.get_mut(&dst_chunk_pos) {
-                dst_chunk.set_pixel(dst_local_x, dst_local_y, src_copy);
-                dst_chunk.set_simulation_active(true);
-            } else {
-                // Rollback source chunk change
-                if let Some(src_chunk) = chunks.get_mut(&src_chunk_pos) {
-                    src_chunk.set_pixel(src_local_x, src_local_y, src_copy);
-                }
-                return false;
-            }
-
-            stats.record_pixel_moved();
-            return true;
+            return false;
         }
 
-        false
+        // Update destination chunk
+        if let Some(dst_chunk) = chunks.get_mut(&dst_chunk_pos) {
+            dst_chunk.set_pixel(dst_local_x, dst_local_y, src_copy);
+            dst_chunk.set_simulation_active(true);
+        } else {
+            // Rollback source chunk change
+            if let Some(src_chunk) = chunks.get_mut(&src_chunk_pos) {
+                src_chunk.set_pixel(src_local_x, src_local_y, src_copy);
+            }
+            return false;
+        }
+
+        stats.record_pixel_moved();
+        true
     }
 }
 

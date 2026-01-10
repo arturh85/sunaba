@@ -176,17 +176,19 @@ impl ScenarioExecutor {
         // Calculate performance metrics
         report.performance.total_duration_ms = start_time.elapsed().as_secs_f64() * 1000.0;
         report.performance.update_count = self.update_count;
-        
+
         if self.update_count > 0 {
-            report.performance.avg_update_time_ms = 
-                (report.performance.setup_duration_ms + report.performance.action_duration_ms) 
+            report.performance.avg_update_time_ms = (report.performance.setup_duration_ms
+                + report.performance.action_duration_ms)
                 / self.update_count as f64;
         }
 
         if !self.frame_times.is_empty() {
             let total_frame_time: f64 = self.frame_times.iter().sum();
             report.performance.avg_frame_time_ms = total_frame_time / self.frame_times.len() as f64;
-            report.performance.peak_frame_time_ms = self.frame_times.iter()
+            report.performance.peak_frame_time_ms = self
+                .frame_times
+                .iter()
                 .copied()
                 .max_by(|a, b| a.partial_cmp(b).unwrap())
                 .unwrap_or(0.0);
@@ -608,26 +610,26 @@ impl ScenarioExecutor {
     /// Simulate N frames of physics
     fn simulate_frames(&mut self, world: &mut World, frames: usize) -> Result<()> {
         use std::time::Instant;
-        
+
         #[cfg(feature = "detailed_profiling")]
         let _span = tracing::info_span!("simulate_frames", frames).entered();
-        
+
         let mut stats = NoopStats;
         let mut rng = thread_rng();
 
         for _ in 0..frames {
             let frame_start = Instant::now();
-            
+
             #[cfg(feature = "detailed_profiling")]
             let _frame_span = tracing::info_span!("world_update").entered();
-            
+
             world.update(1.0 / 60.0, &mut stats, &mut rng, false);
-            
+
             #[cfg(feature = "detailed_profiling")]
             drop(_frame_span);
-            
+
             let frame_time = frame_start.elapsed().as_secs_f64() * 1000.0;
-            
+
             self.frame_times.push(frame_time);
             self.frame_count += 1;
             self.update_count += 1;

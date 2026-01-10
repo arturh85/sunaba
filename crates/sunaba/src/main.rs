@@ -329,10 +329,10 @@ fn main() -> anyhow::Result<()> {
             let (chrome_layer, guard) = tracing_chrome::ChromeLayerBuilder::new()
                 .file("profiling_trace.json")
                 .build();
-            
+
             use tracing_subscriber::prelude::*;
             let _ = tracing_subscriber::registry().with(chrome_layer).try_init();
-            
+
             log::info!("Detailed profiling enabled - trace will be saved to profiling_trace.json");
             Some(guard)
         } else {
@@ -427,10 +427,10 @@ fn main() -> anyhow::Result<()> {
             let (chrome_layer, guard) = tracing_chrome::ChromeLayerBuilder::new()
                 .file("profiling_trace.json")
                 .build();
-            
+
             use tracing_subscriber::prelude::*;
             let _ = tracing_subscriber::registry().with(chrome_layer).try_init();
-            
+
             log::info!("Detailed profiling enabled - trace will be saved to profiling_trace.json");
             Some(guard)
         } else {

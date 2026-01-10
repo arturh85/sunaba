@@ -58,7 +58,10 @@ impl PerformanceMetrics {
     pub fn summary(&self) -> String {
         format!(
             "Total: {:.1}ms | Avg frame: {:.2}ms | Peak: {:.2}ms | Updates: {}",
-            self.total_duration_ms, self.avg_frame_time_ms, self.peak_frame_time_ms, self.update_count
+            self.total_duration_ms,
+            self.avg_frame_time_ms,
+            self.peak_frame_time_ms,
+            self.update_count
         )
     }
 }
