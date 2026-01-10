@@ -675,20 +675,18 @@ impl World {
         }
 
         // 0.5. Dynamic chunk loading when player enters new chunk
-        {
+        let current_chunk = IVec2::new(
+            (self.player.position.x as i32).div_euclid(CHUNK_SIZE as i32),
+            (self.player.position.y as i32).div_euclid(CHUNK_SIZE as i32),
+        );
+
+        if self.chunk_manager.last_load_chunk_pos != Some(current_chunk) {
             #[cfg(feature = "detailed_profiling")]
             let _span = tracing::info_span!("chunk_loading").entered();
 
-            let current_chunk = IVec2::new(
-                (self.player.position.x as i32).div_euclid(CHUNK_SIZE as i32),
-                (self.player.position.y as i32).div_euclid(CHUNK_SIZE as i32),
-            );
-
-            if self.chunk_manager.last_load_chunk_pos != Some(current_chunk) {
-                self.persistence_system
-                    .load_nearby_chunks(&mut self.chunk_manager, self.player.position);
-                self.chunk_manager.last_load_chunk_pos = Some(current_chunk);
-            }
+            self.persistence_system
+                .load_nearby_chunks(&mut self.chunk_manager, self.player.position);
+            self.chunk_manager.last_load_chunk_pos = Some(current_chunk);
         }
 
         // 1. Clear update flags

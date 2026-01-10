@@ -60,11 +60,28 @@ impl LightPropagation {
         chunks: &mut std::collections::HashMap<glam::IVec2, crate::world::Chunk>,
         active_chunks: &[glam::IVec2],
     ) {
-        for &pos in active_chunks {
-            if let Some(chunk) = chunks.get_mut(&pos)
-                && chunk.light_dirty
-            {
-                chunk.light_levels.fill(0);
+        #[cfg(all(not(target_arch = "wasm32"), feature = "regeneration"))]
+        {
+            use rayon::prelude::*;
+            // Parallel reset of light levels in chunks
+            active_chunks.par_iter().for_each(|&pos| unsafe {
+                let chunks_ptr = chunks as *const _
+                    as *mut std::collections::HashMap<glam::IVec2, crate::world::Chunk>;
+                if let Some(chunk) = (*chunks_ptr).get_mut(&pos)
+                    && chunk.light_dirty {
+                        chunk.light_levels.fill(0);
+                    }
+            });
+        }
+
+        #[cfg(any(target_arch = "wasm32", not(feature = "regeneration")))]
+        {
+            for &pos in active_chunks {
+                if let Some(chunk) = chunks.get_mut(&pos)
+                    && chunk.light_dirty
+                {
+                    chunk.light_levels.fill(0);
+                }
             }
         }
     }

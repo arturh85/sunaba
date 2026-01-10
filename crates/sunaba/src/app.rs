@@ -1175,7 +1175,7 @@ impl App {
             }
 
             // Update simulation with timing
-            // 
+            //
             // CLIENT-SIDE PREDICTION (Multiplayer):
             // ======================================
             // When connected to multiplayer, client runs FULL local simulation at 104 FPS
