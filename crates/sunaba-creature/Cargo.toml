@@ -10,7 +10,7 @@ ahash = { version = "0.8", default-features = false, features = ["compile-time-r
 bresenham = "0.1"
 glam = { version = "0.25", features = ["serde"] }
 log = "0.4"
-ndarray = { version = "0.16", features = ["serde"] }
+ndarray = { version = "0.17", features = ["serde"] }
 ndarray-linalg = { version = "0.17", optional = true }
 petgraph = { version = "0.6", features = ["serde-1"] }
 serde = { version = "1.0", features = ["derive"] }
