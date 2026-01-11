@@ -661,7 +661,11 @@ impl World {
     fn step_simulation<R: crate::world::WorldRng>(
         &mut self,
         stats: &mut dyn crate::world::SimStats,
-        _rng: &mut R,
+        #[cfg_attr(
+            all(not(target_arch = "wasm32"), feature = "regeneration"),
+            allow(unused_variables)
+        )]
+        rng: &mut R,
         is_multiplayer_connected: bool,
     ) {
         #[cfg(feature = "profiling")]
