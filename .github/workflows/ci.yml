@@ -25,13 +25,14 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
+      # Disabled sccache due to GitHub artifact cache service issues
+      # - name: Install sccache
+      #   uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Configure sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      # - name: Configure sccache
+      #   run: |
+      #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+      #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -77,13 +78,14 @@ jobs:
         with:
           components: clippy
 
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
+      # Disabled sccache due to GitHub artifact cache service issues
+      # - name: Install sccache
+      #   uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Configure sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      # - name: Configure sccache
+      #   run: |
+      #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+      #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Install Linux dependencies
         uses: ./.github/actions/install-linux-deps
@@ -125,13 +127,14 @@ jobs:
         with:
           components: llvm-tools-preview
 
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
+      # Disabled sccache due to GitHub artifact cache service issues
+      # - name: Install sccache
+      #   uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Configure sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      # - name: Configure sccache
+      #   run: |
+      #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+      #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -190,13 +193,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
+      # Disabled sccache due to GitHub artifact cache service issues
+      # - name: Install sccache
+      #   uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Configure sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      # - name: Configure sccache
+      #   run: |
+      #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+      #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Install just
         uses: extractions/setup-just@v2
@@ -236,13 +240,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
+      # Disabled sccache due to GitHub artifact cache service issues
+      # - name: Install sccache
+      #   uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Configure sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      # - name: Configure sccache
+      #   run: |
+      #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+      #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Install just
         uses: extractions/setup-just@v2
