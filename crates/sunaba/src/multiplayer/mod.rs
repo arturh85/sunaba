@@ -6,6 +6,8 @@
 
 // Native client using Rust SDK
 #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer"))]
+#[path = "generated/mod.rs"]
+#[allow(dead_code, clippy::all)]
 mod generated;
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer"))]
