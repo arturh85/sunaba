@@ -15,93 +15,94 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish-spacetimedb:
-    name: Publish SpacetimeDB to Production
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
+  # Disabled due to SpacetimeDB issues
+  # publish-spacetimedb:
+  #   name: Publish SpacetimeDB to Production
+  #   runs-on: ubuntu-latest
+  #   continue-on-error: true
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+  #     - name: Install Rust
+  #       uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: wasm32-unknown-unknown
 
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
+  #     - name: Install sccache
+  #       uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Configure sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+  #     - name: Configure sccache
+  #       run: |
+  #         echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+  #         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
-      - name: Install just
-        uses: extractions/setup-just@v2
+  #     - name: Install just
+  #       uses: extractions/setup-just@v2
 
-      - name: Install SpacetimeDB CLI
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh -s -- -y
-          echo "$HOME/.local/share/spacetime/bin" >> $GITHUB_PATH
+  #     - name: Install SpacetimeDB CLI
+  #       run: |
+  #         curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh -s -- -y
+  #         echo "$HOME/.local/share/spacetime/bin" >> $GITHUB_PATH
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-spacetime-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+  #     - name: Cache cargo registry
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: ~/.cargo/registry
+  #         key: ${{ runner.os }}-spacetime-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-spacetime-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+  #     - name: Cache cargo index
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: ~/.cargo/git
+  #         key: ${{ runner.os }}-spacetime-cargo-index-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-spacetime-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+  #     - name: Cache cargo build
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: target
+  #         key: ${{ runner.os }}-spacetime-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Verify Cargo.lock integrity
-        run: cargo tree --locked
+  #     - name: Verify Cargo.lock integrity
+  #       run: cargo tree --locked
 
-      - name: Build SpacetimeDB module
-        run: just spacetime-build
+  #     - name: Build SpacetimeDB module
+  #       run: just spacetime-build
 
-      - name: Publish to production with timeout handling
-        id: publish_step
-        run: |
-          set +e  # Don't exit on error
-          timeout 60 just spacetime-publish-prod sunaba
-          EXIT_CODE=$?
+  #     - name: Publish to production with timeout handling
+  #       id: publish_step
+  #       run: |
+  #         set +e  # Don't exit on error
+  #         timeout 60 just spacetime-publish-prod sunaba
+  #         EXIT_CODE=$?
 
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "✅ Published successfully"
-            exit 0
-          elif [ $EXIT_CODE -eq 124 ]; then
-            echo "⚠️  Publish timed out after 60s, resetting and retrying..."
-            just spacetime-reset-prod sunaba
-            just spacetime-publish-prod sunaba
-            if [ $? -eq 0 ]; then
-              echo "✅ Published successfully after reset"
-              exit 0
-            else
-              echo "❌ Publish failed after reset"
-              exit 1
-            fi
-          else
-            echo "❌ Publish failed with exit code $EXIT_CODE"
-            exit 1
-          fi
+  #         if [ $EXIT_CODE -eq 0 ]; then
+  #           echo "✅ Published successfully"
+  #           exit 0
+  #         elif [ $EXIT_CODE -eq 124 ]; then
+  #           echo "⚠️  Publish timed out after 60s, resetting and retrying..."
+  #           just spacetime-reset-prod sunaba
+  #           just spacetime-publish-prod sunaba
+  #           if [ $? -eq 0 ]; then
+  #             echo "✅ Published successfully after reset"
+  #             exit 0
+  #           else
+  #             echo "❌ Publish failed after reset"
+  #             exit 1
+  #           fi
+  #         else
+  #           echo "❌ Publish failed with exit code $EXIT_CODE"
+  #           exit 1
+  #         fi
 
-      - name: Set job summary
-        if: always()
-        run: |
-          if [ "${{ steps.publish_step.outcome }}" = "success" ]; then
-            echo "✅ SpacetimeDB published successfully" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ **Warning:** SpacetimeDB publish failed (server may be offline)" >> $GITHUB_STEP_SUMMARY
-            echo "GitHub Pages deployment will continue regardless" >> $GITHUB_STEP_SUMMARY
-          fi
+  #     - name: Set job summary
+  #       if: always()
+  #       run: |
+  #         if [ "${{ steps.publish_step.outcome }}" = "success" ]; then
+  #           echo "✅ SpacetimeDB published successfully" >> $GITHUB_STEP_SUMMARY
+  #         else
+  #           echo "⚠️ **Warning:** SpacetimeDB publish failed (server may be offline)" >> $GITHUB_STEP_SUMMARY
+  #           echo "GitHub Pages deployment will continue regardless" >> $GITHUB_STEP_SUMMARY
+  #         fi
 
   build:
     name: Build Documentation and WASM
@@ -124,13 +125,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
+      # Disabled sccache due to GitHub artifact cache service issues
+      # - name: Install sccache
+      #   uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Configure sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      # - name: Configure sccache
+      #   run: |
+      #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+      #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -222,7 +224,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: [build, publish-spacetimedb]
+    needs: build  # Removed publish-spacetimedb dependency
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
