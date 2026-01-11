@@ -67,7 +67,7 @@ web-time = "1.1"  # WASM-compatible time (replaces unmaintained instant crate)
 log = "0.4"
 pollster = "0.3"
 rand = "0.8"
-rand_xoshiro = "0.6"
+rand_xoshiro = "0.7"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 assets_manager = { version = "0.13", features = ["png", "hot-reloading"] }

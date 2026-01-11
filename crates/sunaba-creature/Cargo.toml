@@ -20,7 +20,7 @@ version = "0.8"
 optional = true
 
 [dependencies.rand_xoshiro]
-version = "0.6"
+version = "0.7"
 optional = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
