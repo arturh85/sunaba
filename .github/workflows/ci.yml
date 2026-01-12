@@ -10,8 +10,49 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Generate SpacetimeDB client once and share with other jobs
+  generate:
+    name: Generate SpacetimeDB Client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install SpacetimeDB CLI
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh -s -- -y
+          echo "$HOME/.spacetime/bin" >> $GITHUB_PATH
+
+      - name: Generate Rust client
+        run: |
+          export PATH="$HOME/.spacetime/bin:$PATH"
+          spacetime generate --lang rust --project-path crates/sunaba-server --out-dir crates/sunaba/src/multiplayer/generated -y
+          cargo fmt --manifest-path crates/sunaba/Cargo.toml
+
+      - name: Upload generated client
+        uses: actions/upload-artifact@v4
+        with:
+          name: spacetimedb-generated
+          path: crates/sunaba/src/multiplayer/generated/
+          retention-days: 1
+
   test:
     name: Test
+    needs: generate
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -20,19 +61,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Download generated client
+        uses: actions/download-artifact@v4
+        with:
+          name: spacetimedb-generated
+          path: crates/sunaba/src/multiplayer/generated/
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-
-      # Disabled sccache due to GitHub artifact cache service issues
-      # - name: Install sccache
-      #   uses: mozilla-actions/sccache-action@v0.0.6
-
-      # - name: Configure sccache
-      #   run: |
-      #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-      #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -58,9 +96,6 @@ jobs:
       - name: Install Linux dependencies
         uses: ./.github/actions/install-linux-deps
 
-      - name: Generate SpacetimeDB client
-        uses: ./.github/actions/generate-spacetimedb-client
-
       - name: Build
         run: cargo build --verbose
 
@@ -72,73 +107,66 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: generate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download generated client
+        uses: actions/download-artifact@v4
+        with:
+          name: spacetimedb-generated
+          path: crates/sunaba/src/multiplayer/generated/
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
 
-      # Disabled sccache due to GitHub artifact cache service issues
-      # - name: Install sccache
-      #   uses: mozilla-actions/sccache-action@v0.0.6
-
-      # - name: Configure sccache
-      #   run: |
-      #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-      #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
       - name: Install Linux dependencies
         uses: ./.github/actions/install-linux-deps
-
-      - name: Generate SpacetimeDB client
-        uses: ./.github/actions/generate-spacetimedb-client
 
       - name: Run clippy
         run: cargo clippy -- -D warnings
 
   fmt:
     name: Format
+    needs: generate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download generated client
+        uses: actions/download-artifact@v4
+        with:
+          name: spacetimedb-generated
+          path: crates/sunaba/src/multiplayer/generated/
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-          # targets: wasm32-unknown-unknown  # Not needed for formatting
-
-      - name: Install just
-        uses: extractions/setup-just@v2
-
-      - name: Generate SpacetimeDB client
-        uses: ./.github/actions/generate-spacetimedb-client
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
   coverage:
     name: Coverage
+    needs: generate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download generated client
+        uses: actions/download-artifact@v4
+        with:
+          name: spacetimedb-generated
+          path: crates/sunaba/src/multiplayer/generated/
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-
-      # Disabled sccache due to GitHub artifact cache service issues
-      # - name: Install sccache
-      #   uses: mozilla-actions/sccache-action@v0.0.6
-
-      # - name: Configure sccache
-      #   run: |
-      #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-      #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -157,6 +185,7 @@ jobs:
         with:
           path: ~/.cargo/git
           key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
       - name: Cache cargo build
         uses: actions/cache@v4
         with:
@@ -165,9 +194,6 @@ jobs:
 
       - name: Verify Cargo.lock integrity
         run: cargo tree --locked
-
-      - name: Generate SpacetimeDB client
-        uses: ./.github/actions/generate-spacetimedb-client
 
       - name: Generate coverage
         run: cargo llvm-cov --workspace --exclude sunaba-server --codecov --output-path codecov.json
@@ -189,25 +215,23 @@ jobs:
 
   wasm:
     name: WASM Build
+    needs: generate
     runs-on: ubuntu-latest
     # Skip on push to main - pages workflow handles WASM build
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
 
+      - name: Download generated client
+        uses: actions/download-artifact@v4
+        with:
+          name: spacetimedb-generated
+          path: crates/sunaba/src/multiplayer/generated/
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
-      # Disabled sccache due to GitHub artifact cache service issues
-      # - name: Install sccache
-      #   uses: mozilla-actions/sccache-action@v0.0.6
-
-      # - name: Configure sccache
-      #   run: |
-      #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-      #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Install just
         uses: extractions/setup-just@v2
@@ -233,86 +257,5 @@ jobs:
       - name: Verify Cargo.lock integrity
         run: cargo tree --locked
 
-      - name: Generate SpacetimeDB client
-        uses: ./.github/actions/generate-spacetimedb-client
-
       - name: Build WASM
         run: just build-web
-
-  # Disabled due to SpacetimeDB issues
-  # spacetimedb:
-  #   name: SpacetimeDB Validation
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     - name: Install Rust
-  #       uses: dtolnay/rust-toolchain@stable
-  #       with:
-  #         targets: wasm32-unknown-unknown
-
-  #     # Disabled sccache due to GitHub artifact cache service issues
-  #     # - name: Install sccache
-  #     #   uses: mozilla-actions/sccache-action@v0.0.6
-
-  #     # - name: Configure sccache
-  #     #   run: |
-  #     #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-  #     #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-  #     - name: Install just
-  #       uses: extractions/setup-just@v2
-
-  #     - name: Install SpacetimeDB CLI
-  #       run: |
-  #         curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh -s -- -y
-  #         echo "$HOME/.local/share/spacetime/bin" >> $GITHUB_PATH
-
-  #     - name: Cache cargo registry
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: ~/.cargo/registry
-  #         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-  #     - name: Cache cargo index
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: ~/.cargo/git
-  #         key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-  #     - name: Cache cargo build
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: target
-  #         key: ${{ runner.os }}-spacetime-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-  #     - name: Verify Cargo.lock integrity
-  #       run: cargo tree --locked
-
-  #     - name: Build SpacetimeDB server
-  #       run: just spacetime-build
-
-  #     - name: Generate Rust client
-  #       run: just spacetime-generate-rust
-
-  #     - name: Generate TypeScript client
-  #       run: just spacetime-generate-ts
-
-  #     - name: Verify server schema is stable
-  #       run: |
-  #         # Check if server schema in this commit differs from generated clients
-  #         # This catches uncommitted server schema changes
-  #         if ! git diff --quiet crates/sunaba-server/src/lib.rs 2>/dev/null; then
-  #           echo "⚠️  Server schema was modified in this commit"
-  #           echo "✅ Clients will be regenerated locally (gitignored)"
-  #         else
-  #           echo "✅ No server schema changes in this commit"
-  #         fi
-
-  #     - name: Authenticate with SpacetimeDB
-  #       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-  #       run: spacetime login --server-issued-login https://sunaba.app42.blue --token "${{ secrets.SPACETIMEDB_TOKEN }}"
-
-  #     - name: Publish to production (main branch only)
-  #       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-  #       run: just spacetime-publish sunaba https://sunaba.app42.blue
