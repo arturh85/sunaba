@@ -58,6 +58,9 @@ jobs:
       - name: Install Linux dependencies
         uses: ./.github/actions/install-linux-deps
 
+      - name: Generate SpacetimeDB client
+        uses: ./.github/actions/generate-spacetimedb-client
+
       - name: Build
         run: cargo build --verbose
 
@@ -90,6 +93,9 @@ jobs:
       - name: Install Linux dependencies
         uses: ./.github/actions/install-linux-deps
 
+      - name: Generate SpacetimeDB client
+        uses: ./.github/actions/generate-spacetimedb-client
+
       - name: Run clippy
         run: cargo clippy -- -D warnings
 
@@ -108,11 +114,8 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
-      # Disabled SpacetimeDB CLI - not needed for formatting
-      # - name: Install SpacetimeDB CLI
-      #   run: |
-      #     curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh -s -- -y
-      #     echo "$HOME/.local/share/spacetime/bin" >> $GITHUB_PATH
+      - name: Generate SpacetimeDB client
+        uses: ./.github/actions/generate-spacetimedb-client
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -162,6 +165,9 @@ jobs:
 
       - name: Verify Cargo.lock integrity
         run: cargo tree --locked
+
+      - name: Generate SpacetimeDB client
+        uses: ./.github/actions/generate-spacetimedb-client
 
       - name: Generate coverage
         run: cargo llvm-cov --workspace --exclude sunaba-server --codecov --output-path codecov.json
@@ -226,6 +232,9 @@ jobs:
 
       - name: Verify Cargo.lock integrity
         run: cargo tree --locked
+
+      - name: Generate SpacetimeDB client
+        uses: ./.github/actions/generate-spacetimedb-client
 
       - name: Build WASM
         run: just build-web

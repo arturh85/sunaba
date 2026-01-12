@@ -1,0 +1,25 @@
+name: Generate SpacetimeDB Client
+description: Install SpacetimeDB CLI and generate Rust client from server schema
+runs:
+  using: composite
+  steps:
+    - name: Install SpacetimeDB CLI (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh -s -- -y
+        echo "$HOME/.spacetime/bin" >> $GITHUB_PATH
+
+    - name: Install SpacetimeDB CLI (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        irm https://windows.spacetimedb.com | iex
+        echo "$env:USERPROFILE\.spacetime\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+    - name: Generate Rust client
+      shell: bash
+      run: |
+        # Ensure spacetime is in PATH for this step
+        export PATH="$HOME/.spacetime/bin:$PATH"
+        spacetime generate --lang rust --project-path crates/sunaba-server --out-dir crates/sunaba/src/multiplayer/generated -y
