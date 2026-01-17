@@ -773,7 +773,31 @@ just web-powder  # New justfile command
      - 6 material tests (IDs, explosives, magma, mercury, salt/seawater, soapy/bubble)
      - 7 reaction tests (C-4, bomb, magma, salt, seawater, soapy, bubble, mercury)
    - Total: 21 Powder Game materials implemented (IDs 38-58)
-7. ⏳ **Week 6**: Create sunaba-powder crate
+7. ⏳ **Week 6**: Create sunaba-powder crate (2026-01-17)
+   - ✅ **Phase 6.1**: Create crate structure
+     - Created `crates/sunaba-powder/` with Cargo.toml, src/, assets/
+     - Binary entry point (`main.rs`), app state (`app.rs`)
+     - Modular structure: `tools/`, `ui/`, `render/`, `config/`
+   - ✅ **Phase 6.2**: Implement core rendering
+     - wgpu-based pixel renderer with world texture
+     - Camera system with zoom (mouse wheel)
+     - Screen-to-world coordinate conversion
+   - ✅ **Phase 6.3**: Implement basic tools
+     - PenTool for drawing materials (left/right mouse)
+     - Tool trait for extensibility
+     - Brush size support (1-10 pixels)
+   - ✅ **Phase 6.4**: Implement UI
+     - MaterialToolbar with all 59 materials
+     - Left/right click material selection
+     - Brush size slider, pause/speed controls
+     - HUD with FPS, particle count, brush size
+   - ✅ **Phase 6.5**: Make active chunk radius configurable
+     - Added `active_chunk_radius` field to World struct
+     - Added `set_active_chunk_radius()` method
+     - sunaba-powder sets radius=8 (17×17 chunks) for full 1024px world simulation
+     - Fixed issue where only central region was simulated
+   - ⏳ **Phase 6.6**: Add remaining tools (wind, drag, erase)
+   - ⏳ **Phase 6.7**: Add background visualization modes
 8. ⏳ **Week 7**: Polish, test, document
 
 ---

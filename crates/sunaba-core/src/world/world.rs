@@ -99,6 +99,9 @@ pub struct World {
 
     /// Total play time in seconds (accumulated across sessions)
     pub total_play_time_seconds: u64,
+
+    /// Active chunk simulation radius (chunks from center)
+    active_chunk_radius: i32,
 }
 
 impl World {
@@ -129,6 +132,7 @@ impl World {
             persistence_system: PersistenceSystem::new(42), // Default seed
             session_start: Instant::now(),
             total_play_time_seconds: 0,
+            active_chunk_radius: 3, // Default: 7×7 grid (matches ACTIVE_CHUNK_RADIUS)
         };
 
         // Don't pre-generate - let chunks generate on-demand as player explores
@@ -357,7 +361,9 @@ impl World {
     /// Player movement speed in pixels per second
     const PLAYER_SPEED: f32 = 200.0;
 
-    /// Active chunk simulation radius (chunks from player)
+    /// Default active chunk simulation radius (chunks from player)
+    /// Can be overridden with set_active_chunk_radius() for sandbox modes
+    #[allow(dead_code)]
     const ACTIVE_CHUNK_RADIUS: i32 = 3; // 7×7 grid = 49 chunks
 
     /// Update player position based on input with gravity and jump
@@ -405,8 +411,14 @@ impl World {
         ChunkStatus::update_active_chunks(
             &mut self.chunk_manager,
             self.player.position,
-            Self::ACTIVE_CHUNK_RADIUS,
+            self.active_chunk_radius,
         );
+    }
+
+    /// Set the active chunk simulation radius
+    /// Use larger values for powder-game style where entire world should simulate
+    pub fn set_active_chunk_radius(&mut self, radius: i32) {
+        self.active_chunk_radius = radius;
     }
 
     /// Get the tool registry

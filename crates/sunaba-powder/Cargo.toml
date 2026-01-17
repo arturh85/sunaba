@@ -1,0 +1,37 @@
+[package]
+name = "sunaba-powder"
+version.workspace = true
+edition.workspace = true
+description = "Powder Game-style demo using Sunaba's physics simulation"
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sunaba-powder"
+path = "src/main.rs"
+
+[dependencies]
+# Core simulation (no creatures needed)
+sunaba-simulation = { path = "../sunaba-simulation" }
+sunaba-core = { path = "../sunaba-core", default-features = false, features = ["client", "regeneration"] }
+
+# Graphics
+wgpu = "27.0"
+winit = "0.30"
+bytemuck = { version = "1.14", features = ["derive"] }
+
+# UI
+egui = "0.33.3"
+egui-wgpu = "0.33.3"
+egui-winit = { version = "0.33", features = ["clipboard"] }
+
+# Utilities
+glam = "0.25"
+pollster = "0.4"
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+ahash = "0.8"
+web-time = "1.1"
+rand = "0.8"

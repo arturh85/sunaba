@@ -5,6 +5,7 @@ members = [
     "crates/sunaba-core",
     "crates/sunaba",
     "crates/sunaba-server",
+    "crates/sunaba-powder",
 ]
 default-members = [
     "crates/sunaba-simulation",

@@ -42,6 +42,10 @@ start:
 load:
     cargo run -p sunaba --bin sunaba --release
 
+# Run Powder Game demo (showcases all 58 materials)
+powder:
+    cargo run -p sunaba-powder --release
+
 # ============================================================================
 # Fast Development Commands (Auto-Rebuild + Instant Launch)
 # ============================================================================
