@@ -34,9 +34,11 @@ pub use critter::{Critter, CritterManager, CritterState};
 pub use execution_state::{CreatureExecutionState, ExecutionInput, ExecutionState};
 pub use genome::{ControllerGenome, CreatureGenome};
 pub use morphology::{CreatureArchetype, CreatureMorphology, MorphologyConfig};
-pub use neural::DeepNeuralController;
+pub use neural::{
+    DeepNeuralController, GraphNeuralController, HybridNeuralController, MorphologyGraph,
+};
 pub use sensors::{SensorConfig, SensoryInput};
-pub use simple_physics::CreaturePhysicsState;
+pub use simple_physics::{BodyPartState, CreaturePhysicsState, MotorState};
 pub use spawning::CreatureManager;
 pub use traits::{WorldAccess, WorldMutAccess};
 pub use types::{EntityId, Health, Hunger};
