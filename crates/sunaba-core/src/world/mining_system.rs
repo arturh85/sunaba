@@ -218,7 +218,7 @@ impl MiningSystem {
         world_x: i32,
         world_y: i32,
         materials: &Materials,
-        tool_registry: &ToolRegistry,
+        _tool_registry: &ToolRegistry,
     ) -> Option<u16> {
         // Get the pixel
         let (chunk_pos, local_x, local_y) = ChunkManager::world_to_chunk_coords(world_x, world_y);
@@ -239,18 +239,18 @@ impl MiningSystem {
 
         // Add to inventory
         if player.mine_material(material_id) {
-            // Damage tool durability
-            if let Some(tool_id) = player.equipped_tool {
-                let broke = player.inventory.damage_tool(tool_id, 1);
-                if broke {
-                    let tool_name = tool_registry
-                        .get(tool_id)
-                        .map(|t| t.name.as_str())
-                        .unwrap_or("Unknown");
-                    log::info!("[MINING] {} broke!", tool_name);
-                    player.unequip_tool();
-                }
-            }
+            // Tool durability disabled - infinite mining
+            // if let Some(tool_id) = player.equipped_tool {
+            //     let broke = player.inventory.damage_tool(tool_id, 1);
+            //     if broke {
+            //         let tool_name = tool_registry
+            //             .get(tool_id)
+            //             .map(|t| t.name.as_str())
+            //             .unwrap_or("Unknown");
+            //         log::info!("[MINING] {} broke!", tool_name);
+            //         player.unequip_tool();
+            //     }
+            // }
 
             log::debug!(
                 "[MINING] Completed mining {} at ({}, {})",

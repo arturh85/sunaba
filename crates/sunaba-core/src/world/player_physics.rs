@@ -7,6 +7,25 @@ use glam::Vec2;
 /// Player physics system - handles movement, jumping, gravity, collision
 pub struct PlayerPhysicsSystem;
 
+/// Try to find a step-up height that allows horizontal movement.
+/// Returns the step-up amount (0.0 if no valid step found).
+fn try_step_up<G>(current_pos: Vec2, target_x: f32, check_collision: &G) -> f32
+where
+    G: Fn(f32, f32, f32, f32) -> bool,
+{
+    for step in 1..=(Player::MAX_STEP_UP_HEIGHT as i32) {
+        let test_y = current_pos.y + step as f32;
+        // Check: can move horizontally at elevated position?
+        // AND: can reach that elevated position (no ceiling)?
+        if !check_collision(target_x, test_y, Player::WIDTH, Player::HEIGHT)
+            && !check_collision(current_pos.x, test_y, Player::WIDTH, Player::HEIGHT)
+        {
+            return step as f32;
+        }
+    }
+    0.0
+}
+
 impl PlayerPhysicsSystem {
     /// Update player physics for one frame
     ///
@@ -134,13 +153,29 @@ impl PlayerPhysicsSystem {
         let new_y = player.position.y + movement.y;
 
         let can_move_x = !check_collision(new_x, player.position.y, Player::WIDTH, Player::HEIGHT);
-
         let can_move_y = !check_collision(player.position.x, new_y, Player::WIDTH, Player::HEIGHT);
 
-        // Apply movement only on non-colliding axes
+        // Step-up mechanic: when grounded and X-blocked, try stepping up small slopes
+        let (can_move_x, step_offset) = if !can_move_x && player.grounded && movement.x.abs() > 0.1
+        {
+            let step_up = try_step_up(player.position, new_x, &check_collision);
+            if step_up > 0.0 {
+                let elevated_y = player.position.y + step_up;
+                (
+                    !check_collision(new_x, elevated_y, Player::WIDTH, Player::HEIGHT),
+                    step_up,
+                )
+            } else {
+                (false, 0.0)
+            }
+        } else {
+            (can_move_x, 0.0)
+        };
+
+        // Apply movement only on non-colliding axes, plus step-up offset
         let final_movement = Vec2::new(
             if can_move_x { movement.x } else { 0.0 },
-            if can_move_y { movement.y } else { 0.0 },
+            if can_move_y { movement.y } else { 0.0 } + step_offset,
         );
 
         // Stop vertical velocity if hit ceiling/floor
@@ -493,5 +528,94 @@ mod tests {
 
         // Player may have been nudged by unstuck mechanic
         // This tests that the code path is exercised
+    }
+
+    #[test]
+    fn test_step_up_on_slope() {
+        let mut player = make_test_player();
+        let mut input = make_test_input();
+        input.d_pressed = true; // Move right
+        let dt = 1.0 / 60.0;
+        let initial_pos = player.position;
+        player.grounded = true;
+
+        // Simulate a 2-pixel step: block movement at current Y, but allow at Y+2
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || true, // grounded
+            |x, y, _, _| {
+                // Block X movement at ground level, allow at elevated positions
+                let moved_right = x > initial_pos.x + 0.1;
+                let at_ground = (y - initial_pos.y).abs() < 1.5;
+                moved_right && at_ground
+            },
+        );
+
+        // Player should have moved right AND up (stepped up)
+        assert!(
+            player.position.x > initial_pos.x,
+            "Player should move right"
+        );
+        assert!(player.position.y > initial_pos.y, "Player should step up");
+    }
+
+    #[test]
+    fn test_no_step_up_when_airborne() {
+        let mut player = make_test_player();
+        let mut input = make_test_input();
+        input.d_pressed = true; // Move right
+        let dt = 1.0 / 60.0;
+        let initial_pos = player.position;
+        player.grounded = false;
+
+        // Block X movement entirely (wall)
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || false,                             // NOT grounded
+            |x, _, _, _| x > initial_pos.x + 0.1, // Wall to the right
+        );
+
+        // Player should NOT step up when airborne
+        assert_eq!(
+            player.position.x, initial_pos.x,
+            "Player should be blocked by wall"
+        );
+    }
+
+    #[test]
+    fn test_no_step_up_over_max_height() {
+        let mut player = make_test_player();
+        let mut input = make_test_input();
+        input.d_pressed = true; // Move right
+        let dt = 1.0 / 60.0;
+        let initial_pos = player.position;
+        player.grounded = true;
+
+        // Block X movement unless stepped up more than MAX_STEP_UP_HEIGHT (4px)
+        PlayerPhysicsSystem::update(
+            &mut player,
+            &input,
+            dt,
+            200.0,
+            || true,
+            |x, y, _, _| {
+                let moved_right = x > initial_pos.x + 0.1;
+                let step_height = y - initial_pos.y;
+                // Only allow if stepped up more than max (which step-up won't try)
+                moved_right && step_height <= Player::MAX_STEP_UP_HEIGHT
+            },
+        );
+
+        // Player should NOT move - obstacle too tall to step over
+        assert_eq!(
+            player.position.x, initial_pos.x,
+            "Player should be blocked by tall wall"
+        );
     }
 }

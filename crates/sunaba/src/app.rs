@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use glam::Vec2;
-use web_time::{Duration, Instant};
+use web_time::Instant;
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, MouseButton, WindowEvent},
@@ -709,27 +709,27 @@ impl App {
             }
         }
 
-        // Periodic auto-save in persistent world mode
-        #[cfg(not(target_arch = "wasm32"))]
-        let autosave_interval = Duration::from_secs(self.config.world.autosave_interval_secs);
-        #[cfg(target_arch = "wasm32")]
-        let autosave_interval = Duration::from_secs(60);
-
-        // Trigger incremental auto-save in persistent world mode
-        if matches!(self.game_mode, GameMode::PersistentWorld)
-            && self.last_autosave.elapsed() >= autosave_interval
-            && !self.world.is_save_in_progress()
-        {
-            // Start incremental save (spreads across multiple frames)
-            self.world.start_incremental_save();
-            self.last_autosave = Instant::now();
-        }
-
-        // Process incremental saves every frame (if in progress)
-        if matches!(self.game_mode, GameMode::PersistentWorld) && self.world.is_save_in_progress() {
-            self.world.process_incremental_saves();
-            // Note: completion is logged by process_incremental_saves
-        }
+        // Auto-save disabled
+        // #[cfg(not(target_arch = "wasm32"))]
+        // let autosave_interval = Duration::from_secs(self.config.world.autosave_interval_secs);
+        // #[cfg(target_arch = "wasm32")]
+        // let autosave_interval = Duration::from_secs(60);
+        //
+        // // Trigger incremental auto-save in persistent world mode
+        // if matches!(self.game_mode, GameMode::PersistentWorld)
+        //     && self.last_autosave.elapsed() >= autosave_interval
+        //     && !self.world.is_save_in_progress()
+        // {
+        //     // Start incremental save (spreads across multiple frames)
+        //     self.world.start_incremental_save();
+        //     self.last_autosave = Instant::now();
+        // }
+        //
+        // // Process incremental saves every frame (if in progress)
+        // if matches!(self.game_mode, GameMode::PersistentWorld) && self.world.is_save_in_progress() {
+        //     self.world.process_incremental_saves();
+        //     // Note: completion is logged by process_incremental_saves
+        // }
 
         // Process SpacetimeDB messages (native multiplayer only)
         #[cfg(all(not(target_arch = "wasm32"), feature = "multiplayer"))]
@@ -1065,7 +1065,12 @@ impl App {
 
             // DEBUG: Right-click instant mining circle (for exploration)
             // Continuously mines while button is held
-            if self.input_state.right_mouse_pressed {
+            // Skip if mouse is over UI or overlays are open
+            if self.input_state.right_mouse_pressed
+                && !self.egui_ctx.wants_pointer_input()
+                && !self.ui_state.inventory_open
+                && !self.ui_state.crafting_open
+            {
                 let player_pos = self.world.player.position;
                 let center_x = player_pos.x as i32;
                 let center_y = player_pos.y as i32;
@@ -1129,7 +1134,11 @@ impl App {
             }
 
             // Placing material from inventory with left mouse button
+            // Skip if mouse is over UI or overlays are open
             if self.input_state.left_mouse_pressed
+                && !self.egui_ctx.wants_pointer_input()
+                && !self.ui_state.inventory_open
+                && !self.ui_state.crafting_open
                 && let Some((wx, wy)) = self.input_state.mouse_world_pos
             {
                 let material_id = self.input_state.selected_material;
@@ -1433,6 +1442,80 @@ impl App {
             }
         });
         let egui_build_time = egui_build_start.elapsed().as_secs_f32() * 1000.0;
+
+        // Handle pending craft request from crafting overlay
+        if let Some(recipe_name) = self.ui_state.pending_craft.take()
+            && let Some(recipe) = self
+                .world
+                .recipe_registry
+                .all_recipes()
+                .iter()
+                .find(|r| r.name == recipe_name)
+                .cloned()
+        {
+            if let Some(output) = self
+                .world
+                .recipe_registry
+                .try_craft(&recipe, &mut self.world.player.inventory)
+            {
+                log::info!("[CRAFTING] Crafted: {}", recipe_name);
+                // Add the crafted output to inventory
+                match &output {
+                    crate::entity::crafting::RecipeOutput::Material { id, count } => {
+                        let remainder = self.world.player.inventory.add_item(*id, *count);
+                        let mat_name = &self.world.materials.get(*id).name;
+                        if remainder == 0 {
+                            self.ui_state
+                                .show_toast(&format!("Crafted {} x{}", mat_name, count));
+                        } else {
+                            self.ui_state.show_toast(&format!(
+                                "Crafted {} x{} ({} dropped - inventory full)",
+                                mat_name, count, remainder
+                            ));
+                        }
+                    }
+                    crate::entity::crafting::RecipeOutput::Tool {
+                        tool_id,
+                        durability,
+                    } => {
+                        let success = self.world.player.inventory.add_tool(*tool_id, *durability);
+                        let tool_name = match *tool_id {
+                            1000 => "Wood Pickaxe",
+                            1001 => "Stone Pickaxe",
+                            1002 => "Iron Pickaxe",
+                            _ => "Tool",
+                        };
+                        if success {
+                            self.ui_state.show_toast(&format!("Crafted {}", tool_name));
+                        } else {
+                            self.ui_state.show_toast_error(&format!(
+                                "Crafted {} but inventory full!",
+                                tool_name
+                            ));
+                        }
+                    }
+                }
+            } else {
+                log::warn!("[CRAFTING] Failed to craft: {}", recipe_name);
+                self.ui_state
+                    .show_toast_error(&format!("Failed to craft {}", recipe_name));
+            }
+        }
+
+        // Handle pending level selection from debug panel
+        if let Some(level_id) = self.ui_state.pending_level_selection.take() {
+            self.switch_to_demo_level(level_id);
+            self.ui_state.show_toast(&format!(
+                "Loaded: {}",
+                self.level_manager.current_level_name()
+            ));
+        }
+
+        // Handle return to persistent world from debug panel
+        if std::mem::take(&mut self.ui_state.pending_return_to_world) {
+            self.return_to_persistent_world();
+            self.ui_state.show_toast("Returned to persistent world");
+        }
 
         // Handle multiplayer panel actions (connect/disconnect/cancel)
         #[cfg(feature = "multiplayer")]
@@ -2230,13 +2313,17 @@ impl ApplicationHandler for App {
                             }
                         }
 
-                        // Escape key - Close panels or toggle pause menu
+                        // Escape key - Close overlays/panels or toggle pause menu
                         KeyCode::Escape => {
                             if pressed {
-                                // Priority: Close panels first, then open menu
+                                // Priority: Close overlays first, then panels, then open menu
 
+                                // Check if any fullscreen overlay is open
+                                if self.ui_state.close_overlay() {
+                                    // Overlay was closed, done
+                                }
                                 // Check if any debug panel is active
-                                if self.ui_state.panels.active_panel.is_some() {
+                                else if self.ui_state.panels.active_panel.is_some() {
                                     // Close active panel
                                     self.ui_state.panels.active_panel = None;
                                 }
@@ -2315,12 +2402,17 @@ impl ApplicationHandler for App {
                         }
                         KeyCode::KeyI => {
                             if pressed {
-                                self.ui_state.toggle_tab(crate::ui::DockTab::Inventory);
+                                self.ui_state.toggle_inventory();
                             }
                         }
                         KeyCode::KeyC => {
                             if pressed {
-                                self.ui_state.toggle_tab(crate::ui::DockTab::Crafting);
+                                self.ui_state.toggle_crafting();
+                            }
+                        }
+                        KeyCode::F12 => {
+                            if pressed {
+                                self.ui_state.toggle_debug_panels();
                             }
                         }
                         KeyCode::KeyG => {

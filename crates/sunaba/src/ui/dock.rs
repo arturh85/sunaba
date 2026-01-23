@@ -8,8 +8,6 @@ pub enum DockTab {
     Stats,
     Controls,
     LevelSelector,
-    Inventory,
-    Crafting,
     Logger,
     #[cfg(feature = "multiplayer")]
     MultiplayerStats,
@@ -23,8 +21,6 @@ impl std::fmt::Display for DockTab {
             DockTab::Stats => write!(f, "Debug Stats"),
             DockTab::Controls => write!(f, "Controls"),
             DockTab::LevelSelector => write!(f, "Levels"),
-            DockTab::Inventory => write!(f, "Inventory"),
-            DockTab::Crafting => write!(f, "Crafting"),
             DockTab::Logger => write!(f, "Log"),
             #[cfg(feature = "multiplayer")]
             DockTab::MultiplayerStats => write!(f, "Multiplayer"),
@@ -41,8 +37,6 @@ impl DockTab {
             Self::Stats,
             Self::Controls,
             Self::LevelSelector,
-            Self::Inventory,
-            Self::Crafting,
             Self::Logger,
             Self::Parameters,
             #[cfg(feature = "multiplayer")]
@@ -77,8 +71,6 @@ impl DockTab {
             Self::Stats => "📊",
             Self::Controls => "⌨️",
             Self::LevelSelector => "🎮",
-            Self::Inventory => "📦",
-            Self::Crafting => "🔨",
             Self::Logger => "📋",
             Self::Parameters => "⚙️",
             #[cfg(feature = "multiplayer")]
@@ -176,6 +168,8 @@ pub struct DockContext<'a> {
     // Level selector
     pub level_manager: &'a crate::levels::LevelManager,
     pub in_persistent_world: bool,
+    pub pending_level_selection: &'a mut Option<usize>,
+    pub pending_return_to_world: &'a mut bool,
 
     // Inventory
     pub player: &'a crate::entity::player::Player,
@@ -218,8 +212,6 @@ impl<'a> TabViewer for DockTabViewer<'a> {
             DockTab::Stats => self.render_stats(ui),
             DockTab::Controls => self.render_controls(ui),
             DockTab::LevelSelector => self.render_level_selector(ui),
-            DockTab::Inventory => self.render_inventory(ui),
-            DockTab::Crafting => self.render_crafting(ui),
             DockTab::Logger => self.render_logger(ui),
             #[cfg(feature = "multiplayer")]
             DockTab::MultiplayerStats => self.render_multiplayer_stats(ui),
@@ -277,8 +269,9 @@ impl<'a> DockTabViewer<'a> {
         ui.heading("UI");
         ui.label("F1 - Stats | F2 - Chunks");
         ui.label("F4 - Params | F6 - Log");
+        ui.label("F12 - Toggle Debug Panels");
         ui.label("H - Help | L - Levels");
-        ui.label("I - Inventory | C - Craft");
+        ui.label("I - Inventory | C - Crafting");
 
         ui.add_space(4.0);
         ui.label(format!(
@@ -287,77 +280,74 @@ impl<'a> DockTabViewer<'a> {
         ));
     }
 
-    pub fn render_level_selector(&self, ui: &mut egui::Ui) {
-        ui.heading("Levels");
-        ui.label(format!("Current: {}", self.ctx.game_mode_desc));
+    pub fn render_level_selector(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Demo Levels");
 
-        ui.separator();
+        // Current mode display
+        ui.horizontal(|ui| {
+            ui.label("Current:");
+            if self.ctx.in_persistent_world {
+                ui.colored_label(egui::Color32::GREEN, self.ctx.game_mode_desc);
+            } else {
+                ui.colored_label(egui::Color32::YELLOW, self.ctx.game_mode_desc);
+            }
+        });
 
         if self.ctx.in_persistent_world {
-            ui.label("Playing in Persistent World");
-            ui.label("Use L key to open full selector");
+            ui.colored_label(egui::Color32::GREEN, "✓ Auto-save enabled");
         } else {
-            ui.label("Demo level active");
+            ui.colored_label(egui::Color32::YELLOW, "⚠ Changes not saved");
         }
-    }
-
-    pub fn render_inventory(&self, ui: &mut egui::Ui) {
-        ui.heading("Inventory");
-
-        let inventory = &self.ctx.player.inventory;
-
-        ui.label(format!(
-            "Using {}/{} slots",
-            inventory.used_slot_count(),
-            inventory.max_slots
-        ));
 
         ui.separator();
 
-        // Show first few slots
-        for i in 0..10.min(inventory.max_slots) {
-            if let Some(Some(stack)) = inventory.get_slot(i) {
-                match stack {
-                    crate::entity::inventory::ItemStack::Material { material_id, count } => {
-                        let mat = self.ctx.materials.get(*material_id);
-                        ui.label(format!("[{}] {} x{}", i, mat.name, count));
-                    }
-                    crate::entity::inventory::ItemStack::Tool {
-                        tool_id,
-                        durability,
-                    } => {
-                        if let Some(tool_def) = self.ctx.tool_registry.get(*tool_id) {
-                            ui.label(format!("[{}] {} ({})", i, tool_def.name, durability));
-                        }
-                    }
-                }
+        // Button to return to persistent world
+        if !self.ctx.in_persistent_world {
+            if ui
+                .button("🏠 Return to Persistent World")
+                .on_hover_text("Return to your saved world")
+                .clicked()
+            {
+                *self.ctx.pending_return_to_world = true;
             }
-        }
-
-        // Show equipped tool if any
-        if let Some(tool_id) = self.ctx.player.equipped_tool {
             ui.separator();
-            if let Some(tool_def) = self.ctx.tool_registry.get(tool_id) {
-                ui.label(format!("Tool: {}", tool_def.name));
-            }
         }
-    }
 
-    pub fn render_crafting(&self, ui: &mut egui::Ui) {
-        ui.heading("Crafting");
-        ui.label("Available recipes:");
+        ui.label("Select a level to test physics and mechanics:");
+        ui.add_space(5.0);
 
-        for recipe in self.ctx.recipe_registry.all_recipes() {
-            ui.horizontal(|ui| {
-                ui.label(&recipe.name);
-                ui.label("-");
-                // Show first input requirement
-                if let Some((mat_id, count)) = recipe.inputs.first() {
-                    let mat = self.ctx.materials.get(*mat_id);
-                    ui.label(format!("{} x{}", mat.name, count));
+        // Scrollable list of demo levels (use all available height)
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            let levels = self.ctx.level_manager.levels();
+            for (idx, level) in levels.iter().enumerate() {
+                let is_current =
+                    !self.ctx.in_persistent_world && self.ctx.level_manager.current_level() == idx;
+
+                let mut button_text = format!("{}. {}", idx + 1, level.name);
+                if is_current {
+                    button_text.push_str(" ◄");
                 }
-            });
-        }
+
+                let button = egui::Button::new(&button_text);
+                let mut response = ui.add(button);
+
+                if is_current {
+                    response = response.highlight();
+                }
+
+                if response.on_hover_text(level.description).clicked() {
+                    *self.ctx.pending_level_selection = Some(idx);
+                }
+
+                // Show description below button
+                ui.label(
+                    egui::RichText::new(format!("   {}", level.description))
+                        .size(11.0)
+                        .color(egui::Color32::GRAY),
+                );
+                ui.add_space(3.0);
+            }
+        });
     }
 
     #[cfg(not(target_arch = "wasm32"))]

@@ -56,6 +56,7 @@ impl Player {
     pub const COYOTE_TIME: f32 = 0.1; // Jump grace period (seconds)
     pub const JUMP_BUFFER: f32 = 0.1; // Jump input buffer (seconds)
     pub const FLIGHT_THRUST: f32 = 1200.0; // px/s² (upward, Noita-style levitation)
+    pub const MAX_STEP_UP_HEIGHT: f32 = 4.0; // Max height player can auto-step up (pixels)
 
     // Dash mechanics
     pub const DASH_SPEED: f32 = 400.0; // px/s (2x walk speed)

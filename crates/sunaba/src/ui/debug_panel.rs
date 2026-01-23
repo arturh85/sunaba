@@ -81,10 +81,13 @@ pub fn render_debug_panels(
                 .inner_margin(4.0),
         )
         .show(ctx, |ui| {
-            ui.horizontal(|ui| {
+            // Use horizontal_top to expand content to full height
+            let available_height = ui.available_height();
+            ui.horizontal_top(|ui| {
                 // Left: Vertical menu (160px fixed)
                 ui.vertical(|ui| {
                     ui.set_width(160.0);
+                    ui.set_min_height(available_height);
                     ui.heading("Debug");
                     ui.separator();
 
@@ -93,8 +96,9 @@ pub fn render_debug_panels(
 
                 ui.separator(); // Vertical divider
 
-                // Right: Content area (flexible width)
+                // Right: Content area (flexible width, full height)
                 ui.vertical(|ui| {
+                    ui.set_min_height(available_height);
                     if let Some(active) = manager.active_panel {
                         render_panel_content(ui, active, dock_ctx);
                     } else {
@@ -147,8 +151,6 @@ fn render_panel_content(ui: &mut egui::Ui, tab: DockTab, ctx: DockContext<'_>) {
         DockTab::Stats => viewer.render_stats(ui),
         DockTab::Controls => viewer.render_controls(ui),
         DockTab::Logger => viewer.render_logger(ui),
-        DockTab::Inventory => viewer.render_inventory(ui),
-        DockTab::Crafting => viewer.render_crafting(ui),
         DockTab::LevelSelector => viewer.render_level_selector(ui),
         DockTab::Parameters => viewer.render_parameters(ui),
         #[cfg(feature = "multiplayer")]

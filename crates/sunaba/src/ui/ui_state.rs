@@ -68,6 +68,24 @@ pub struct UiState {
 
     /// UI theme (catppuccin + game-specific colors)
     pub theme: SunabaTheme,
+
+    /// Fullscreen inventory overlay (I key)
+    pub inventory_open: bool,
+
+    /// Fullscreen crafting overlay (C key)
+    pub crafting_open: bool,
+
+    /// Master toggle for debug panels visibility (F12)
+    pub debug_panels_visible: bool,
+
+    /// Pending craft request (recipe name) - set by crafting overlay, consumed by App
+    pub pending_craft: Option<String>,
+
+    /// Pending level selection (demo level index) - set by level selector, consumed by App
+    pub pending_level_selection: Option<usize>,
+
+    /// Pending return to persistent world - set by level selector, consumed by App
+    pub pending_return_to_world: bool,
 }
 
 impl UiState {
@@ -100,6 +118,12 @@ impl UiState {
             game_over_panel: super::game_over_panel::GameOverPanelState::new(),
             worldgen_editor: WorldGenEditor::new(),
             theme,
+            inventory_open: false,
+            crafting_open: false,
+            debug_panels_visible: false, // Hidden by default
+            pending_craft: None,
+            pending_level_selection: None,
+            pending_return_to_world: false,
         }
     }
 
@@ -121,12 +145,54 @@ impl UiState {
             game_over_panel: super::game_over_panel::GameOverPanelState::new(),
             worldgen_editor: WorldGenEditor::new(),
             theme: SunabaTheme::default(), // Cozy Alchemist theme
+            inventory_open: false,
+            crafting_open: false,
+            debug_panels_visible: false, // Hidden by default
+            pending_craft: None,
+            pending_level_selection: None,
+            pending_return_to_world: false,
         }
     }
 
-    /// Toggle a dock tab (H, L, I, C hotkeys)
+    /// Toggle a dock tab (H, L hotkeys)
     pub fn toggle_tab(&mut self, tab: DockTab) {
         self.panels.toggle_tab(tab);
+    }
+
+    /// Toggle fullscreen inventory overlay (I key)
+    pub fn toggle_inventory(&mut self) {
+        self.inventory_open = !self.inventory_open;
+        // Close crafting if opening inventory
+        if self.inventory_open {
+            self.crafting_open = false;
+        }
+    }
+
+    /// Toggle fullscreen crafting overlay (C key)
+    pub fn toggle_crafting(&mut self) {
+        self.crafting_open = !self.crafting_open;
+        // Close inventory if opening crafting
+        if self.crafting_open {
+            self.inventory_open = false;
+        }
+    }
+
+    /// Toggle debug panels visibility (F12 key)
+    pub fn toggle_debug_panels(&mut self) {
+        self.debug_panels_visible = !self.debug_panels_visible;
+    }
+
+    /// Close any open overlay (returns true if something was closed)
+    pub fn close_overlay(&mut self) -> bool {
+        if self.inventory_open {
+            self.inventory_open = false;
+            return true;
+        }
+        if self.crafting_open {
+            self.crafting_open = false;
+            return true;
+        }
+        false
     }
 
     /// Take the params_changed flag (resets it to false)
@@ -198,27 +264,31 @@ impl UiState {
             self.last_stats_update = Instant::now();
         }
 
-        // Render debug panels with vertical menu
-        let dock_ctx = super::dock::DockContext {
-            stats: &self.display_stats,
-            selected_material,
-            materials,
-            game_mode_desc,
-            level_manager,
-            in_persistent_world,
-            player,
-            tool_registry,
-            recipe_registry,
-            params: config,
-            params_changed: &mut self.params_changed,
-            #[cfg(feature = "multiplayer")]
-            multiplayer_metrics: self.metrics_collector.as_ref().map(|c| c.metrics()),
-            #[cfg(feature = "multiplayer")]
-            multiplayer_manager,
-            #[cfg(feature = "multiplayer")]
-            multiplayer_panel_state: &mut self.multiplayer_panel,
-        };
-        super::debug_panel::render_debug_panels(ctx, &mut self.panels, dock_ctx);
+        // Render debug panels with vertical menu (only if visible)
+        if self.debug_panels_visible {
+            let dock_ctx = super::dock::DockContext {
+                stats: &self.display_stats,
+                selected_material,
+                materials,
+                game_mode_desc,
+                level_manager,
+                in_persistent_world,
+                player,
+                tool_registry,
+                recipe_registry,
+                pending_level_selection: &mut self.pending_level_selection,
+                pending_return_to_world: &mut self.pending_return_to_world,
+                params: config,
+                params_changed: &mut self.params_changed,
+                #[cfg(feature = "multiplayer")]
+                multiplayer_metrics: self.metrics_collector.as_ref().map(|c| c.metrics()),
+                #[cfg(feature = "multiplayer")]
+                multiplayer_manager,
+                #[cfg(feature = "multiplayer")]
+                multiplayer_panel_state: &mut self.multiplayer_panel,
+            };
+            super::debug_panel::render_debug_panels(ctx, &mut self.panels, dock_ctx);
+        }
 
         // Render overlays (outside dock)
         let material_names: Vec<&str> = (0..15).map(|id| materials.get(id).name.as_str()).collect();
@@ -244,6 +314,29 @@ impl UiState {
         // Render game over screen (if player is dead)
         if show_game_over {
             self.game_over_panel.render(ctx, &self.theme.game);
+        }
+
+        // Render fullscreen overlays (on top of game, below escape menu)
+        if self.inventory_open {
+            super::inventory_ui::render_inventory_overlay(
+                ctx,
+                player,
+                &material_names,
+                &self.theme.game,
+            );
+        }
+
+        if self.crafting_open {
+            // Crafting overlay sets pending_craft when user clicks a craft button
+            // The actual crafting happens in App after render returns
+            super::crafting_ui::render_crafting_overlay(
+                ctx,
+                &player.inventory,
+                recipe_registry,
+                materials,
+                &self.theme.game,
+                &mut self.pending_craft,
+            );
         }
 
         // Render escape menu (last - on top of everything)
@@ -276,25 +369,29 @@ impl UiState {
             self.last_stats_update = Instant::now();
         }
 
-        // Render debug panels with vertical menu (WASM - no params)
-        let dock_ctx = super::dock::DockContext {
-            stats: &self.display_stats,
-            selected_material,
-            materials,
-            game_mode_desc,
-            level_manager,
-            in_persistent_world,
-            player,
-            tool_registry,
-            recipe_registry,
-            #[cfg(feature = "multiplayer")]
-            multiplayer_metrics: self.metrics_collector.as_ref().map(|c| c.metrics()),
-            #[cfg(feature = "multiplayer")]
-            multiplayer_manager,
-            #[cfg(feature = "multiplayer")]
-            multiplayer_panel_state: &mut self.multiplayer_panel,
-        };
-        super::debug_panel::render_debug_panels(ctx, &mut self.panels, dock_ctx);
+        // Render debug panels with vertical menu (WASM - no params, only if visible)
+        if self.debug_panels_visible {
+            let dock_ctx = super::dock::DockContext {
+                stats: &self.display_stats,
+                selected_material,
+                materials,
+                game_mode_desc,
+                level_manager,
+                in_persistent_world,
+                player,
+                tool_registry,
+                recipe_registry,
+                pending_level_selection: &mut self.pending_level_selection,
+                pending_return_to_world: &mut self.pending_return_to_world,
+                #[cfg(feature = "multiplayer")]
+                multiplayer_metrics: self.metrics_collector.as_ref().map(|c| c.metrics()),
+                #[cfg(feature = "multiplayer")]
+                multiplayer_manager,
+                #[cfg(feature = "multiplayer")]
+                multiplayer_panel_state: &mut self.multiplayer_panel,
+            };
+            super::debug_panel::render_debug_panels(ctx, &mut self.panels, dock_ctx);
+        }
 
         // Render overlays (outside dock)
         let material_names: Vec<&str> = (0..15).map(|id| materials.get(id).name.as_str()).collect();
@@ -320,6 +417,27 @@ impl UiState {
         // Render game over screen (if player is dead)
         if show_game_over {
             self.game_over_panel.render(ctx, &self.theme.game);
+        }
+
+        // Render fullscreen overlays (on top of game, below escape menu)
+        if self.inventory_open {
+            super::inventory_ui::render_inventory_overlay(
+                ctx,
+                player,
+                &material_names,
+                &self.theme.game,
+            );
+        }
+
+        if self.crafting_open {
+            super::crafting_ui::render_crafting_overlay(
+                ctx,
+                &player.inventory,
+                recipe_registry,
+                materials,
+                &self.theme.game,
+                &mut self.pending_craft,
+            );
         }
 
         // Render escape menu (last - on top of everything)
