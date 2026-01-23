@@ -18,11 +18,13 @@ use super::electrical_system::ElectricalSystem;
 use super::light_system::LightSystem;
 use super::mining_system::MiningSystem;
 use super::persistence_system::PersistenceSystem;
+#[cfg(feature = "regeneration")]
 use super::pixel_entity_system::PixelEntitySystem;
 use super::pixel_queries::PixelQueries;
 use super::player_physics::PlayerPhysicsSystem;
 use super::pressure_system::PressureSystem;
 use super::raycasting::Raycasting;
+#[cfg(feature = "regeneration")]
 use super::special_behaviors_system::SpecialBehaviorsSystem;
 use super::stats::NoopStats;
 use super::{CHUNK_SIZE, Chunk, Pixel, pixel_flags};
@@ -77,9 +79,11 @@ pub struct World {
     pressure_system: PressureSystem,
 
     /// Special behaviors system (fuse, vine, virus, clone for Powder Game)
+    #[cfg(feature = "regeneration")]
     special_behaviors_system: SpecialBehaviorsSystem,
 
     /// Pixel entity system (ant, bird, fish for Powder Game)
+    #[cfg(feature = "regeneration")]
     pixel_entity_system: PixelEntitySystem,
 
     /// Creature manager (spawning, AI, behavior)
@@ -124,7 +128,9 @@ impl World {
             debris_system: DebrisSystem::new(),
             electrical_system: ElectricalSystem::new(),
             pressure_system: PressureSystem::new(),
+            #[cfg(feature = "regeneration")]
             special_behaviors_system: SpecialBehaviorsSystem::new(),
+            #[cfg(feature = "regeneration")]
             pixel_entity_system: PixelEntitySystem::new(),
             creature_manager: crate::creature::spawning::CreatureManager::new(200), // Max 200 creatures
             player: Player::new(glam::Vec2::new(0.0, 100.0)),
@@ -766,6 +772,7 @@ impl World {
         }
 
         // 2.7. Special behaviors system update (fuse, vine, virus, clone)
+        #[cfg(feature = "regeneration")]
         {
             #[cfg(feature = "profiling")]
             puffin::profile_scope!("special_behaviors");
@@ -778,6 +785,7 @@ impl World {
         }
 
         // 2.8. Pixel entity system update (ant, bird, fish AI)
+        #[cfg(feature = "regeneration")]
         {
             #[cfg(feature = "profiling")]
             puffin::profile_scope!("pixel_entities");
