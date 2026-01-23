@@ -656,10 +656,81 @@ impl Creature {
         // Move root body part to creature position
         // Other body parts follow with their local offsets
         for (i, part) in self.morphology.body_parts.iter().enumerate() {
+            // Update new parts array
+            if let Some(part_state) = self.physics_state.parts.get_mut(i) {
+                part_state.position = self.position + part.local_position;
+            }
+            // Also update legacy fields
             if let Some(pos) = self.physics_state.part_positions.get_mut(i) {
                 *pos = self.position + part.local_position;
             }
         }
+    }
+
+    /// Apply full physics simulation update
+    ///
+    /// This uses the new physics system with proper forward kinematics,
+    /// gravity per body part, and ground collision detection.
+    pub fn apply_full_physics_update(
+        &mut self,
+        world: &impl crate::WorldAccess,
+        delta_time: f32,
+    ) {
+        // Apply pending motor commands first
+        if let Some(motor_commands) = self.pending_motor_commands.take() {
+            self.physics_state.apply_motor_commands(&motor_commands);
+        }
+
+        // Create ground check closure that queries the world
+        let ground_check = |pos: Vec2, radius: f32| -> Option<f32> {
+            // Check for ground below this position
+            let check_y = (pos.y - radius) as i32;
+            let check_x = pos.x as i32;
+
+            // Scan downward to find ground
+            for dy in 0..5 {
+                let y = check_y - dy;
+                if let Some(pixel) = world.get_pixel(check_x, y) {
+                    if pixel.material_id != 0 {
+                        // Found solid ground
+                        return Some((y + 1) as f32);
+                    }
+                }
+            }
+            None
+        };
+
+        // Run full physics update
+        self.physics_state
+            .update(&self.morphology, delta_time, ground_check);
+
+        // Update creature position from physics root
+        if let Some(root_pos) = self.physics_state.get_position() {
+            self.position = root_pos;
+        }
+
+        // Update grounded state
+        self.grounded = self.physics_state.is_any_grounded();
+
+        // Update velocity from physics
+        if let Some(avg_vel) = Some(self.physics_state.get_average_velocity()) {
+            self.velocity = avg_vel;
+        }
+
+        // Update facing direction
+        if self.velocity.x.abs() > 1.0 {
+            self.facing_direction = if self.velocity.x > 0.0 { 1.0 } else { -1.0 };
+        }
+    }
+
+    /// Get kinetic energy of the creature (for fitness evaluation)
+    pub fn get_kinetic_energy(&self) -> f32 {
+        self.physics_state.kinetic_energy
+    }
+
+    /// Get center of mass position
+    pub fn get_center_of_mass(&self) -> Vec2 {
+        self.physics_state.center_of_mass
     }
 
     /// Try to mine blocks based on neural network output

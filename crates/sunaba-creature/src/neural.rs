@@ -374,6 +374,398 @@ impl DeepNeuralController {
     }
 }
 
+/// Graph Neural Network controller for creatures
+///
+/// Implements NerveNet-style message passing that adapts to variable morphologies.
+/// Each body part is a node in the graph, and joints define edges.
+/// Information flows through the morphology structure via message passing rounds.
+///
+/// Architecture:
+/// 1. Input projection: Per-node features → hidden representation
+/// 2. Message passing (K rounds):
+///    - Each node sends messages to neighbors
+///    - Messages are aggregated (sum)
+///    - Node states are updated based on aggregated messages
+/// 3. Output projection: Hidden states → motor commands
+pub struct GraphNeuralController {
+    /// Input projection weights: input_dim → hidden_dim
+    input_weights: Vec<f32>,
+    /// Message projection weights: hidden_dim → hidden_dim
+    message_weights: Vec<f32>,
+    /// Update weights: 2*hidden_dim → hidden_dim (combines self + aggregated messages)
+    update_weights: Vec<f32>,
+    /// Output projection weights: hidden_dim → 1 (one motor command per node)
+    output_weights: Vec<f32>,
+    /// Hidden dimension for node representations
+    hidden_dim: usize,
+    /// Number of message passing rounds
+    message_passing_steps: usize,
+    /// Input feature dimension per node
+    input_dim: usize,
+    /// Previous hidden states for temporal continuity
+    prev_hidden: Option<Vec<Vec<f32>>>,
+    /// Recurrence blend factor
+    recurrence_factor: f32,
+}
+
+impl GraphNeuralController {
+    /// Create from genome and morphology structure
+    pub fn from_genome(
+        genome: &ControllerGenome,
+        _morphology: &CreatureMorphology,
+        input_dim_per_node: usize,
+    ) -> Self {
+        use crate::deterministic_rng::DeterministicRng;
+
+        let hidden_dim = genome.hidden_dim;
+        let message_passing_steps = genome.message_passing_steps;
+
+        // Create seeded RNG from genome weights for deterministic initialization
+        let seed: u64 = genome
+            .message_weights
+            .iter()
+            .chain(genome.update_weights.iter())
+            .chain(genome.output_weights.iter())
+            .fold(0u64, |acc, &w| acc.wrapping_add((w * 1000.0) as i64 as u64));
+        let mut rng = DeterministicRng::from_seed(seed);
+
+        // Input projection: input_dim → hidden_dim
+        let input_weight_count = input_dim_per_node * hidden_dim;
+        let input_scale = (2.0 / (input_dim_per_node + hidden_dim) as f32).sqrt();
+        let input_weights: Vec<f32> = (0..input_weight_count)
+            .map(|_| rng.gen_range_f32(-1.0, 1.0) * input_scale)
+            .collect();
+
+        // Message projection: hidden_dim → hidden_dim
+        let message_weight_count = hidden_dim * hidden_dim;
+        let message_scale = (2.0 / (hidden_dim * 2) as f32).sqrt();
+        let message_weights: Vec<f32> = (0..message_weight_count)
+            .map(|_| rng.gen_range_f32(-1.0, 1.0) * message_scale)
+            .collect();
+
+        // Update weights: 2*hidden_dim → hidden_dim (self + aggregated messages)
+        let update_weight_count = (hidden_dim * 2) * hidden_dim;
+        let update_scale = (2.0 / (hidden_dim * 3) as f32).sqrt();
+        let update_weights: Vec<f32> = (0..update_weight_count)
+            .map(|_| rng.gen_range_f32(-1.0, 1.0) * update_scale)
+            .collect();
+
+        // Output projection: hidden_dim → 1 (one motor per node, but we may have fewer motors)
+        let output_weight_count = hidden_dim * 1; // 1 output per node
+        let output_scale = (2.0 / (hidden_dim + 1) as f32).sqrt();
+        let output_weights: Vec<f32> = (0..output_weight_count)
+            .map(|_| rng.gen_range_f32(-1.0, 1.0) * output_scale)
+            .collect();
+
+        Self {
+            input_weights,
+            message_weights,
+            update_weights,
+            output_weights,
+            hidden_dim,
+            message_passing_steps,
+            input_dim: input_dim_per_node,
+            prev_hidden: None,
+            recurrence_factor: 0.2, // Blend 20% of previous state for temporal continuity
+        }
+    }
+
+    /// Reset hidden state (call between episodes)
+    pub fn reset_hidden(&mut self) {
+        self.prev_hidden = None;
+    }
+
+    /// Forward pass through the GNN
+    ///
+    /// # Arguments
+    /// * `node_features` - Feature vector for each node (body part)
+    /// * `graph` - Morphology graph defining connectivity
+    ///
+    /// # Returns
+    /// Motor commands for each motor (one per node that has a motor)
+    pub fn forward(
+        &mut self,
+        node_features: &[Vec<f32>],
+        graph: &MorphologyGraph,
+    ) -> Vec<f32> {
+        #[cfg(feature = "profiling")]
+        puffin::profile_function!();
+
+        let num_nodes = graph.num_nodes;
+        if num_nodes == 0 {
+            return Vec::new();
+        }
+
+        // 1. Project input features to hidden dimension
+        let mut hidden_states: Vec<Vec<f32>> = node_features
+            .iter()
+            .map(|features| self.project_input(features))
+            .collect();
+
+        // Apply recurrence from previous step
+        if let Some(ref prev) = self.prev_hidden {
+            for (i, h) in hidden_states.iter_mut().enumerate() {
+                if let Some(prev_h) = prev.get(i) {
+                    for (j, val) in h.iter_mut().enumerate() {
+                        if let Some(&prev_val) = prev_h.get(j) {
+                            *val = (1.0 - self.recurrence_factor) * *val
+                                + self.recurrence_factor * prev_val;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Message passing rounds
+        for _ in 0..self.message_passing_steps {
+            hidden_states = self.message_passing_step(&hidden_states, graph);
+        }
+
+        // Store hidden states for next timestep
+        self.prev_hidden = Some(hidden_states.clone());
+
+        // 3. Project to output (one value per node)
+        let outputs: Vec<f32> = hidden_states
+            .iter()
+            .map(|h| self.project_output(h))
+            .collect();
+
+        outputs
+    }
+
+    /// Project input features to hidden dimension
+    fn project_input(&self, features: &[f32]) -> Vec<f32> {
+        let mut hidden = vec![0.0; self.hidden_dim];
+
+        // Pad or truncate features to match expected input_dim
+        let features_len = features.len().min(self.input_dim);
+
+        for h in 0..self.hidden_dim {
+            let mut sum = 0.0;
+            for i in 0..features_len {
+                let w_idx = i * self.hidden_dim + h;
+                if w_idx < self.input_weights.len() {
+                    sum += features[i] * self.input_weights[w_idx];
+                }
+            }
+            hidden[h] = sum.tanh();
+        }
+
+        hidden
+    }
+
+    /// Single message passing step
+    fn message_passing_step(
+        &self,
+        hidden_states: &[Vec<f32>],
+        graph: &MorphologyGraph,
+    ) -> Vec<Vec<f32>> {
+        let num_nodes = hidden_states.len();
+        let mut new_states = vec![vec![0.0; self.hidden_dim]; num_nodes];
+
+        // For each node, aggregate messages from neighbors
+        for node_idx in 0..num_nodes {
+            // Find all neighbors (nodes connected by edges)
+            let neighbors: Vec<usize> = graph
+                .edges
+                .iter()
+                .filter_map(|&(from, to)| {
+                    if to == node_idx {
+                        Some(from)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Aggregate messages from neighbors
+            let mut aggregated_message = vec![0.0; self.hidden_dim];
+            for &neighbor_idx in &neighbors {
+                let message = self.compute_message(&hidden_states[neighbor_idx]);
+                for (i, m) in message.iter().enumerate() {
+                    aggregated_message[i] += m;
+                }
+            }
+
+            // Normalize by number of neighbors (mean aggregation)
+            if !neighbors.is_empty() {
+                let scale = 1.0 / neighbors.len() as f32;
+                for m in &mut aggregated_message {
+                    *m *= scale;
+                }
+            }
+
+            // Update node state: combine self state with aggregated messages
+            new_states[node_idx] = self.update_node(
+                &hidden_states[node_idx],
+                &aggregated_message,
+            );
+        }
+
+        new_states
+    }
+
+    /// Compute message from a neighbor's hidden state
+    fn compute_message(&self, hidden: &[f32]) -> Vec<f32> {
+        let mut message = vec![0.0; self.hidden_dim];
+
+        for h in 0..self.hidden_dim {
+            let mut sum = 0.0;
+            for i in 0..self.hidden_dim.min(hidden.len()) {
+                let w_idx = i * self.hidden_dim + h;
+                if w_idx < self.message_weights.len() {
+                    sum += hidden[i] * self.message_weights[w_idx];
+                }
+            }
+            message[h] = sum;
+        }
+
+        message
+    }
+
+    /// Update node state based on self and aggregated messages
+    fn update_node(&self, self_hidden: &[f32], aggregated: &[f32]) -> Vec<f32> {
+        let mut new_hidden = vec![0.0; self.hidden_dim];
+
+        // Concatenate self_hidden and aggregated for input to update
+        for h in 0..self.hidden_dim {
+            let mut sum = 0.0;
+
+            // Process self_hidden
+            for i in 0..self.hidden_dim.min(self_hidden.len()) {
+                let w_idx = i * self.hidden_dim + h;
+                if w_idx < self.update_weights.len() {
+                    sum += self_hidden[i] * self.update_weights[w_idx];
+                }
+            }
+
+            // Process aggregated
+            for i in 0..self.hidden_dim.min(aggregated.len()) {
+                let w_idx = (self.hidden_dim + i) * self.hidden_dim + h;
+                if w_idx < self.update_weights.len() {
+                    sum += aggregated[i] * self.update_weights[w_idx];
+                }
+            }
+
+            new_hidden[h] = sum.tanh();
+        }
+
+        new_hidden
+    }
+
+    /// Project hidden state to single output value
+    fn project_output(&self, hidden: &[f32]) -> f32 {
+        let mut sum = 0.0;
+        for (i, &h) in hidden.iter().enumerate() {
+            if i < self.output_weights.len() {
+                sum += h * self.output_weights[i];
+            }
+        }
+        sum.tanh()
+    }
+
+    /// Get the hidden dimension
+    pub fn hidden_dim(&self) -> usize {
+        self.hidden_dim
+    }
+
+    /// Get input dimension per node
+    pub fn input_dim(&self) -> usize {
+        self.input_dim
+    }
+}
+
+/// Hybrid controller that uses GNN for morphology-aware processing
+/// and falls back to feedforward for simpler creatures
+pub struct HybridNeuralController {
+    /// GNN for graph-based processing
+    gnn: GraphNeuralController,
+    /// Morphology graph structure
+    graph: MorphologyGraph,
+    /// Motor node mapping: which node indices have motors
+    motor_node_indices: Vec<usize>,
+    /// Output dimension (number of motors + action outputs)
+    output_dim: usize,
+}
+
+impl HybridNeuralController {
+    /// Create hybrid controller from genome and morphology
+    pub fn from_genome(
+        genome: &ControllerGenome,
+        morphology: &CreatureMorphology,
+        input_dim_per_node: usize,
+    ) -> Self {
+        let graph = MorphologyGraph::from_morphology(morphology);
+
+        // Find which nodes have motors attached
+        let motor_node_indices: Vec<usize> = morphology
+            .joints
+            .iter()
+            .filter_map(|joint| {
+                if matches!(joint.joint_type, crate::morphology::JointType::Revolute { .. }) {
+                    Some(joint.child_index)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let gnn = GraphNeuralController::from_genome(genome, morphology, input_dim_per_node);
+        let output_dim = motor_node_indices.len() + 1; // Motors + 1 action output
+
+        Self {
+            gnn,
+            graph,
+            motor_node_indices,
+            output_dim,
+        }
+    }
+
+    /// Reset hidden state
+    pub fn reset_hidden(&mut self) {
+        self.gnn.reset_hidden();
+    }
+
+    /// Forward pass
+    ///
+    /// # Arguments
+    /// * `node_features` - Feature vectors per body part
+    ///
+    /// # Returns
+    /// Motor commands + action output
+    pub fn forward(&mut self, node_features: &[Vec<f32>]) -> Vec<f32> {
+        // Run GNN forward pass
+        let node_outputs = self.gnn.forward(node_features, &self.graph);
+
+        // Map node outputs to motor commands
+        let mut outputs = Vec::with_capacity(self.output_dim);
+
+        // Get motor commands from motor nodes
+        for &node_idx in &self.motor_node_indices {
+            if let Some(&output) = node_outputs.get(node_idx) {
+                outputs.push(output);
+            } else {
+                outputs.push(0.0);
+            }
+        }
+
+        // Add action output (average of all node outputs)
+        let action_output = if !node_outputs.is_empty() {
+            node_outputs.iter().sum::<f32>() / node_outputs.len() as f32
+        } else {
+            0.0
+        };
+        outputs.push(action_output);
+
+        outputs
+    }
+
+    /// Get output dimension
+    pub fn output_dim(&self) -> usize {
+        self.output_dim
+    }
+}
+
 /// Extract features from simple physics state
 /// Uses CreaturePhysicsState for position-based physics without rapier2d
 pub fn extract_body_part_features_simple(
@@ -441,8 +833,12 @@ pub fn extract_body_part_features_simple(
         // Normalize orientation relative to root
         let relative_orientation = orientation - root_orientation;
 
-        // Velocity is not tracked in simple physics - use zero
-        let velocity = Vec2::ZERO;
+        // Get velocity from new physics state (parts array)
+        let velocity = physics_state
+            .parts
+            .get(i)
+            .map(|p| p.velocity)
+            .unwrap_or(Vec2::ZERO);
 
         // Calculate facing direction from orientation (or default to right)
         let facing_direction = orientation.cos().signum();
@@ -655,5 +1051,168 @@ mod tests {
         let input = vec![0.5; 5]; // Wrong size!
 
         controller.forward(&input); // Should panic
+    }
+
+    // ===== Graph Neural Network Tests =====
+
+    #[test]
+    fn test_gnn_controller_creation() {
+        use crate::genome::ControllerGenome;
+        use crate::morphology::CreatureMorphology;
+
+        let genome = ControllerGenome::minimal(16, 2);
+        let morphology = CreatureMorphology::test_biped();
+        let input_dim = 10;
+
+        let controller = GraphNeuralController::from_genome(&genome, &morphology, input_dim);
+
+        assert_eq!(controller.hidden_dim, 16);
+        assert_eq!(controller.message_passing_steps, 2);
+        assert_eq!(controller.input_dim, input_dim);
+    }
+
+    #[test]
+    fn test_gnn_controller_forward() {
+        use crate::genome::ControllerGenome;
+        use crate::morphology::CreatureMorphology;
+
+        let genome = ControllerGenome::minimal(16, 2);
+        let morphology = CreatureMorphology::test_biped();
+        let graph = MorphologyGraph::from_morphology(&morphology);
+        let input_dim = 10;
+
+        let mut controller = GraphNeuralController::from_genome(&genome, &morphology, input_dim);
+
+        // Create node features (3 nodes for biped)
+        let node_features: Vec<Vec<f32>> = (0..3)
+            .map(|_| vec![0.5; input_dim])
+            .collect();
+
+        let outputs = controller.forward(&node_features, &graph);
+
+        // Should produce one output per node
+        assert_eq!(outputs.len(), 3);
+
+        // Outputs should be in tanh range
+        for &val in &outputs {
+            assert!((-1.0..=1.0).contains(&val), "Output {} out of range", val);
+        }
+    }
+
+    #[test]
+    fn test_gnn_message_passing() {
+        use crate::genome::ControllerGenome;
+        use crate::morphology::CreatureMorphology;
+
+        let genome = ControllerGenome::minimal(8, 3); // 3 message passing steps
+        let morphology = CreatureMorphology::test_biped();
+        let graph = MorphologyGraph::from_morphology(&morphology);
+
+        let mut controller = GraphNeuralController::from_genome(&genome, &morphology, 5);
+
+        // Create different node features
+        let node_features = vec![
+            vec![1.0, 0.0, 0.0, 0.0, 0.0], // Node 0
+            vec![0.0, 1.0, 0.0, 0.0, 0.0], // Node 1
+            vec![0.0, 0.0, 1.0, 0.0, 0.0], // Node 2
+        ];
+
+        let outputs1 = controller.forward(&node_features, &graph);
+
+        // With message passing, information should propagate
+        // Running again with same input should give consistent output
+        controller.reset_hidden();
+        let outputs2 = controller.forward(&node_features, &graph);
+
+        // After reset, outputs should be the same (deterministic)
+        for (o1, o2) in outputs1.iter().zip(outputs2.iter()) {
+            assert!((o1 - o2).abs() < 0.01, "Expected deterministic output");
+        }
+    }
+
+    #[test]
+    fn test_gnn_temporal_continuity() {
+        use crate::genome::ControllerGenome;
+        use crate::morphology::CreatureMorphology;
+
+        let genome = ControllerGenome::minimal(8, 2);
+        let morphology = CreatureMorphology::test_biped();
+        let graph = MorphologyGraph::from_morphology(&morphology);
+
+        let mut controller = GraphNeuralController::from_genome(&genome, &morphology, 5);
+
+        let node_features: Vec<Vec<f32>> = (0..3)
+            .map(|_| vec![0.5; 5])
+            .collect();
+
+        // First forward pass
+        let outputs1 = controller.forward(&node_features, &graph);
+
+        // Second forward pass (without reset) - should blend with previous hidden
+        let outputs2 = controller.forward(&node_features, &graph);
+
+        // Outputs should be slightly different due to recurrence
+        // With recurrence, they should differ (though might be similar if weights are small)
+        // This is a weak test - mainly checking it doesn't crash
+        assert_eq!(outputs1.len(), outputs2.len());
+    }
+
+    #[test]
+    fn test_hybrid_controller() {
+        use crate::genome::ControllerGenome;
+        use crate::morphology::CreatureMorphology;
+
+        let genome = ControllerGenome::minimal(16, 2);
+        let morphology = CreatureMorphology::test_biped();
+        let input_dim = 10;
+
+        let mut controller = HybridNeuralController::from_genome(&genome, &morphology, input_dim);
+
+        // Create node features
+        let node_features: Vec<Vec<f32>> = (0..3)
+            .map(|_| vec![0.5; input_dim])
+            .collect();
+
+        let outputs = controller.forward(&node_features);
+
+        // Should have motor outputs + 1 action output
+        // Biped has 2 motors, so 2 + 1 = 3 outputs
+        assert_eq!(outputs.len(), 3);
+
+        // All outputs should be in valid range
+        for &val in &outputs {
+            assert!((-1.0..=1.0).contains(&val));
+        }
+    }
+
+    #[test]
+    fn test_gnn_different_morphologies() {
+        use crate::genome::ControllerGenome;
+        use crate::morphology::CreatureMorphology;
+
+        // Test with different morphology sizes
+        let morphologies = vec![
+            CreatureMorphology::test_biped(),     // 3 parts
+            CreatureMorphology::test_quadruped(), // 5 parts
+            CreatureMorphology::archetype_spider(), // 9 parts
+            CreatureMorphology::archetype_snake(),  // 6 parts
+        ];
+
+        for morphology in morphologies {
+            let genome = ControllerGenome::minimal(8, 2);
+            let graph = MorphologyGraph::from_morphology(&morphology);
+            let num_parts = morphology.body_parts.len();
+
+            let mut controller = GraphNeuralController::from_genome(&genome, &morphology, 5);
+
+            let node_features: Vec<Vec<f32>> = (0..num_parts)
+                .map(|_| vec![0.5; 5])
+                .collect();
+
+            let outputs = controller.forward(&node_features, &graph);
+
+            // Should produce output for each node
+            assert_eq!(outputs.len(), num_parts);
+        }
     }
 }
