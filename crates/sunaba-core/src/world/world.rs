@@ -1177,6 +1177,38 @@ impl World {
         PixelQueries::get_light(&self.light_system, &self.chunk_manager, world_x, world_y)
     }
 
+    /// Get pressure at world coordinates (coarse 8x8 grid)
+    pub fn get_pressure_at(&self, world_x: i32, world_y: i32) -> Option<f32> {
+        let (chunk_pos, local_x, local_y) = ChunkManager::world_to_chunk_coords(world_x, world_y);
+        self.chunk_manager
+            .chunks
+            .get(&chunk_pos)
+            .map(|c| c.get_pressure_at(local_x, local_y))
+    }
+
+    /// Set pressure at world coordinates (coarse 8x8 grid)
+    pub fn set_pressure_at(&mut self, world_x: i32, world_y: i32, pressure: f32) {
+        let (chunk_pos, local_x, local_y) = ChunkManager::world_to_chunk_coords(world_x, world_y);
+        if let Some(chunk) = self.chunk_manager.chunks.get_mut(&chunk_pos) {
+            let cx = local_x / 8;
+            let cy = local_y / 8;
+            chunk.pressure[cy * 8 + cx] = pressure.clamp(0.0, 100.0);
+            chunk.dirty = true;
+        }
+    }
+
+    /// Add pressure at world coordinates (coarse 8x8 grid)
+    pub fn add_pressure_at(&mut self, world_x: i32, world_y: i32, delta: f32) {
+        let (chunk_pos, local_x, local_y) = ChunkManager::world_to_chunk_coords(world_x, world_y);
+        if let Some(chunk) = self.chunk_manager.chunks.get_mut(&chunk_pos) {
+            let cx = local_x / 8;
+            let cy = local_y / 8;
+            let idx = cy * 8 + cx;
+            chunk.pressure[idx] = (chunk.pressure[idx] + delta).clamp(0.0, 100.0);
+            chunk.dirty = true;
+        }
+    }
+
     /// Set light level at world coordinates (0-15)
     pub fn set_light_at(&mut self, world_x: i32, world_y: i32, level: u8) {
         self.light_system

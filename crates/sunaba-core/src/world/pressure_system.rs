@@ -11,9 +11,9 @@ const MAX_PRESSURE_PROPAGATION_DEPTH: usize = 128;
 const PRESSURE_QUEUE_MAX: usize = 256;
 const MAX_PRESSURE: f32 = 100.0;
 const MIN_PRESSURE: f32 = 0.0;
-const PRESSURE_DECAY_RATE: f32 = 0.05; // How quickly pressure dissipates naturally
+const PRESSURE_DECAY_RATE: f32 = 0.02; // How quickly pressure dissipates naturally
 const PRESSURE_PROPAGATION_FACTOR: f32 = 0.4; // How much pressure transfers to neighbors
-const PRESSURE_MOVE_THRESHOLD: f32 = 10.0; // Min pressure to move light materials
+const PRESSURE_MOVE_THRESHOLD: f32 = 5.0; // Min pressure to move light materials
 
 /// Manages the pressure simulation.
 pub struct PressureSystem {

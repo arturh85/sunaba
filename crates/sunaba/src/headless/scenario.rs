@@ -541,8 +541,9 @@ mod tests {
     #[test]
     fn test_procedural_terrain_different_seeds() {
         // Different seeds should produce different terrain
-        let config1 = TrainingTerrainConfig::flat(42, 512, 128);
-        let config2 = TrainingTerrainConfig::flat(123, 512, 128);
+        // Use gentle_hills instead of flat to ensure terrain variation
+        let config1 = TrainingTerrainConfig::gentle_hills(42, 2048, 512);
+        let config2 = TrainingTerrainConfig::gentle_hills(123, 2048, 512);
 
         let mut scenario1 = Scenario::locomotion();
         scenario1.config.terrain_config = Some(config1);
@@ -552,10 +553,10 @@ mod tests {
         scenario2.config.terrain_config = Some(config2);
         let (world2, _) = scenario2.setup_world();
 
-        // At least some pixels should differ
+        // At least some pixels should differ (sample across larger area for robustness)
         let mut differences = 0;
-        for x in [50, 100, 200, 300, 400] {
-            for y in [10, 20, 30, 50] {
+        for x in [100, 500, 1000, 1500, 2000] {
+            for y in [-50, -100, -200, 50, 100] {
                 if let (Some(p1), Some(p2)) = (world1.get_pixel(x, y), world2.get_pixel(x, y)) {
                     if p1.material_id != p2.material_id {
                         differences += 1;

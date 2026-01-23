@@ -1,10 +1,14 @@
 //! Tools module for Powder Game demo
 
+mod drag;
 mod erase;
 mod pen;
+mod wind;
 
+pub use drag::DragTool;
 pub use erase::EraseTool;
 pub use pen::PenTool;
+pub use wind::WindTool;
 
 use sunaba_core::world::World;
 

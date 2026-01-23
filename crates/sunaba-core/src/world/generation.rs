@@ -8,15 +8,16 @@ use fastnoise_lite::{FastNoiseLite, NoiseType};
 use std::collections::HashMap;
 
 // World dimension constants (defaults, can be overridden by config)
+// NOTE: These are 20× deeper than original to create Noita-scale world depth
 pub const SURFACE_Y: i32 = 0; // Sea level baseline
 pub const SKY_HEIGHT: i32 = 1000; // Top of atmosphere
-pub const BEDROCK_Y: i32 = -3500; // Bedrock layer starts here
-pub const MAX_UNDERGROUND: i32 = -3500; // Bottom before bedrock
+pub const BEDROCK_Y: i32 = -70000; // Bedrock layer starts here (was -3500)
+pub const MAX_UNDERGROUND: i32 = -70000; // Bottom before bedrock (was -3500)
 
-// Underground layer boundaries
-pub const SHALLOW_UNDERGROUND: i32 = -500; // Common ores, shallow caves
-pub const DEEP_UNDERGROUND: i32 = -1500; // Better ores, larger caves
-pub const CAVERN_LAYER: i32 = -2500; // Rare ores, huge caverns, lava
+// Underground layer boundaries (20× deeper than original)
+pub const SHALLOW_UNDERGROUND: i32 = -10000; // Common ores, shallow caves (was -500)
+pub const DEEP_UNDERGROUND: i32 = -30000; // Better ores, larger caves (was -1500)
+pub const CAVERN_LAYER: i32 = -50000; // Rare ores, huge caverns, lava (was -2500)
 
 /// World generator using multi-octave Perlin noise for biome-based generation
 ///
@@ -549,10 +550,10 @@ mod tests {
         let generator = WorldGenerator::new(42);
 
         // Chunk well below BEDROCK_Y should be all bedrock
-        // chunk y=-60 * 64 = y=-3840 to y=-3777 (all below BEDROCK_Y = -3500)
-        let chunk = generator.generate_chunk(0, -60);
+        // chunk y=-1100 * 64 = y=-70400 to y=-70337 (all below BEDROCK_Y = -70000)
+        let chunk = generator.generate_chunk(0, -1100);
 
-        // All pixels should be bedrock (well below BEDROCK_Y = -3500)
+        // All pixels should be bedrock (well below BEDROCK_Y = -70000)
         for y in 0..CHUNK_SIZE {
             for x in 0..CHUNK_SIZE {
                 let material = chunk.get_material(x, y);

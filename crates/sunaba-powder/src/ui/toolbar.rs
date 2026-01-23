@@ -13,6 +13,29 @@ pub struct MaterialInfo {
     pub color: Color32,
 }
 
+/// Currently active drawing tool
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ActiveTool {
+    #[default]
+    Pen,
+    Eraser,
+    Wind,
+    Drag,
+}
+
+/// Visualization mode for background overlays
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum VisualizationMode {
+    #[default]
+    None,
+    /// Pressure heatmap (Air mode in Powder Game)
+    Pressure,
+    /// Thermography (TG mode)
+    Temperature,
+    /// Light level visualization
+    Light,
+}
+
 /// State for the material toolbar
 pub struct ToolbarState {
     /// Material selected for left mouse button
@@ -25,6 +48,10 @@ pub struct ToolbarState {
     pub sim_speed: f32,
     /// Whether simulation is paused
     pub paused: bool,
+    /// Currently active tool
+    pub active_tool: ActiveTool,
+    /// Visualization mode
+    pub visualization_mode: VisualizationMode,
 }
 
 impl Default for ToolbarState {
@@ -35,6 +62,8 @@ impl Default for ToolbarState {
             brush_size: 3,
             sim_speed: 1.0,
             paused: false,
+            active_tool: ActiveTool::default(),
+            visualization_mode: VisualizationMode::default(),
         }
     }
 }
@@ -95,6 +124,48 @@ impl MaterialToolbar {
                     if ui.button("Step").clicked() && state.paused {
                         // Will be handled by app
                     }
+                });
+
+                ui.separator();
+
+                // Tool selection
+                ui.label("Tool:");
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut state.active_tool, ActiveTool::Pen, "Pen");
+                    ui.selectable_value(&mut state.active_tool, ActiveTool::Eraser, "Eraser");
+                });
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut state.active_tool, ActiveTool::Wind, "Wind");
+                    ui.selectable_value(&mut state.active_tool, ActiveTool::Drag, "Drag");
+                });
+
+                ui.separator();
+
+                // Visualization mode
+                ui.label("Display Mode:");
+                ui.horizontal(|ui| {
+                    ui.selectable_value(
+                        &mut state.visualization_mode,
+                        VisualizationMode::None,
+                        "None",
+                    );
+                    ui.selectable_value(
+                        &mut state.visualization_mode,
+                        VisualizationMode::Pressure,
+                        "Air",
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.selectable_value(
+                        &mut state.visualization_mode,
+                        VisualizationMode::Temperature,
+                        "TG",
+                    );
+                    ui.selectable_value(
+                        &mut state.visualization_mode,
+                        VisualizationMode::Light,
+                        "Light",
+                    );
                 });
 
                 ui.separator();

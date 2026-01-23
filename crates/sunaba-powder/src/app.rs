@@ -17,8 +17,8 @@ use sunaba_core::world::{NoopStats, World};
 
 use crate::config::PowderConfig;
 use crate::render::Renderer;
-use crate::tools::{PenTool, Tool};
-use crate::ui::{MaterialToolbar, PowderStats, ToolbarState, show_hud};
+use crate::tools::{DragTool, EraseTool, PenTool, Tool, WindTool};
+use crate::ui::{ActiveTool, MaterialToolbar, PowderStats, ToolbarState, show_hud};
 
 /// Main application state
 pub struct App {
@@ -41,6 +41,9 @@ pub struct App {
     // Tools
     left_pen: PenTool,
     right_pen: PenTool,
+    eraser: EraseTool,
+    wind_tool: WindTool,
+    drag_tool: DragTool,
 
     // Input state
     mouse_pos: Option<(f32, f32)>,
@@ -96,6 +99,9 @@ impl App {
         // Create tools
         let left_pen = PenTool::new(toolbar_state.left_material);
         let right_pen = PenTool::new(toolbar_state.right_material);
+        let eraser = EraseTool;
+        let wind_tool = WindTool::new();
+        let drag_tool = DragTool::new();
 
         // Setup egui
         let egui_ctx = egui::Context::default();
@@ -127,6 +133,9 @@ impl App {
                 toolbar_state,
                 left_pen,
                 right_pen,
+                eraser,
+                wind_tool,
+                drag_tool,
                 mouse_pos: None,
                 left_pressed: false,
                 right_pressed: false,
@@ -159,25 +168,46 @@ impl App {
             self.fps_update_time = now;
         }
 
-        // Handle drawing
+        // Handle drawing based on active tool
         if let Some((screen_x, screen_y)) = self.mouse_pos {
             let (world_x, world_y) = self.renderer.screen_to_world(screen_x, screen_y);
+            let brush_size = self.toolbar_state.brush_size;
 
-            if self.left_pressed {
-                self.left_pen.apply(
-                    &mut self.world,
-                    world_x,
-                    world_y,
-                    self.toolbar_state.brush_size,
-                );
+            if self.left_pressed || self.right_pressed {
+                match self.toolbar_state.active_tool {
+                    ActiveTool::Pen => {
+                        if self.left_pressed {
+                            self.left_pen
+                                .apply(&mut self.world, world_x, world_y, brush_size);
+                        }
+                        if self.right_pressed {
+                            self.right_pen
+                                .apply(&mut self.world, world_x, world_y, brush_size);
+                        }
+                    }
+                    ActiveTool::Eraser => {
+                        self.eraser
+                            .apply(&mut self.world, world_x, world_y, brush_size);
+                    }
+                    ActiveTool::Wind => {
+                        self.wind_tool
+                            .apply(&mut self.world, world_x, world_y, brush_size);
+                    }
+                    ActiveTool::Drag => {
+                        self.drag_tool
+                            .apply_drag(&mut self.world, world_x, world_y, brush_size);
+                    }
+                }
+            } else {
+                // End drag when mouse released
+                if self.toolbar_state.active_tool == ActiveTool::Drag {
+                    self.drag_tool.end_drag();
+                }
             }
-            if self.right_pressed {
-                self.right_pen.apply(
-                    &mut self.world,
-                    world_x,
-                    world_y,
-                    self.toolbar_state.brush_size,
-                );
+        } else {
+            // End drag when mouse leaves window
+            if self.toolbar_state.active_tool == ActiveTool::Drag {
+                self.drag_tool.end_drag();
             }
         }
 
@@ -202,6 +232,10 @@ impl App {
         self.left_pen.set_material(self.toolbar_state.left_material);
         self.right_pen
             .set_material(self.toolbar_state.right_material);
+
+        // Update visualization mode
+        self.renderer
+            .set_visualization_mode(self.toolbar_state.visualization_mode);
 
         // Update world texture
         self.renderer

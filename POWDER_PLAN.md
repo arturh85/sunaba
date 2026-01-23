@@ -796,8 +796,19 @@ just web-powder  # New justfile command
      - Added `set_active_chunk_radius()` method
      - sunaba-powder sets radius=8 (17×17 chunks) for full 1024px world simulation
      - Fixed issue where only central region was simulated
-   - ⏳ **Phase 6.6**: Add remaining tools (wind, drag, erase)
-   - ⏳ **Phase 6.7**: Add background visualization modes
+   - ✅ **Phase 6.6**: Add remaining tools (wind, drag, erase) (2026-01-17)
+     - Added WindTool: Applies pressure delta in circular brush area
+     - Added DragTool: Moves pixels by dragging with mouse
+     - Added EraseTool: Erases pixels (draws AIR)
+     - Added ActiveTool enum for tool selection (Pen, Eraser, Wind, Drag)
+     - Added tool selection UI in toolbar
+     - Added pressure methods to World (set_pressure_at, add_pressure_at)
+   - ✅ **Phase 6.7**: Add background visualization modes (2026-01-17)
+     - Added VisualizationMode enum (None, Pressure, Temperature, Light)
+     - Added visualization mode selector in toolbar UI
+     - Implemented pressure_to_color(), temperature_to_color(), light_to_color() color functions
+     - Integrated visualization overlay in renderer (blends with material colors)
+     - Pressure mode shows Air (like Powder Game), Temperature mode shows TG (thermography), Light mode shows light levels
 8. ⏳ **Week 7**: Polish, test, document
 
 ---

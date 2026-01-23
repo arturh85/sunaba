@@ -10,6 +10,8 @@ use winit::window::Window;
 use sunaba_core::simulation::Materials;
 use sunaba_core::world::{CHUNK_SIZE, Chunk, World};
 
+use crate::ui::VisualizationMode;
+
 /// Vertex for fullscreen quad
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -93,6 +95,9 @@ pub struct Renderer {
 
     /// World texture size in pixels
     world_texture_size: u32,
+
+    /// Current visualization mode
+    visualization_mode: VisualizationMode,
 }
 
 impl Renderer {
@@ -343,6 +348,7 @@ impl Renderer {
             camera,
             pixel_buffer,
             world_texture_size: world_size,
+            visualization_mode: VisualizationMode::None,
         })
     }
 
@@ -393,6 +399,16 @@ impl Renderer {
     /// Get camera zoom
     pub fn camera_zoom(&self) -> f32 {
         self.camera.zoom
+    }
+
+    /// Set visualization mode
+    pub fn set_visualization_mode(&mut self, mode: VisualizationMode) {
+        self.visualization_mode = mode;
+    }
+
+    /// Get current visualization mode
+    pub fn visualization_mode(&self) -> VisualizationMode {
+        self.visualization_mode
     }
 
     /// Convert screen coordinates to world coordinates
@@ -465,8 +481,11 @@ impl Renderer {
         half_size: i32,
         materials: &Materials,
     ) {
+        use super::visualization::get_visualization_overlay;
+
         let chunk_size = CHUNK_SIZE as i32;
         let world_size = self.world_texture_size as i32;
+        let vis_mode = self.visualization_mode;
 
         for local_y in 0..chunk_size {
             for local_x in 0..chunk_size {
@@ -474,7 +493,33 @@ impl Renderer {
                 let material_id = pixel.material_id;
 
                 // Get material color
-                let color = materials.get(material_id).color;
+                let mut color = materials.get(material_id).color;
+
+                // Apply visualization overlay if active
+                if vis_mode != VisualizationMode::None {
+                    let pressure = chunk.get_pressure_at(local_x as usize, local_y as usize);
+                    let temperature =
+                        chunk.temperature[(local_y as usize / 8) * 8 + (local_x as usize / 8)];
+                    let light_level =
+                        chunk.light_levels[(local_y as usize) * CHUNK_SIZE + (local_x as usize)];
+
+                    if let Some(overlay) = get_visualization_overlay(
+                        vis_mode,
+                        material_id,
+                        pressure,
+                        temperature,
+                        light_level,
+                    ) {
+                        // Blend overlay with material color using alpha
+                        let alpha = overlay[3] as f32 / 255.0;
+                        color[0] =
+                            ((overlay[0] as f32 * alpha) + (color[0] as f32 * (1.0 - alpha))) as u8;
+                        color[1] =
+                            ((overlay[1] as f32 * alpha) + (color[1] as f32 * (1.0 - alpha))) as u8;
+                        color[2] =
+                            ((overlay[2] as f32 * alpha) + (color[2] as f32 * (1.0 - alpha))) as u8;
+                    }
+                }
 
                 // Convert to texture coordinates (centered at half_size)
                 let world_x = chunk_x * chunk_size + local_x;

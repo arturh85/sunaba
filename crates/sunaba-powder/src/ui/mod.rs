@@ -4,4 +4,4 @@ mod hud;
 mod toolbar;
 
 pub use hud::{PowderStats, show_hud};
-pub use toolbar::{MaterialToolbar, ToolbarState};
+pub use toolbar::{ActiveTool, MaterialToolbar, ToolbarState, VisualizationMode};
