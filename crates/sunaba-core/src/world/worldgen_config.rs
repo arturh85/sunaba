@@ -210,6 +210,96 @@ pub struct VegetationParams {
     pub plant_noise_scale: f32,
 }
 
+/// Wire network generation for Circuit Ruins zone
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WireNetworkConfig {
+    /// Enable wire network generation
+    pub enabled: bool,
+    /// Minimum depth for wire networks (Circuit Ruins zone)
+    pub min_depth: i32,
+    /// Maximum depth for wire networks
+    pub max_depth: i32,
+    /// Horizontal wire spacing (default: 200)
+    pub h_spacing: i32,
+    /// Vertical wire spacing (default: 300)
+    pub v_spacing: i32,
+    /// Probability of battery at intersections (0.0-1.0)
+    pub battery_chance: f32,
+    /// Probability of spark near batteries (0.0-1.0)
+    pub spark_chance: f32,
+    /// Noise threshold for horizontal wires
+    pub h_wire_threshold: f32,
+    /// Noise threshold for vertical wires
+    pub v_wire_threshold: f32,
+    /// Noise seed offset
+    pub seed_offset: i32,
+}
+
+/// Thunder zone generation for Thunder Caverns
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThunderZoneConfig {
+    /// Enable thunder zone generation
+    pub enabled: bool,
+    /// Minimum depth for thunder zones
+    pub min_depth: i32,
+    /// Maximum depth for thunder zones
+    pub max_depth: i32,
+    /// Noise threshold for thunder clusters
+    pub thunder_threshold: f32,
+    /// Probability of spark in cave air
+    pub spark_chance: f32,
+    /// Wire lightning rod chance below thunder
+    pub wire_rod_chance: f32,
+    /// Noise seed offset
+    pub seed_offset: i32,
+}
+
+/// Volatile pool generation for Volatile Lakes zone
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VolatilePoolConfig {
+    /// Enable volatile pool generation
+    pub enabled: bool,
+    /// Minimum depth for volatile pools
+    pub min_depth: i32,
+    /// Maximum depth for volatile pools
+    pub max_depth: i32,
+    /// Noise threshold for pool placement
+    pub pool_threshold: f32,
+    /// Probability of nitro vs oil vs water (nitro weight)
+    pub nitro_weight: f32,
+    /// Oil weight
+    pub oil_weight: f32,
+    /// Probability of gunpowder near pool edges
+    pub gunpowder_chance: f32,
+    /// Probability of lava vein near pools (danger!)
+    pub lava_vein_threshold: f32,
+    /// Noise seed offset
+    pub seed_offset: i32,
+}
+
+/// Toxic vent generation for Toxic Depths zone
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToxicVentConfig {
+    /// Enable toxic vent generation
+    pub enabled: bool,
+    /// Minimum depth for toxic vents
+    pub min_depth: i32,
+    /// Maximum depth for toxic vents
+    pub max_depth: i32,
+    /// Noise threshold for poison gas vents
+    pub vent_threshold: f32,
+    /// Maximum height of gas columns
+    pub max_gas_height: i32,
+    /// Noise threshold for virus patches
+    pub virus_threshold: f32,
+    /// Maximum virus patch radius
+    pub max_virus_radius: i32,
+    /// Noise threshold for mercury pools
+    pub mercury_threshold: f32,
+    /// Noise seed offset
+    pub seed_offset: i32,
+}
+
 /// Special feature generation parameters
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FeatureParams {
@@ -219,6 +309,14 @@ pub struct FeatureParams {
     pub stalactites: StalactiteConfig,
     /// Structure generation (bridges, trees, ruins)
     pub structures: StructureConfig,
+    /// Wire network generation for Circuit Ruins zone
+    pub wire_networks: WireNetworkConfig,
+    /// Thunder zone generation for Thunder Caverns
+    pub thunder_zones: ThunderZoneConfig,
+    /// Volatile pool generation for Volatile Lakes zone
+    pub volatile_pools: VolatilePoolConfig,
+    /// Toxic vent generation for Toxic Depths zone
+    pub toxic_vents: ToxicVentConfig,
 }
 
 /// Lava pool generation in deep caverns
@@ -424,7 +522,7 @@ impl Default for WorldParams {
         Self {
             surface_y: 0,
             sky_height: 1000,
-            bedrock_y: -3500,
+            bedrock_y: -70000, // 20× deeper (was -3500) - Noita-scale world depth
             underground_layers: UndergroundLayers::default(),
         }
     }
@@ -433,9 +531,9 @@ impl Default for WorldParams {
 impl Default for UndergroundLayers {
     fn default() -> Self {
         Self {
-            shallow: -500,
-            deep: -1500,
-            cavern: -2500,
+            shallow: -10000, // 20× deeper (was -500)
+            deep: -30000,    // 20× deeper (was -1500)
+            cavern: -50000,  // 20× deeper (was -2500)
         }
     }
 }
@@ -446,13 +544,13 @@ impl Default for TerrainParams {
             height_noise: NoiseLayerConfig {
                 seed_offset: 2,
                 noise_type: NoiseTypeConfig::OpenSimplex2,
-                frequency: 0.001,
+                frequency: 0.0005, // 2× larger hills (was 0.001)
                 fractal_type: FractalTypeConfig::FBm,
                 octaves: 4,
                 lacunarity: 2.0,
                 gain: 0.5,
             },
-            height_scale: 100.0,
+            height_scale: 200.0, // More dramatic terrain (was 100.0)
         }
     }
 }
@@ -463,7 +561,7 @@ impl Default for CaveParams {
             large_caves: NoiseLayerConfig {
                 seed_offset: 3,
                 noise_type: NoiseTypeConfig::OpenSimplex2,
-                frequency: 0.005,
+                frequency: 0.00167, // 3× larger caverns (was 0.005) → ~600px features
                 fractal_type: FractalTypeConfig::FBm,
                 octaves: 3,
                 lacunarity: 2.0,
@@ -472,7 +570,7 @@ impl Default for CaveParams {
             tunnels: NoiseLayerConfig {
                 seed_offset: 4,
                 noise_type: NoiseTypeConfig::OpenSimplex2,
-                frequency: 0.008,
+                frequency: 0.00267, // 3× larger tunnels (was 0.008) → ~375px features
                 fractal_type: FractalTypeConfig::FBm,
                 octaves: 4,
                 lacunarity: 2.0,
@@ -555,7 +653,7 @@ impl Default for LavaPoolConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            min_depth: -2500,
+            min_depth: -50000, // 20× deeper (was -2500)
             threshold: 0.6,
             noise_scale: 0.05,
         }
@@ -566,12 +664,12 @@ impl Default for StalactiteConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            min_depth: -50,
-            spacing: 16,
-            min_length: 3,
-            max_length: 12,
-            base_width: 3,
-            min_air_below: 5,
+            min_depth: -1000,  // Deeper (was -50)
+            spacing: 48,       // 3× larger spacing (was 16)
+            min_length: 9,     // 3× longer (was 3)
+            max_length: 36,    // 3× longer (was 12)
+            base_width: 5,     // Slightly wider (was 3)
+            min_air_below: 15, // 3× more clearance (was 5)
             seed_offset: 100,
             placement_chance: 0.5,
             taper: true,
@@ -583,11 +681,11 @@ impl Default for BridgeConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            spacing: 32,
-            min_gap_width: 16,
-            max_gap_width: 48,
+            spacing: 96,        // 3× larger spacing (was 32)
+            min_gap_width: 48,  // 3× wider gaps (was 16)
+            max_gap_width: 144, // 3× wider gaps (was 48)
             placement_chance: 0.3,
-            min_depth: -100,
+            min_depth: -2000, // Deeper (was -100)
             seed_offset: 200,
         }
     }
@@ -611,11 +709,74 @@ impl Default for RuinConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            spacing: 64,
+            spacing: 192, // 3× larger spacing (was 64)
             placement_chance: 0.1,
-            min_depth: -500,
-            max_depth: -50,
+            min_depth: -10000, // 20× deeper (was -500)
+            max_depth: -1000,  // 20× deeper (was -50)
             seed_offset: 400,
+        }
+    }
+}
+
+impl Default for WireNetworkConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_depth: -15000, // Circuit Ruins zone start
+            max_depth: -22000, // Circuit Ruins zone end
+            h_spacing: 200,
+            v_spacing: 300,
+            battery_chance: 0.05,
+            spark_chance: 0.10,
+            h_wire_threshold: 0.85,
+            v_wire_threshold: 0.88,
+            seed_offset: 500,
+        }
+    }
+}
+
+impl Default for ThunderZoneConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_depth: -45000, // Thunder Caverns zone start
+            max_depth: -52000, // Thunder Caverns zone end
+            thunder_threshold: 0.90,
+            spark_chance: 0.05,
+            wire_rod_chance: 0.3,
+            seed_offset: 600,
+        }
+    }
+}
+
+impl Default for VolatilePoolConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_depth: -30000, // Volatile Lakes zone start
+            max_depth: -38000, // Volatile Lakes zone end
+            pool_threshold: 0.70,
+            nitro_weight: 0.6,
+            oil_weight: 0.3,
+            gunpowder_chance: 0.15,
+            lava_vein_threshold: 0.92,
+            seed_offset: 700,
+        }
+    }
+}
+
+impl Default for ToxicVentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_depth: -58000, // Toxic Depths zone start
+            max_depth: -65000, // Toxic Depths zone end
+            vent_threshold: 0.93,
+            max_gas_height: 30,
+            virus_threshold: 0.95,
+            max_virus_radius: 8,
+            mercury_threshold: 0.85,
+            seed_offset: 800,
         }
     }
 }
@@ -645,6 +806,9 @@ impl Default for NoiseLayerConfig {
 }
 
 /// Create default ore configurations matching current generation
+///
+/// Ore veins are 5× larger than before (noise_scale 0.016 vs 0.08) and
+/// depth ranges are 20× deeper to match the expanded world depth.
 fn default_ore_configs() -> Vec<OreConfig> {
     vec![
         OreConfig {
@@ -659,10 +823,10 @@ fn default_ore_configs() -> Vec<OreConfig> {
                 lacunarity: 2.0,
                 gain: 0.5,
             },
-            threshold: 0.75,
-            min_depth: -500, // SHALLOW_UNDERGROUND
-            max_depth: -50,  // Near surface
-            noise_scale: 0.08,
+            threshold: 0.70,    // Slightly lower for similar density (was 0.75)
+            min_depth: -10000,  // 20× deeper (was -500)
+            max_depth: -1000,   // 20× deeper (was -50)
+            noise_scale: 0.016, // 5× larger veins (was 0.08) → 150-400px
         },
         OreConfig {
             material_id: MaterialId::COPPER_ORE,
@@ -676,10 +840,10 @@ fn default_ore_configs() -> Vec<OreConfig> {
                 lacunarity: 2.0,
                 gain: 0.5,
             },
-            threshold: 0.77,
-            min_depth: -1000,
-            max_depth: -200,
-            noise_scale: 0.08,
+            threshold: 0.72,    // Slightly lower for similar density (was 0.77)
+            min_depth: -20000,  // 20× deeper (was -1000)
+            max_depth: -4000,   // 20× deeper (was -200)
+            noise_scale: 0.016, // 5× larger veins (was 0.08)
         },
         OreConfig {
             material_id: MaterialId::IRON_ORE,
@@ -693,10 +857,10 @@ fn default_ore_configs() -> Vec<OreConfig> {
                 lacunarity: 2.0,
                 gain: 0.5,
             },
-            threshold: 0.76,
-            min_depth: -2000,
-            max_depth: -500,
-            noise_scale: 0.08,
+            threshold: 0.71,    // Slightly lower for similar density (was 0.76)
+            min_depth: -40000,  // 20× deeper (was -2000)
+            max_depth: -10000,  // 20× deeper (was -500)
+            noise_scale: 0.016, // 5× larger veins (was 0.08)
         },
         OreConfig {
             material_id: MaterialId::GOLD_ORE,
@@ -710,10 +874,10 @@ fn default_ore_configs() -> Vec<OreConfig> {
                 lacunarity: 2.0,
                 gain: 0.5,
             },
-            threshold: 0.80,
-            min_depth: -3000,
-            max_depth: -1500,
-            noise_scale: 0.08,
+            threshold: 0.75,    // Slightly lower for similar density (was 0.80)
+            min_depth: -60000,  // 20× deeper (was -3000)
+            max_depth: -30000,  // 20× deeper (was -1500)
+            noise_scale: 0.016, // 5× larger veins (was 0.08)
         },
     ]
 }
@@ -1006,7 +1170,7 @@ mod tests {
         let config = WorldGenConfig::default();
         assert_eq!(config.name, "Default");
         assert_eq!(config.world.surface_y, 0);
-        assert_eq!(config.world.bedrock_y, -3500);
+        assert_eq!(config.world.bedrock_y, -70000); // Noita-scale depth
         assert!(!config.ores.is_empty());
         assert!(!config.biomes.biomes.is_empty());
     }

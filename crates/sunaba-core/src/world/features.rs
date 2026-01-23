@@ -4,10 +4,13 @@
 //! ContextScanner for context-aware placement decisions.
 
 use crate::simulation::MaterialId;
+use crate::world::biome_zones::UndergroundZone;
 use crate::world::chunk::Chunk;
 use crate::world::context_scanner::{ContextScanner, PlacementPredicate};
 use crate::world::generation::WorldGenerator;
-use crate::world::worldgen_config::StalactiteConfig;
+use crate::world::worldgen_config::{
+    StalactiteConfig, ThunderZoneConfig, ToxicVentConfig, VolatilePoolConfig, WireNetworkConfig,
+};
 use fastnoise_lite::{FastNoiseLite, NoiseType};
 
 /// Apply all enabled features to a freshly generated chunk
@@ -57,6 +60,47 @@ pub fn apply_features(chunk: &mut Chunk, chunk_x: i32, chunk_y: i32, generator: 
             generator,
             &config.features.structures.ruins,
             &templates,
+        );
+    }
+
+    // Zone-specific features for ML creatures
+    if config.features.wire_networks.enabled {
+        generate_wire_networks(
+            chunk,
+            chunk_x,
+            chunk_y,
+            generator,
+            &config.features.wire_networks,
+        );
+    }
+
+    if config.features.thunder_zones.enabled {
+        generate_thunder_zones(
+            chunk,
+            chunk_x,
+            chunk_y,
+            generator,
+            &config.features.thunder_zones,
+        );
+    }
+
+    if config.features.volatile_pools.enabled {
+        generate_volatile_pools(
+            chunk,
+            chunk_x,
+            chunk_y,
+            generator,
+            &config.features.volatile_pools,
+        );
+    }
+
+    if config.features.toxic_vents.enabled {
+        generate_toxic_vents(
+            chunk,
+            chunk_x,
+            chunk_y,
+            generator,
+            &config.features.toxic_vents,
         );
     }
 }
@@ -406,6 +450,518 @@ fn generate_ruins(
     }
 }
 
+/// Generate wire networks in Circuit Ruins zone
+fn generate_wire_networks(
+    chunk: &mut Chunk,
+    chunk_x: i32,
+    chunk_y: i32,
+    generator: &WorldGenerator,
+    config: &WireNetworkConfig,
+) {
+    const CHUNK_SIZE: i32 = 64;
+
+    let chunk_world_y = chunk_y * CHUNK_SIZE;
+    let chunk_world_x = chunk_x * CHUNK_SIZE;
+
+    // Skip chunks outside the Circuit Ruins zone
+    if chunk_world_y > config.min_depth || chunk_world_y < config.max_depth {
+        return;
+    }
+
+    // Verify we're in Circuit Ruins zone
+    let zone = generator.zone_registry().get_zone_at(chunk_world_y);
+    if !matches!(
+        zone.map(|z| z.zone_type),
+        Some(UndergroundZone::CircuitRuins)
+    ) {
+        return;
+    }
+
+    let mut wire_noise_h = FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset);
+    wire_noise_h.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    let mut wire_noise_v =
+        FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset + 1);
+    wire_noise_v.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    let mut battery_noise =
+        FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset + 2);
+    battery_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    for local_y in 0..CHUNK_SIZE {
+        for local_x in 0..CHUNK_SIZE {
+            let world_x = chunk_world_x + local_x;
+            let world_y = chunk_world_y + local_y;
+
+            // Only place in solid stone
+            let current = chunk.get_material(local_x as usize, local_y as usize);
+            if current != MaterialId::STONE {
+                continue;
+            }
+
+            // Horizontal wire traces
+            let h_noise = wire_noise_h.get_noise_2d(
+                world_x as f32 * 0.005,
+                world_y as f32 * 0.02, // More variation in Y for horizontal lines
+            ) as f64;
+
+            // Vertical wire traces
+            let v_noise = wire_noise_v.get_noise_2d(
+                world_x as f32 * 0.02, // More variation in X for vertical lines
+                world_y as f32 * 0.005,
+            ) as f64;
+
+            let is_h_wire = h_noise > config.h_wire_threshold as f64;
+            let is_v_wire = v_noise > config.v_wire_threshold as f64;
+
+            if is_h_wire || is_v_wire {
+                // Check for intersection (potential battery placement)
+                if is_h_wire && is_v_wire {
+                    let battery_value = battery_noise
+                        .get_noise_2d(world_x as f32 * 0.1, world_y as f32 * 0.1)
+                        as f64;
+                    if battery_value > (1.0 - config.battery_chance as f64 * 2.0) {
+                        chunk.set_material(local_x as usize, local_y as usize, MaterialId::BATTERY);
+                        continue;
+                    }
+                }
+                chunk.set_material(local_x as usize, local_y as usize, MaterialId::WIRE);
+            }
+        }
+    }
+
+    // Place sparks near batteries in air spaces
+    let scanner = ContextScanner::new(generator);
+    let mut spark_noise =
+        FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset + 3);
+    spark_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    for local_y in 0..CHUNK_SIZE {
+        for local_x in 0..CHUNK_SIZE {
+            let world_x = chunk_world_x + local_x;
+            let world_y = chunk_world_y + local_y;
+
+            // Only place sparks in air
+            let current = chunk.get_material(local_x as usize, local_y as usize);
+            if current != MaterialId::AIR {
+                continue;
+            }
+
+            // Check if near a battery (scan 16px radius)
+            let near_battery = (-8..=8).any(|dy| {
+                (-8..=8).any(|dx| {
+                    let check_x = local_x + dx;
+                    let check_y = local_y + dy;
+                    if (0..CHUNK_SIZE).contains(&check_x) && (0..CHUNK_SIZE).contains(&check_y) {
+                        chunk.get_material(check_x as usize, check_y as usize)
+                            == MaterialId::BATTERY
+                    } else {
+                        // Out of chunk - check via scanner
+                        scanner.get_material(world_x + dx, world_y + dy) == MaterialId::BATTERY
+                    }
+                })
+            });
+
+            if near_battery {
+                let spark_value =
+                    spark_noise.get_noise_2d(world_x as f32 * 0.2, world_y as f32 * 0.2) as f64;
+                if spark_value > (1.0 - config.spark_chance as f64) {
+                    chunk.set_material(local_x as usize, local_y as usize, MaterialId::SPARK);
+                }
+            }
+        }
+    }
+}
+
+/// Generate thunder zones in Thunder Caverns
+fn generate_thunder_zones(
+    chunk: &mut Chunk,
+    chunk_x: i32,
+    chunk_y: i32,
+    generator: &WorldGenerator,
+    config: &ThunderZoneConfig,
+) {
+    const CHUNK_SIZE: i32 = 64;
+
+    let chunk_world_y = chunk_y * CHUNK_SIZE;
+    let chunk_world_x = chunk_x * CHUNK_SIZE;
+
+    // Skip chunks outside the Thunder Caverns zone
+    if chunk_world_y > config.min_depth || chunk_world_y < config.max_depth {
+        return;
+    }
+
+    // Verify we're in Thunder Caverns zone
+    let zone = generator.zone_registry().get_zone_at(chunk_world_y);
+    if !matches!(
+        zone.map(|z| z.zone_type),
+        Some(UndergroundZone::ThunderCaverns)
+    ) {
+        return;
+    }
+
+    let scanner = ContextScanner::new(generator);
+
+    let mut thunder_noise = FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset);
+    thunder_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    let mut spark_noise =
+        FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset + 1);
+    spark_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    // Pass 1: Place thunder clusters at cave ceilings
+    for local_y in 0..CHUNK_SIZE {
+        for local_x in 0..CHUNK_SIZE {
+            let world_x = chunk_world_x + local_x;
+            let world_y = chunk_world_y + local_y;
+
+            let current = chunk.get_material(local_x as usize, local_y as usize);
+
+            // Place thunder in basalt near cave ceilings
+            if current == MaterialId::BASALT {
+                // Check if this is a ceiling (air below)
+                let below_y = local_y - 1;
+                let is_ceiling = if below_y >= 0 {
+                    chunk.get_material(local_x as usize, below_y as usize) == MaterialId::AIR
+                } else {
+                    scanner.get_material(world_x, world_y - 1) == MaterialId::AIR
+                };
+
+                if is_ceiling {
+                    let thunder_value = thunder_noise
+                        .get_noise_2d(world_x as f32 * 0.02, world_y as f32 * 0.02)
+                        as f64;
+                    if thunder_value > config.thunder_threshold as f64 {
+                        chunk.set_material(local_x as usize, local_y as usize, MaterialId::THUNDER);
+                    }
+                }
+            }
+
+            // Place sparks in cave air
+            if current == MaterialId::AIR {
+                let spark_value =
+                    spark_noise.get_noise_2d(world_x as f32 * 0.05, world_y as f32 * 0.05) as f64;
+                if spark_value > (1.0 - config.spark_chance as f64) {
+                    chunk.set_material(local_x as usize, local_y as usize, MaterialId::SPARK);
+                }
+            }
+        }
+    }
+
+    // Pass 2: Place wire lightning rods below thunder
+    let mut rod_noise = FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset + 2);
+    rod_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    for local_x in 0..CHUNK_SIZE {
+        for local_y in (0..CHUNK_SIZE).rev() {
+            // Start from top
+            let world_x = chunk_world_x + local_x;
+            let world_y = chunk_world_y + local_y;
+
+            // Check if there's thunder above
+            let above_y = local_y + 1;
+            let has_thunder_above = if above_y < CHUNK_SIZE {
+                chunk.get_material(local_x as usize, above_y as usize) == MaterialId::THUNDER
+            } else {
+                scanner.get_material(world_x, world_y + 1) == MaterialId::THUNDER
+            };
+
+            if has_thunder_above {
+                let current = chunk.get_material(local_x as usize, local_y as usize);
+                if current == MaterialId::AIR {
+                    let rod_value =
+                        rod_noise.get_noise_2d(world_x as f32 * 0.1, world_y as f32 * 0.1) as f64;
+                    if rod_value > (1.0 - config.wire_rod_chance as f64) {
+                        chunk.set_material(local_x as usize, local_y as usize, MaterialId::WIRE);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Generate volatile pools in Volatile Lakes zone
+fn generate_volatile_pools(
+    chunk: &mut Chunk,
+    chunk_x: i32,
+    chunk_y: i32,
+    generator: &WorldGenerator,
+    config: &VolatilePoolConfig,
+) {
+    const CHUNK_SIZE: i32 = 64;
+
+    let chunk_world_y = chunk_y * CHUNK_SIZE;
+    let chunk_world_x = chunk_x * CHUNK_SIZE;
+
+    // Skip chunks outside the Volatile Lakes zone
+    if chunk_world_y > config.min_depth || chunk_world_y < config.max_depth {
+        return;
+    }
+
+    // Verify we're in Volatile Lakes zone
+    let zone = generator.zone_registry().get_zone_at(chunk_world_y);
+    if !matches!(
+        zone.map(|z| z.zone_type),
+        Some(UndergroundZone::VolatileLakes)
+    ) {
+        return;
+    }
+
+    let scanner = ContextScanner::new(generator);
+
+    let mut pool_noise = FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset);
+    pool_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    let mut material_noise =
+        FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset + 1);
+    material_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    let mut gunpowder_noise =
+        FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset + 2);
+    gunpowder_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    let mut lava_noise = FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset + 3);
+    lava_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    for local_y in 0..CHUNK_SIZE {
+        for local_x in 0..CHUNK_SIZE {
+            let world_x = chunk_world_x + local_x;
+            let world_y = chunk_world_y + local_y;
+
+            let current = chunk.get_material(local_x as usize, local_y as usize);
+
+            // Place pools in cave floor air
+            if current == MaterialId::AIR {
+                // Check if this is on the floor (solid below)
+                let below_y = local_y - 1;
+                let is_floor = if below_y >= 0 {
+                    let below_mat = chunk.get_material(local_x as usize, below_y as usize);
+                    below_mat != MaterialId::AIR && below_mat != MaterialId::WATER
+                } else {
+                    let below_mat = scanner.get_material(world_x, world_y - 1);
+                    below_mat != MaterialId::AIR && below_mat != MaterialId::WATER
+                };
+
+                if is_floor {
+                    let pool_value = pool_noise
+                        .get_noise_2d(world_x as f32 * 0.008, world_y as f32 * 0.008)
+                        as f64;
+
+                    if pool_value > config.pool_threshold as f64 {
+                        // Select pool material
+                        let mat_value = material_noise
+                            .get_noise_2d(world_x as f32 * 0.05, world_y as f32 * 0.05)
+                            as f64;
+                        let mat_normalized = (mat_value + 1.0) / 2.0; // 0.0 to 1.0
+
+                        let total_weight = config.nitro_weight + config.oil_weight + 0.1; // 0.1 for water
+                        let nitro_threshold = config.nitro_weight / total_weight;
+                        let oil_threshold =
+                            (config.nitro_weight + config.oil_weight) / total_weight;
+
+                        let pool_mat = if mat_normalized < nitro_threshold as f64 {
+                            MaterialId::NITRO
+                        } else if mat_normalized < oil_threshold as f64 {
+                            MaterialId::OIL
+                        } else {
+                            MaterialId::WATER
+                        };
+
+                        chunk.set_material(local_x as usize, local_y as usize, pool_mat);
+                    }
+                }
+            }
+
+            // Place gunpowder near pool edges (in stone)
+            if current == MaterialId::STONE {
+                // Check if near a pool
+                let near_pool = (-3..=3).any(|dy| {
+                    (-3..=3).any(|dx| {
+                        if dx == 0 && dy == 0 {
+                            return false;
+                        }
+                        let check_x = local_x + dx;
+                        let check_y = local_y + dy;
+                        if (0..CHUNK_SIZE).contains(&check_x) && (0..CHUNK_SIZE).contains(&check_y)
+                        {
+                            let mat = chunk.get_material(check_x as usize, check_y as usize);
+                            mat == MaterialId::NITRO || mat == MaterialId::OIL
+                        } else {
+                            false
+                        }
+                    })
+                });
+
+                if near_pool {
+                    let gp_value = gunpowder_noise
+                        .get_noise_2d(world_x as f32 * 0.1, world_y as f32 * 0.1)
+                        as f64;
+                    if gp_value > (1.0 - config.gunpowder_chance as f64) {
+                        chunk.set_material(
+                            local_x as usize,
+                            local_y as usize,
+                            MaterialId::GUNPOWDER,
+                        );
+                    }
+                }
+            }
+
+            // Place lava veins (dangerous ignition source!)
+            if current == MaterialId::STONE {
+                let lava_value =
+                    lava_noise.get_noise_2d(world_x as f32 * 0.015, world_y as f32 * 0.015) as f64;
+                if lava_value > config.lava_vein_threshold as f64 {
+                    chunk.set_material(local_x as usize, local_y as usize, MaterialId::LAVA);
+                }
+            }
+        }
+    }
+}
+
+/// Generate toxic vents in Toxic Depths zone
+fn generate_toxic_vents(
+    chunk: &mut Chunk,
+    chunk_x: i32,
+    chunk_y: i32,
+    generator: &WorldGenerator,
+    config: &ToxicVentConfig,
+) {
+    const CHUNK_SIZE: i32 = 64;
+
+    let chunk_world_y = chunk_y * CHUNK_SIZE;
+    let chunk_world_x = chunk_x * CHUNK_SIZE;
+
+    // Skip chunks outside the Toxic Depths zone
+    if chunk_world_y > config.min_depth || chunk_world_y < config.max_depth {
+        return;
+    }
+
+    // Verify we're in Toxic Depths zone
+    let zone = generator.zone_registry().get_zone_at(chunk_world_y);
+    if !matches!(
+        zone.map(|z| z.zone_type),
+        Some(UndergroundZone::ToxicDepths)
+    ) {
+        return;
+    }
+
+    let scanner = ContextScanner::new(generator);
+
+    let mut vent_noise = FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset);
+    vent_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    let mut virus_noise =
+        FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset + 1);
+    virus_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    let mut mercury_noise =
+        FastNoiseLite::with_seed((generator.seed as i32) + config.seed_offset + 2);
+    mercury_noise.set_noise_type(Some(NoiseType::OpenSimplex2));
+
+    // Pass 1: Find vent locations and place gas columns
+    for local_x in 0..CHUNK_SIZE {
+        // Check for vent at this X position
+        let world_x = chunk_world_x + local_x;
+        let vent_value = vent_noise.get_noise_2d(world_x as f32 * 0.02, 0.0) as f64; // X-based only for consistent columns
+
+        if vent_value > config.vent_threshold as f64 {
+            // Find the floor level for this column
+            for local_y in 0..CHUNK_SIZE {
+                let world_y = chunk_world_y + local_y;
+
+                let current = chunk.get_material(local_x as usize, local_y as usize);
+                if current != MaterialId::AIR {
+                    continue;
+                }
+
+                // Check if this is floor level
+                let below_y = local_y - 1;
+                let is_floor = if below_y >= 0 {
+                    chunk.get_material(local_x as usize, below_y as usize) != MaterialId::AIR
+                } else {
+                    scanner.get_material(world_x, world_y - 1) != MaterialId::AIR
+                };
+
+                if is_floor {
+                    // Place gas column rising from this point
+                    let gas_height = (config.max_gas_height as f32
+                        * ((vent_value - config.vent_threshold as f64) * 3.0 + 0.5) as f32)
+                        .min(config.max_gas_height as f32)
+                        as i32;
+
+                    for dy in 0..gas_height {
+                        let gas_y = local_y + dy;
+                        if gas_y >= CHUNK_SIZE {
+                            break;
+                        }
+                        if chunk.get_material(local_x as usize, gas_y as usize) == MaterialId::AIR {
+                            chunk.set_material(
+                                local_x as usize,
+                                gas_y as usize,
+                                MaterialId::POISON_GAS,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Pass 2: Virus patches on walls
+    for local_y in 0..CHUNK_SIZE {
+        for local_x in 0..CHUNK_SIZE {
+            let world_x = chunk_world_x + local_x;
+            let world_y = chunk_world_y + local_y;
+
+            let current = chunk.get_material(local_x as usize, local_y as usize);
+
+            // Place virus on basalt walls (adjacent to air)
+            if current == MaterialId::BASALT {
+                let has_adjacent_air =
+                    [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().any(|&(dx, dy)| {
+                        let check_x = local_x + dx;
+                        let check_y = local_y + dy;
+                        if (0..CHUNK_SIZE).contains(&check_x) && (0..CHUNK_SIZE).contains(&check_y)
+                        {
+                            chunk.get_material(check_x as usize, check_y as usize)
+                                == MaterialId::AIR
+                        } else {
+                            scanner.get_material(world_x + dx, world_y + dy) == MaterialId::AIR
+                        }
+                    });
+
+                if has_adjacent_air {
+                    let virus_value = virus_noise
+                        .get_noise_2d(world_x as f32 * 0.03, world_y as f32 * 0.03)
+                        as f64;
+                    if virus_value > config.virus_threshold as f64 {
+                        chunk.set_material(local_x as usize, local_y as usize, MaterialId::VIRUS);
+                    }
+                }
+            }
+
+            // Place mercury pools at low points
+            if current == MaterialId::AIR {
+                let below_y = local_y - 1;
+                let is_floor = if below_y >= 0 {
+                    chunk.get_material(local_x as usize, below_y as usize) != MaterialId::AIR
+                } else {
+                    scanner.get_material(world_x, world_y - 1) != MaterialId::AIR
+                };
+
+                if is_floor {
+                    let mercury_value = mercury_noise
+                        .get_noise_2d(world_x as f32 * 0.01, world_y as f32 * 0.01)
+                        as f64;
+                    if mercury_value > config.mercury_threshold as f64 {
+                        chunk.set_material(local_x as usize, local_y as usize, MaterialId::MERCURY);
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,11 +972,12 @@ mod tests {
     fn test_stalactite_config_default() {
         let config = StalactiteConfig::default();
         assert!(config.enabled);
-        assert_eq!(config.min_length, 3);
-        assert_eq!(config.max_length, 12);
-        assert_eq!(config.spacing, 16);
-        assert_eq!(config.base_width, 3);
-        assert_eq!(config.min_air_below, 5);
+        // Scaled 3× for larger world (was 3, 12, 16, 3, 5)
+        assert_eq!(config.min_length, 9);
+        assert_eq!(config.max_length, 36);
+        assert_eq!(config.spacing, 48);
+        assert_eq!(config.base_width, 5);
+        assert_eq!(config.min_air_below, 15);
         assert_eq!(config.placement_chance, 0.5);
         assert!(config.taper);
     }
@@ -498,6 +1055,146 @@ mod tests {
         for y in 0..64 {
             for x in 0..64 {
                 assert_eq!(chunk.get_material(x, y), MaterialId::STONE);
+            }
+        }
+    }
+
+    #[test]
+    fn test_zone_feature_configs_default() {
+        // Verify all new zone configs have sensible defaults
+        let wire_config = WireNetworkConfig::default();
+        assert!(wire_config.enabled);
+        assert_eq!(wire_config.min_depth, -15000);
+        assert_eq!(wire_config.max_depth, -22000);
+
+        let thunder_config = ThunderZoneConfig::default();
+        assert!(thunder_config.enabled);
+        assert_eq!(thunder_config.min_depth, -45000);
+        assert_eq!(thunder_config.max_depth, -52000);
+
+        let volatile_config = VolatilePoolConfig::default();
+        assert!(volatile_config.enabled);
+        assert_eq!(volatile_config.min_depth, -30000);
+        assert_eq!(volatile_config.max_depth, -38000);
+
+        let toxic_config = ToxicVentConfig::default();
+        assert!(toxic_config.enabled);
+        assert_eq!(toxic_config.min_depth, -58000);
+        assert_eq!(toxic_config.max_depth, -65000);
+    }
+
+    #[test]
+    fn test_circuit_ruins_zone_generation() {
+        let generator = WorldGenerator::new(42);
+
+        // Generate chunk in Circuit Ruins zone (-15000 to -22000)
+        // chunk_y = -280 means world_y = -280 * 64 = -17920 (in zone)
+        let chunk = generator.generate_chunk(0, -280);
+
+        // Check zone is correctly identified
+        let zone = generator.zone_registry().get_zone_at(-17920);
+        assert!(zone.is_some());
+        assert_eq!(
+            zone.unwrap().zone_type,
+            crate::world::biome_zones::UndergroundZone::CircuitRuins
+        );
+
+        // Verify determinism (wire/battery/spark counts may vary based on terrain)
+        let chunk2 = generator.generate_chunk(0, -280);
+        for y in 0..64 {
+            for x in 0..64 {
+                assert_eq!(
+                    chunk.get_material(x, y),
+                    chunk2.get_material(x, y),
+                    "Circuit ruins generation should be deterministic"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_volatile_lakes_zone_generation() {
+        let generator = WorldGenerator::new(42);
+
+        // Generate chunk in Volatile Lakes zone (-30000 to -38000)
+        // chunk_y = -530 means world_y = -530 * 64 = -33920 (in zone)
+        let chunk = generator.generate_chunk(0, -530);
+
+        // Check zone is correctly identified
+        let zone = generator.zone_registry().get_zone_at(-33920);
+        assert!(zone.is_some());
+        assert_eq!(
+            zone.unwrap().zone_type,
+            crate::world::biome_zones::UndergroundZone::VolatileLakes
+        );
+
+        // Verify determinism
+        let chunk2 = generator.generate_chunk(0, -530);
+        for y in 0..64 {
+            for x in 0..64 {
+                assert_eq!(
+                    chunk.get_material(x, y),
+                    chunk2.get_material(x, y),
+                    "Volatile lakes generation should be deterministic"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_thunder_caverns_zone_generation() {
+        let generator = WorldGenerator::new(42);
+
+        // Generate chunk in Thunder Caverns zone (-45000 to -52000)
+        // chunk_y = -750 means world_y = -750 * 64 = -48000 (in zone)
+        let chunk = generator.generate_chunk(0, -750);
+
+        // Check zone is correctly identified
+        let zone = generator.zone_registry().get_zone_at(-48000);
+        assert!(zone.is_some());
+        assert_eq!(
+            zone.unwrap().zone_type,
+            crate::world::biome_zones::UndergroundZone::ThunderCaverns
+        );
+
+        // Verify determinism
+        let chunk2 = generator.generate_chunk(0, -750);
+        for y in 0..64 {
+            for x in 0..64 {
+                assert_eq!(
+                    chunk.get_material(x, y),
+                    chunk2.get_material(x, y),
+                    "Thunder caverns generation should be deterministic"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_toxic_depths_zone_generation() {
+        let generator = WorldGenerator::new(42);
+
+        // Generate chunk in Toxic Depths zone (-58000 to -65000)
+        // chunk_y = -970 means world_y = -970 * 64 = -62080 (in zone)
+        let chunk = generator.generate_chunk(0, -970);
+
+        // Check zone is correctly identified
+        let zone = generator.zone_registry().get_zone_at(-62080);
+        assert!(zone.is_some());
+        assert_eq!(
+            zone.unwrap().zone_type,
+            crate::world::biome_zones::UndergroundZone::ToxicDepths
+        );
+
+        // Verify determinism
+        let chunk2 = generator.generate_chunk(0, -970);
+        for y in 0..64 {
+            for x in 0..64 {
+                assert_eq!(
+                    chunk.get_material(x, y),
+                    chunk2.get_material(x, y),
+                    "Toxic depths generation should be deterministic"
+                );
             }
         }
     }

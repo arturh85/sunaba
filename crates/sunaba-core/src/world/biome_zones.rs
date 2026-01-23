@@ -3,25 +3,40 @@
 //! Provides depth-based underground zones with distinct themed content:
 //! - Shallow Caves: Basic stone caves near the surface
 //! - Mushroom Grotto: Bioluminescent fungal caves
+//! - Circuit Ruins: Ancient wire networks with batteries and sparks
 //! - Crystal Caves: Crystalline formations with rare ores
+//! - Volatile Lakes: Explosive nitro/oil pools near lava veins
 //! - Lava Caverns: Volcanic zone with obsidian and lava pools
+//! - Thunder Caverns: Lightning-charged caves with thunder and sparks
+//! - Toxic Depths: Poison gas vents and viral corruption
 //! - Abyss: Deep zone near bedrock with dense ore veins
 
 use crate::simulation::MaterialId;
 use serde::{Deserialize, Serialize};
 
 /// Underground zone types, ordered by increasing depth
+/// NOTE: Depths are 20× deeper than original to create Noita-scale world
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UndergroundZone {
-    /// Surface to -500: Basic stone caves
+    /// Surface to -10000: Basic stone caves
     ShallowCaves,
-    /// -500 to -1200: Bioluminescent mushroom caves
+    /// -10000 to -15000: Bioluminescent mushroom caves (upper)
     MushroomGrotto,
-    /// -1200 to -2000: Crystal formations
+    /// -15000 to -22000: Ancient wire networks with batteries and sparks
+    CircuitRuins,
+    /// -22000 to -30000: Crystal formations
     CrystalCaves,
-    /// -2000 to -2800: Volcanic caves with lava
+    /// -30000 to -38000: Explosive nitro/oil pools near lava veins
+    VolatileLakes,
+    /// -38000 to -45000: Volcanic caves with lava (upper)
     LavaCaverns,
-    /// -2800 to bedrock: Deep ore-rich zone
+    /// -45000 to -52000: Lightning-charged caves with thunder
+    ThunderCaverns,
+    /// -52000 to -58000: Volcanic caves with lava (lower)
+    LavaCavernsDeep,
+    /// -58000 to -65000: Poison gas vents and viral corruption
+    ToxicDepths,
+    /// -65000 to bedrock (-70000): Deep ore-rich zone
     Abyss,
 }
 
@@ -31,8 +46,13 @@ impl UndergroundZone {
         &[
             UndergroundZone::ShallowCaves,
             UndergroundZone::MushroomGrotto,
+            UndergroundZone::CircuitRuins,
             UndergroundZone::CrystalCaves,
+            UndergroundZone::VolatileLakes,
             UndergroundZone::LavaCaverns,
+            UndergroundZone::ThunderCaverns,
+            UndergroundZone::LavaCavernsDeep,
+            UndergroundZone::ToxicDepths,
             UndergroundZone::Abyss,
         ]
     }
@@ -42,8 +62,13 @@ impl UndergroundZone {
         match self {
             UndergroundZone::ShallowCaves => "Shallow Caves",
             UndergroundZone::MushroomGrotto => "Mushroom Grotto",
+            UndergroundZone::CircuitRuins => "Circuit Ruins",
             UndergroundZone::CrystalCaves => "Crystal Caves",
+            UndergroundZone::VolatileLakes => "Volatile Lakes",
             UndergroundZone::LavaCaverns => "Lava Caverns",
+            UndergroundZone::ThunderCaverns => "Thunder Caverns",
+            UndergroundZone::LavaCavernsDeep => "Lava Caverns Deep",
+            UndergroundZone::ToxicDepths => "Toxic Depths",
             UndergroundZone::Abyss => "Abyss",
         }
     }
@@ -88,12 +113,13 @@ pub struct ZoneDefinition {
 
 impl ZoneDefinition {
     /// Create default Shallow Caves zone
+    /// NOTE: Depths are 20× deeper than original to create Noita-scale world
     pub fn shallow_caves() -> Self {
         Self {
             name: "Shallow Caves".to_string(),
             zone_type: UndergroundZone::ShallowCaves,
             min_y: 0,
-            max_y: -500,
+            max_y: -10000,
             primary_stone: MaterialId::STONE,
             cave_wall_material: MaterialId::STONE,
             feature_material: None,
@@ -104,13 +130,13 @@ impl ZoneDefinition {
         }
     }
 
-    /// Create default Mushroom Grotto zone
+    /// Create default Mushroom Grotto zone (upper portion)
     pub fn mushroom_grotto() -> Self {
         Self {
             name: "Mushroom Grotto".to_string(),
             zone_type: UndergroundZone::MushroomGrotto,
-            min_y: -500,
-            max_y: -1200,
+            min_y: -10000,
+            max_y: -15000,
             primary_stone: MaterialId::MOSSY_STONE,
             cave_wall_material: MaterialId::MOSSY_STONE,
             feature_material: Some(MaterialId::GLOWING_MUSHROOM),
@@ -121,13 +147,30 @@ impl ZoneDefinition {
         }
     }
 
+    /// Create Circuit Ruins zone - ancient wire networks with batteries
+    pub fn circuit_ruins() -> Self {
+        Self {
+            name: "Circuit Ruins".to_string(),
+            zone_type: UndergroundZone::CircuitRuins,
+            min_y: -15000,
+            max_y: -22000,
+            primary_stone: MaterialId::STONE,
+            cave_wall_material: MaterialId::STONE,
+            feature_material: Some(MaterialId::WIRE),
+            feature_density: 0.12, // Wire traces
+            ambient_light: 15,     // Faint spark glow
+            cave_size_multiplier: 1.0,
+            ore_multiplier: 0.9,
+        }
+    }
+
     /// Create default Crystal Caves zone
     pub fn crystal_caves() -> Self {
         Self {
             name: "Crystal Caves".to_string(),
             zone_type: UndergroundZone::CrystalCaves,
-            min_y: -1200,
-            max_y: -2000,
+            min_y: -22000,
+            max_y: -30000,
             primary_stone: MaterialId::STONE,
             cave_wall_material: MaterialId::STONE,
             feature_material: Some(MaterialId::CRYSTAL),
@@ -138,13 +181,30 @@ impl ZoneDefinition {
         }
     }
 
-    /// Create default Lava Caverns zone
+    /// Create Volatile Lakes zone - explosive pools
+    pub fn volatile_lakes() -> Self {
+        Self {
+            name: "Volatile Lakes".to_string(),
+            zone_type: UndergroundZone::VolatileLakes,
+            min_y: -30000,
+            max_y: -38000,
+            primary_stone: MaterialId::STONE,
+            cave_wall_material: MaterialId::STONE,
+            feature_material: Some(MaterialId::NITRO),
+            feature_density: 0.08, // Explosive pool density
+            ambient_light: 10,
+            cave_size_multiplier: 1.3, // Larger caves for pools
+            ore_multiplier: 1.0,
+        }
+    }
+
+    /// Create default Lava Caverns zone (upper portion)
     pub fn lava_caverns() -> Self {
         Self {
             name: "Lava Caverns".to_string(),
             zone_type: UndergroundZone::LavaCaverns,
-            min_y: -2000,
-            max_y: -2800,
+            min_y: -38000,
+            max_y: -45000,
             primary_stone: MaterialId::BASALT,
             cave_wall_material: MaterialId::BASALT,
             feature_material: Some(MaterialId::OBSIDIAN),
@@ -155,13 +215,64 @@ impl ZoneDefinition {
         }
     }
 
+    /// Create Thunder Caverns zone - lightning and destruction
+    pub fn thunder_caverns() -> Self {
+        Self {
+            name: "Thunder Caverns".to_string(),
+            zone_type: UndergroundZone::ThunderCaverns,
+            min_y: -45000,
+            max_y: -52000,
+            primary_stone: MaterialId::BASALT,
+            cave_wall_material: MaterialId::BASALT,
+            feature_material: Some(MaterialId::THUNDER),
+            feature_density: 0.05, // Thunder clusters
+            ambient_light: 50,     // Bright lightning flashes
+            cave_size_multiplier: 1.5,
+            ore_multiplier: 1.2,
+        }
+    }
+
+    /// Create Lava Caverns Deep zone (lower portion)
+    pub fn lava_caverns_deep() -> Self {
+        Self {
+            name: "Lava Caverns Deep".to_string(),
+            zone_type: UndergroundZone::LavaCavernsDeep,
+            min_y: -52000,
+            max_y: -58000,
+            primary_stone: MaterialId::BASALT,
+            cave_wall_material: MaterialId::BASALT,
+            feature_material: Some(MaterialId::OBSIDIAN),
+            feature_density: 0.10,
+            ambient_light: 50, // More lava glow
+            cave_size_multiplier: 1.3,
+            ore_multiplier: 1.6,
+        }
+    }
+
+    /// Create Toxic Depths zone - poison gas and virus
+    pub fn toxic_depths() -> Self {
+        Self {
+            name: "Toxic Depths".to_string(),
+            zone_type: UndergroundZone::ToxicDepths,
+            min_y: -58000,
+            max_y: -65000,
+            primary_stone: MaterialId::BASALT,
+            cave_wall_material: MaterialId::BASALT,
+            feature_material: Some(MaterialId::POISON_GAS),
+            feature_density: 0.06, // Poison vent density
+            ambient_light: 5,      // Very dark with toxic glow
+            cave_size_multiplier: 0.8,
+            ore_multiplier: 1.8,
+        }
+    }
+
     /// Create default Abyss zone
     pub fn abyss() -> Self {
         Self {
             name: "Abyss".to_string(),
             zone_type: UndergroundZone::Abyss,
-            min_y: -2800,
-            max_y: -4000, // Near bedrock
+            min_y: -65000,
+            max_y: -70000, // Near bedrock
             primary_stone: MaterialId::BASALT,
             cave_wall_material: MaterialId::BASALT,
             feature_material: None,
@@ -212,8 +323,13 @@ impl BiomeZoneRegistry {
             zones: vec![
                 ZoneDefinition::shallow_caves(),
                 ZoneDefinition::mushroom_grotto(),
+                ZoneDefinition::circuit_ruins(),
                 ZoneDefinition::crystal_caves(),
+                ZoneDefinition::volatile_lakes(),
                 ZoneDefinition::lava_caverns(),
+                ZoneDefinition::thunder_caverns(),
+                ZoneDefinition::lava_caverns_deep(),
+                ZoneDefinition::toxic_depths(),
                 ZoneDefinition::abyss(),
             ],
             enabled: true,
@@ -405,36 +521,37 @@ mod tests {
     #[test]
     fn test_underground_zone_all() {
         let zones = UndergroundZone::all();
-        assert_eq!(zones.len(), 5);
+        assert_eq!(zones.len(), 10);
         assert_eq!(zones[0], UndergroundZone::ShallowCaves);
-        assert_eq!(zones[4], UndergroundZone::Abyss);
+        assert_eq!(zones[9], UndergroundZone::Abyss);
     }
 
     #[test]
     fn test_zone_definition_contains_y() {
         let zone = ZoneDefinition::mushroom_grotto();
+        // min_y = -10000, max_y = -15000
         assert!(!zone.contains_y(0)); // Too shallow
-        assert!(zone.contains_y(-500)); // At boundary (inclusive top)
-        assert!(zone.contains_y(-800)); // In middle
-        assert!(!zone.contains_y(-1200)); // At bottom (exclusive)
-        assert!(!zone.contains_y(-1500)); // Too deep
+        assert!(zone.contains_y(-10000)); // At boundary (inclusive top)
+        assert!(zone.contains_y(-12000)); // In middle
+        assert!(!zone.contains_y(-15000)); // At bottom (exclusive)
+        assert!(!zone.contains_y(-20000)); // Too deep
     }
 
     #[test]
     fn test_zone_depth_factor() {
         let zone = ZoneDefinition::mushroom_grotto();
-        // min_y = -500, max_y = -1200, range = 700
+        // min_y = -10000, max_y = -15000, range = 5000
 
         // At top of zone
-        let factor_top = zone.depth_factor(-500);
+        let factor_top = zone.depth_factor(-10000);
         assert!((factor_top - 0.0).abs() < 0.01);
 
-        // At middle of zone (-850)
-        let factor_mid = zone.depth_factor(-850);
+        // At middle of zone (-12500)
+        let factor_mid = zone.depth_factor(-12500);
         assert!((factor_mid - 0.5).abs() < 0.01);
 
         // Near bottom
-        let factor_bottom = zone.depth_factor(-1199);
+        let factor_bottom = zone.depth_factor(-14999);
         assert!(factor_bottom > 0.9);
     }
 
@@ -443,35 +560,60 @@ mod tests {
         let registry = BiomeZoneRegistry::new();
         assert!(registry.is_enabled());
         assert!(!registry.has_surface_influence());
-        assert_eq!(registry.zones().len(), 5);
+        assert_eq!(registry.zones().len(), 10);
     }
 
     #[test]
     fn test_get_zone_at() {
         let registry = BiomeZoneRegistry::new();
 
-        // Shallow caves
-        let zone = registry.get_zone_at(-100);
+        // Shallow caves (0 to -10000)
+        let zone = registry.get_zone_at(-2000);
         assert!(zone.is_some());
         assert_eq!(zone.unwrap().zone_type, UndergroundZone::ShallowCaves);
 
-        // Mushroom grotto
-        let zone = registry.get_zone_at(-800);
+        // Mushroom grotto (-10000 to -15000)
+        let zone = registry.get_zone_at(-12000);
         assert!(zone.is_some());
         assert_eq!(zone.unwrap().zone_type, UndergroundZone::MushroomGrotto);
 
-        // Crystal caves
-        let zone = registry.get_zone_at(-1500);
+        // Circuit ruins (-15000 to -22000)
+        let zone = registry.get_zone_at(-18000);
+        assert!(zone.is_some());
+        assert_eq!(zone.unwrap().zone_type, UndergroundZone::CircuitRuins);
+
+        // Crystal caves (-22000 to -30000)
+        let zone = registry.get_zone_at(-26000);
         assert!(zone.is_some());
         assert_eq!(zone.unwrap().zone_type, UndergroundZone::CrystalCaves);
 
-        // Lava caverns
-        let zone = registry.get_zone_at(-2500);
+        // Volatile lakes (-30000 to -38000)
+        let zone = registry.get_zone_at(-34000);
+        assert!(zone.is_some());
+        assert_eq!(zone.unwrap().zone_type, UndergroundZone::VolatileLakes);
+
+        // Lava caverns (-38000 to -45000)
+        let zone = registry.get_zone_at(-42000);
         assert!(zone.is_some());
         assert_eq!(zone.unwrap().zone_type, UndergroundZone::LavaCaverns);
 
-        // Abyss
-        let zone = registry.get_zone_at(-3000);
+        // Thunder caverns (-45000 to -52000)
+        let zone = registry.get_zone_at(-48000);
+        assert!(zone.is_some());
+        assert_eq!(zone.unwrap().zone_type, UndergroundZone::ThunderCaverns);
+
+        // Lava caverns deep (-52000 to -58000)
+        let zone = registry.get_zone_at(-55000);
+        assert!(zone.is_some());
+        assert_eq!(zone.unwrap().zone_type, UndergroundZone::LavaCavernsDeep);
+
+        // Toxic depths (-58000 to -65000)
+        let zone = registry.get_zone_at(-62000);
+        assert!(zone.is_some());
+        assert_eq!(zone.unwrap().zone_type, UndergroundZone::ToxicDepths);
+
+        // Abyss (-65000 to -70000)
+        let zone = registry.get_zone_at(-67000);
         assert!(zone.is_some());
         assert_eq!(zone.unwrap().zone_type, UndergroundZone::Abyss);
 
@@ -485,13 +627,16 @@ mod tests {
         let registry = BiomeZoneRegistry::new();
 
         // Shallow caves: regular stone
-        assert_eq!(registry.get_stone_material(-100), MaterialId::STONE);
+        assert_eq!(registry.get_stone_material(-2000), MaterialId::STONE);
 
         // Mushroom grotto: mossy stone
-        assert_eq!(registry.get_stone_material(-800), MaterialId::MOSSY_STONE);
+        assert_eq!(registry.get_stone_material(-12000), MaterialId::MOSSY_STONE);
 
-        // Lava caverns: basalt
-        assert_eq!(registry.get_stone_material(-2500), MaterialId::BASALT);
+        // Circuit ruins: stone
+        assert_eq!(registry.get_stone_material(-18000), MaterialId::STONE);
+
+        // Thunder caverns: basalt
+        assert_eq!(registry.get_stone_material(-48000), MaterialId::BASALT);
     }
 
     #[test]
@@ -499,14 +644,32 @@ mod tests {
         let registry = BiomeZoneRegistry::new();
 
         // Shallow caves: no features
-        assert!(registry.get_feature_info(-100).is_none());
+        assert!(registry.get_feature_info(-2000).is_none());
 
         // Mushroom grotto: glowing mushrooms
-        let info = registry.get_feature_info(-800);
+        let info = registry.get_feature_info(-12000);
         assert!(info.is_some());
         let (material, density) = info.unwrap();
         assert_eq!(material, MaterialId::GLOWING_MUSHROOM);
         assert!(density > 0.0);
+
+        // Circuit ruins: wire
+        let info = registry.get_feature_info(-18000);
+        assert!(info.is_some());
+        let (material, _) = info.unwrap();
+        assert_eq!(material, MaterialId::WIRE);
+
+        // Thunder caverns: thunder
+        let info = registry.get_feature_info(-48000);
+        assert!(info.is_some());
+        let (material, _) = info.unwrap();
+        assert_eq!(material, MaterialId::THUNDER);
+
+        // Toxic depths: poison gas
+        let info = registry.get_feature_info(-62000);
+        assert!(info.is_some());
+        let (material, _) = info.unwrap();
+        assert_eq!(material, MaterialId::POISON_GAS);
     }
 
     #[test]
@@ -514,28 +677,28 @@ mod tests {
         let mut registry = BiomeZoneRegistry::new();
         registry.set_enabled(false);
 
-        assert!(registry.get_zone_at(-800).is_none());
-        assert_eq!(registry.get_stone_material(-800), MaterialId::STONE);
+        assert!(registry.get_zone_at(-12000).is_none());
+        assert_eq!(registry.get_stone_material(-12000), MaterialId::STONE);
     }
 
     #[test]
     fn test_zone_transition_blend() {
-        let transition = ZoneTransition::new(32);
+        let transition = ZoneTransition::new(640); // 20× wider transition for deeper zones
         let zone1 = ZoneDefinition::shallow_caves();
         let zone2 = ZoneDefinition::mushroom_grotto();
 
-        // Well above boundary
-        let (w1, w2) = transition.calculate_blend(-400, &zone1, &zone2);
+        // Well above boundary (-10000)
+        let (w1, w2) = transition.calculate_blend(-8000, &zone1, &zone2);
         assert_eq!(w1, 1.0);
         assert_eq!(w2, 0.0);
 
         // Well below boundary
-        let (w1, w2) = transition.calculate_blend(-600, &zone1, &zone2);
+        let (w1, w2) = transition.calculate_blend(-12000, &zone1, &zone2);
         assert_eq!(w1, 0.0);
         assert_eq!(w2, 1.0);
 
         // At boundary
-        let (w1, w2) = transition.calculate_blend(-500, &zone1, &zone2);
+        let (w1, w2) = transition.calculate_blend(-10000, &zone1, &zone2);
         assert!((w1 - 0.5).abs() < 0.1);
         assert!((w2 - 0.5).abs() < 0.1);
     }
@@ -545,9 +708,12 @@ mod tests {
         let registry = BiomeZoneRegistry::new();
 
         // Shallow caves: normal
-        assert_eq!(registry.get_ore_multiplier(-100), 1.0);
+        assert_eq!(registry.get_ore_multiplier(-2000), 1.0);
 
-        // Abyss: rich ores
-        assert_eq!(registry.get_ore_multiplier(-3000), 2.0);
+        // Abyss: rich ores (-67000 is in Abyss)
+        assert_eq!(registry.get_ore_multiplier(-67000), 2.0);
+
+        // Toxic depths: 1.8
+        assert_eq!(registry.get_ore_multiplier(-62000), 1.8);
     }
 }
