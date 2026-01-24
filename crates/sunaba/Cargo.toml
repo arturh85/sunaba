@@ -79,7 +79,7 @@ rayon = "1.8"
 chrono = "0.4"
 egui-winit = { version = "0.33", features = ["clipboard"] }
 egui_logger = "0.9"
-gif = "0.13"
+gif = "0.14"
 indicatif = "0.17"
 tempfile = "3.8"
 puffin = { git = "https://github.com/blip-radar/puffin.git", branch = "egui-0.33", optional = true }
