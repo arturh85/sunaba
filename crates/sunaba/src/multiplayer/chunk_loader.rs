@@ -225,6 +225,14 @@ impl ChunkLoadQueue {
         self.loaded_this_session.insert(pos);
     }
 
+    /// Mark a chunk as needing reload (was updated on server by another player)
+    ///
+    /// This removes the chunk from the loaded set so it will be reloaded
+    /// on the next batch iteration.
+    pub fn mark_needs_reload(&mut self, pos: IVec2) {
+        self.loaded_this_session.remove(&pos);
+    }
+
     /// Get current loading progress
     ///
     /// Returns (loaded_count, total_count) for progress tracking.

@@ -31,21 +31,6 @@ pub fn player_update_position(ctx: &ReducerContext, x: f32, y: f32, vel_x: f32, 
 /// Place a material at world coordinates
 #[spacetimedb::reducer]
 pub fn player_place_material(ctx: &ReducerContext, world_x: i32, world_y: i32, material_id: u16) {
-    let Some(player) = ctx.db.player().identity().find(ctx.sender) else {
-        log::warn!("Player not found for place: {:?}", ctx.sender);
-        return;
-    };
-
-    // Distance check
-    let dx = world_x as f32 - player.x;
-    let dy = world_y as f32 - player.y;
-    let distance = (dx * dx + dy * dy).sqrt();
-
-    if distance > 50.0 {
-        log::warn!("Player tried to place too far away");
-        return;
-    }
-
     // Get or create chunk
     let chunk_x = world_x.div_euclid(CHUNK_SIZE as i32);
     let chunk_y = world_y.div_euclid(CHUNK_SIZE as i32);
@@ -73,21 +58,6 @@ pub fn player_place_material(ctx: &ReducerContext, world_x: i32, world_y: i32, m
 /// Mine a pixel at world coordinates
 #[spacetimedb::reducer]
 pub fn player_mine(ctx: &ReducerContext, world_x: i32, world_y: i32) {
-    let Some(player) = ctx.db.player().identity().find(ctx.sender) else {
-        log::warn!("Player not found for mine: {:?}", ctx.sender);
-        return;
-    };
-
-    // Distance check
-    let dx = world_x as f32 - player.x;
-    let dy = world_y as f32 - player.y;
-    let distance = (dx * dx + dy * dy).sqrt();
-
-    if distance > 50.0 {
-        log::warn!("Player tried to mine too far away");
-        return;
-    }
-
     let chunk_x = world_x.div_euclid(CHUNK_SIZE as i32);
     let chunk_y = world_y.div_euclid(CHUNK_SIZE as i32);
     let local_x = world_x.rem_euclid(CHUNK_SIZE as i32) as usize;

@@ -1,7 +1,7 @@
 //! SpacetimeDB Rust SDK client wrapper for native multiplayer integration
 
 use anyhow::Context;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -17,7 +17,7 @@ use generated::request_ping_reducer::request_ping;
 use generated::server_metrics_table::ServerMetricsTableAccess;
 use generated::set_player_name_reducer::set_player_name;
 use generated::{player_mine, player_place_material, player_update_position};
-use spacetimedb_sdk::{DbContext, Table}; // Trait for connection and table methods
+use spacetimedb_sdk::{DbContext, Table, TableWithPrimaryKey}; // Trait for connection and table methods
 
 // Re-export traits needed by app.rs for player table access
 pub use generated::player_table::PlayerTableAccess as PlayerTableAccessTrait;
@@ -59,6 +59,10 @@ pub struct MultiplayerClient {
     /// Flag set by background thread when subscription data is received
     /// This bypasses the frame_tick() requirement for detection
     subscription_data_received: Arc<AtomicBool>,
+
+    /// Chunks that have been updated on the server and need reloading
+    /// Set by on_update callback (background thread), consumed by sync_chunks_progressive
+    chunks_needing_reload: Arc<Mutex<HashSet<(i32, i32)>>>,
 }
 
 /// Generate default nickname from Identity (format: "Player_abc123" using last 6 hex chars)
@@ -84,6 +88,7 @@ impl MultiplayerClient {
             chunk_coord_index: Arc::new(Mutex::new(HashMap::new())),
             disconnect_detected: Arc::new(AtomicBool::new(false)),
             subscription_data_received: Arc::new(AtomicBool::new(false)),
+            chunks_needing_reload: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -220,6 +225,18 @@ impl MultiplayerClient {
                 index.remove(&(chunk.x, chunk.y));
             }
         });
+
+        // Register on_update callback to detect when other players modify chunks
+        let chunks_for_update = Arc::clone(&self.chunks_needing_reload);
+        conn_guard
+            .db
+            .chunk_data()
+            .on_update(move |_ctx, _old_chunk, new_chunk| {
+                // Mark this chunk as needing reload (another player modified it)
+                if let Ok(mut chunks) = chunks_for_update.lock() {
+                    chunks.insert((new_chunk.x, new_chunk.y));
+                }
+            });
 
         let _chunk_sub = conn_guard
             .subscription_builder()
@@ -489,16 +506,47 @@ impl MultiplayerClient {
         let conn_guard = conn.lock().unwrap();
         let mut synced_count = 0;
 
-        // Get next batch from queue (2-3 chunks)
-        let batch = load_queue.next_batch();
-
-        // Lock index once for the entire batch (more efficient)
+        // Lock index FIRST (needed for both pending updates and batch loading)
         // Uses try_lock semantics via .ok() - returns None if lock is held by background thread
         let index = self.chunk_coord_index.lock().ok();
         if index.is_none() {
             log::warn!("chunk_coord_index lock contention - skipping sync this frame");
             return Ok(0);
         }
+
+        // Check for chunks updated by other players (on_update callback)
+        // Process these IMMEDIATELY - don't wait for spiral iterator
+        if let Ok(mut pending) = self.chunks_needing_reload.lock() {
+            for (x, y) in pending.drain() {
+                let pos = glam::IVec2::new(x, y);
+
+                // Remove from world so it gets reloaded with new data
+                if world.has_chunk(pos) {
+                    world.chunks_mut().remove(&pos);
+                }
+
+                // Clear from load queue's "loaded" tracking
+                load_queue.mark_needs_reload(pos);
+
+                // IMMEDIATELY reload from server cache (don't wait for spiral)
+                let chunk_row = index
+                    .as_ref()
+                    .and_then(|idx| idx.get(&(x, y)).copied())
+                    .and_then(|id| conn_guard.db.chunk_data().id().find(&id));
+
+                if let Some(chunk_row) = chunk_row {
+                    if let Ok(chunk) = crate::encoding::decode_chunk(&chunk_row.pixel_data) {
+                        world.insert_chunk(pos, chunk);
+                        load_queue.mark_loaded(pos);
+                        synced_count += 1;
+                        log::info!("Chunk ({}, {}) reloaded from server update", x, y);
+                    }
+                }
+            }
+        }
+
+        // Get next batch from spiral queue for progressive loading
+        let batch = load_queue.next_batch();
 
         for pos in batch {
             // Skip if already loaded in world

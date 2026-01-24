@@ -806,9 +806,8 @@ impl App {
                         .client
                         .sync_chunks_progressive(&mut self.world, queue)
                     {
-                        if synced > 0 {
-                            log::info!("Loaded {} chunks (progressive)", synced);
-                        }
+                        // Silently load chunks (was spammy in logs)
+                        let _ = synced;
                     } else {
                         log::error!("Failed to sync chunks progressively");
                     }
