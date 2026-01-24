@@ -536,15 +536,15 @@ impl GraphNeuralController {
         // Pad or truncate features to match expected input_dim
         let features_len = features.len().min(self.input_dim);
 
-        for h in 0..self.hidden_dim {
+        for (h, hidden_val) in hidden.iter_mut().enumerate() {
             let mut sum = 0.0;
-            for i in 0..features_len {
+            for (i, &feature) in features.iter().take(features_len).enumerate() {
                 let w_idx = i * self.hidden_dim + h;
                 if w_idx < self.input_weights.len() {
-                    sum += features[i] * self.input_weights[w_idx];
+                    sum += feature * self.input_weights[w_idx];
                 }
             }
-            hidden[h] = sum.tanh();
+            *hidden_val = sum.tanh();
         }
 
         hidden
@@ -596,15 +596,15 @@ impl GraphNeuralController {
     fn compute_message(&self, hidden: &[f32]) -> Vec<f32> {
         let mut message = vec![0.0; self.hidden_dim];
 
-        for h in 0..self.hidden_dim {
+        for (h, message_val) in message.iter_mut().enumerate() {
             let mut sum = 0.0;
-            for i in 0..self.hidden_dim.min(hidden.len()) {
+            for (i, &hidden_val) in hidden.iter().take(self.hidden_dim).enumerate() {
                 let w_idx = i * self.hidden_dim + h;
                 if w_idx < self.message_weights.len() {
-                    sum += hidden[i] * self.message_weights[w_idx];
+                    sum += hidden_val * self.message_weights[w_idx];
                 }
             }
-            message[h] = sum;
+            *message_val = sum;
         }
 
         message
@@ -615,26 +615,26 @@ impl GraphNeuralController {
         let mut new_hidden = vec![0.0; self.hidden_dim];
 
         // Concatenate self_hidden and aggregated for input to update
-        for h in 0..self.hidden_dim {
+        for (h, new_hidden_val) in new_hidden.iter_mut().enumerate() {
             let mut sum = 0.0;
 
             // Process self_hidden
-            for i in 0..self.hidden_dim.min(self_hidden.len()) {
+            for (i, &self_val) in self_hidden.iter().take(self.hidden_dim).enumerate() {
                 let w_idx = i * self.hidden_dim + h;
                 if w_idx < self.update_weights.len() {
-                    sum += self_hidden[i] * self.update_weights[w_idx];
+                    sum += self_val * self.update_weights[w_idx];
                 }
             }
 
             // Process aggregated
-            for i in 0..self.hidden_dim.min(aggregated.len()) {
+            for (i, &agg_val) in aggregated.iter().take(self.hidden_dim).enumerate() {
                 let w_idx = (self.hidden_dim + i) * self.hidden_dim + h;
                 if w_idx < self.update_weights.len() {
-                    sum += aggregated[i] * self.update_weights[w_idx];
+                    sum += agg_val * self.update_weights[w_idx];
                 }
             }
 
-            new_hidden[h] = sum.tanh();
+            *new_hidden_val = sum.tanh();
         }
 
         new_hidden
